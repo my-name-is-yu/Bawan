@@ -171,7 +171,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
     _statusItem.button.toolTip = [@"Lore — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelItem.title];
+    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelReady ? @"" : _modelItem.title];
 }
 
 - (void)updateShortcutItem {
@@ -191,7 +191,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), target);
     _busy = YES;
     [_translationPanel setOutput:@""];
-    [_translationPanel setAvailable:YES busy:YES status:@"Translating…"];
+    [_translationPanel setAvailable:YES busy:YES status:@""];
 }
 
 - (void)handleEngineEvent:(const lore::EngineEvent &)event {
@@ -223,7 +223,7 @@ static NSString *StringFromUTF8(const std::string &text) {
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text)];
             [_translationPanel setAvailable:_modelReady busy:NO status:event.truncated ?
-                @"Output limit reached. The translation is incomplete. Select less text and try again." : @"Translation complete"];
+                @"Output limit reached. The translation is incomplete. Select less text and try again." : @""];
             break;
         case Kind::Cancelled:
             _busy = NO;

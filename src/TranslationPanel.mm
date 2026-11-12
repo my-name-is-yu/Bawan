@@ -268,7 +268,7 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     NSPopUpButton *_direction;
     NSTextField *_status;
     NSTextField *_instructions;
-    NSLayoutConstraint *_instructionsHeight;
+    NSLayoutConstraint *_messageSpacing;
     LoreButton *_translate;
     LoreButton *_copy;
     NSImage *_copyIcon;
@@ -333,7 +333,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     text.editable = editable;
     text.selectable = YES;
     text.richText = NO;
-    text.font = [NSFont systemFontOfSize:editable ? 16 : 17];
+    text.font = [NSFont systemFontOfSize:16];
     text.textColor = Color(editable ? SecondaryText : Text);
     text.insertionPointColor = Color(Text);
     text.drawsBackground = NO;
@@ -435,34 +435,30 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [_direction setAccessibilityLabel:@"Translation direction"];
     [content addSubview:_direction];
 
-    NSTextField *sourceLabel = Label(@"Source", 12, NSFontWeightMedium, Color(SecondaryText));
-    NSTextField *outputLabel = Label(@"Translation", 12, NSFontWeightMedium, Color(SecondaryText));
-    [content addSubview:sourceLabel];
-    [content addSubview:outputLabel];
     NSScrollView *sourceScroll = TextArea(content, &_source, YES, @"source", @"Source text",
-                                         @"Type or paste text to translate.");
+                                         @"Type or paste text");
     NSScrollView *outputScroll = TextArea(content, &_output, NO, @"output", @"Translation",
-                                         @"Your translation will appear here.");
+                                         @"");
     _source.delegate = self;
 
     _instructions = Label(@"", 11, NSFontWeightRegular, Color(SecondaryText));
     _instructions.identifier = @"instructions";
     _instructions.maximumNumberOfLines = 2;
-    [content addSubview:_instructions];
-    _instructionsHeight = [_instructions.heightAnchor constraintEqualToConstant:0];
-    _status = Label(@"Preparing model…", 11, NSFontWeightRegular, Color(SecondaryText));
+    _status = Label(@"", 11, NSFontWeightRegular, Color(SecondaryText));
     _status.identifier = @"status";
     _status.maximumNumberOfLines = 3;
     [_status setAccessibilityLabel:@"Translation status"];
-    [content addSubview:_status];
+    _status.hidden = YES;
+    NSStackView *messages = [NSStackView stackViewWithViews:@[_instructions, _status]];
+    messages.identifier = @"messages";
+    messages.orientation = NSUserInterfaceLayoutOrientationVertical;
+    messages.alignment = NSLayoutAttributeLeading;
+    messages.distribution = NSStackViewDistributionFill;
+    messages.spacing = 8;
+    messages.detachesHiddenViews = YES;
+    [content addSubview:messages];
+    _messageSpacing = [sourceScroll.bottomAnchor constraintEqualToAnchor:messages.topAnchor];
 
-    NSImageView *device = [[NSImageView alloc] initWithFrame:NSZeroRect];
-    device.image = Symbol(@"laptopcomputer", @"", 14);
-    device.contentTintColor = Color(SecondaryText);
-    device.translatesAutoresizingMaskIntoConstraints = NO;
-    [footer addSubview:device];
-    NSTextField *local = Label(@"On-device translation", 11, NSFontWeightMedium, Color(SecondaryText));
-    [footer addSubview:local];
     _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), NO, NO);
     _translate.toolTip = @"Translate (⌘Return); cancel while translating";
     _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), YES, NO);
@@ -483,48 +479,39 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [headerLine.heightAnchor constraintEqualToConstant:1],
         [mark.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:24],
         [mark.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [mark.widthAnchor constraintEqualToConstant:22],
-        [mark.heightAnchor constraintEqualToConstant:22],
-        [name.leadingAnchor constraintEqualToAnchor:mark.trailingAnchor constant:10],
+        [mark.widthAnchor constraintEqualToConstant:24],
+        [mark.heightAnchor constraintEqualToConstant:24],
+        [name.leadingAnchor constraintEqualToAnchor:mark.trailingAnchor constant:8],
         [name.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [dismiss.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-16],
+        [dismiss.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
         [dismiss.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [dismiss.widthAnchor constraintEqualToConstant:46],
+        [dismiss.widthAnchor constraintEqualToConstant:48],
         [dismiss.heightAnchor constraintEqualToConstant:32],
-        [settings.trailingAnchor constraintEqualToAnchor:dismiss.leadingAnchor constant:-12],
+        [settings.trailingAnchor constraintEqualToAnchor:dismiss.leadingAnchor constant:-8],
         [settings.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [settings.widthAnchor constraintEqualToConstant:32],
         [settings.heightAnchor constraintEqualToConstant:32],
-        [_direction.topAnchor constraintEqualToAnchor:headerLine.bottomAnchor constant:15],
-        [_direction.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
+        [_direction.topAnchor constraintEqualToAnchor:headerLine.bottomAnchor constant:24],
+        [_direction.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
         [_direction.widthAnchor constraintEqualToConstant:232],
-        [_direction.heightAnchor constraintEqualToConstant:34],
+        [_direction.heightAnchor constraintEqualToConstant:32],
         [divider.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
-        [divider.topAnchor constraintEqualToAnchor:_direction.bottomAnchor constant:18],
+        [divider.topAnchor constraintEqualToAnchor:sourceScroll.topAnchor],
         [divider.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
         [divider.widthAnchor constraintEqualToConstant:1],
-        [sourceLabel.topAnchor constraintEqualToAnchor:_direction.bottomAnchor constant:24],
-        [sourceLabel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
-        [sourceLabel.heightAnchor constraintEqualToConstant:18],
-        [outputLabel.topAnchor constraintEqualToAnchor:sourceLabel.topAnchor],
-        [outputLabel.leadingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:24],
-        [outputLabel.heightAnchor constraintEqualToAnchor:sourceLabel.heightAnchor],
-        [sourceScroll.leadingAnchor constraintEqualToAnchor:sourceLabel.leadingAnchor],
+        [sourceScroll.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
         [sourceScroll.trailingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:-24],
-        [sourceScroll.topAnchor constraintEqualToAnchor:sourceLabel.bottomAnchor constant:14],
-        [sourceScroll.bottomAnchor constraintEqualToAnchor:_instructions.topAnchor constant:-12],
-        [outputScroll.leadingAnchor constraintEqualToAnchor:outputLabel.leadingAnchor],
+        [sourceScroll.topAnchor constraintEqualToAnchor:_direction.bottomAnchor constant:24],
+        _messageSpacing,
+        [outputScroll.leadingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:24],
         [outputScroll.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-24],
         [outputScroll.topAnchor constraintEqualToAnchor:sourceScroll.topAnchor],
         [outputScroll.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
-        [_instructions.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
-        [_instructions.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-24],
-        [_instructions.bottomAnchor constraintEqualToAnchor:_status.topAnchor constant:-6],
-        _instructionsHeight,
-        [_status.leadingAnchor constraintEqualToAnchor:_instructions.leadingAnchor],
-        [_status.trailingAnchor constraintEqualToAnchor:_instructions.trailingAnchor],
-        [_status.bottomAnchor constraintEqualToAnchor:footerLine.topAnchor constant:-6],
-        [_status.heightAnchor constraintEqualToConstant:42],
+        [messages.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
+        [messages.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-24],
+        [messages.bottomAnchor constraintEqualToAnchor:footerLine.topAnchor constant:-24],
+        [_instructions.widthAnchor constraintEqualToAnchor:messages.widthAnchor],
+        [_status.widthAnchor constraintEqualToAnchor:messages.widthAnchor],
         [footerLine.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [footerLine.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [footerLine.bottomAnchor constraintEqualToAnchor:footer.topAnchor],
@@ -533,21 +520,14 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [footer.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [footer.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
         [footer.heightAnchor constraintEqualToConstant:64],
-        [device.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:24],
-        [device.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [device.widthAnchor constraintEqualToConstant:17],
-        [device.heightAnchor constraintEqualToConstant:17],
-        [local.leadingAnchor constraintEqualToAnchor:device.trailingAnchor constant:8],
-        [local.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [local.trailingAnchor constraintLessThanOrEqualToAnchor:_translate.leadingAnchor constant:-12],
-        [_copy.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor constant:-24],
+        [_copy.centerXAnchor constraintEqualToAnchor:outputScroll.centerXAnchor],
         [_copy.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
         [_copy.widthAnchor constraintEqualToConstant:168],
-        [_copy.heightAnchor constraintEqualToConstant:34],
-        [_translate.trailingAnchor constraintEqualToAnchor:_copy.leadingAnchor constant:-12],
+        [_copy.heightAnchor constraintEqualToConstant:32],
+        [_translate.centerXAnchor constraintEqualToAnchor:sourceScroll.centerXAnchor],
         [_translate.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [_translate.widthAnchor constraintEqualToConstant:140],
-        [_translate.heightAnchor constraintEqualToConstant:34]
+        [_translate.widthAnchor constraintEqualToAnchor:_copy.widthAnchor],
+        [_translate.heightAnchor constraintEqualToAnchor:_copy.heightAnchor]
     ]);
     [self setShortcutAvailable:NO];
     [self updateButtons];
@@ -587,9 +567,13 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
 - (void)setShortcutAvailable:(BOOL)available {
     _instructions.stringValue = available ? @"" :
-        @"Enable Double ⌘C in Settings to translate selected text. Manual input works with ⌘Return.";
+        @"Enable Double ⌘C in Settings to translate selected text.";
     _instructions.hidden = available;
-    _instructionsHeight.constant = available ? 0 : 32;
+    [self updateMessageSpacing];
+}
+
+- (void)updateMessageSpacing {
+    _messageSpacing.constant = (_instructions.hidden && _status.hidden) ? 0 : -16;
 }
 
 - (void)showForManualInput {
@@ -603,6 +587,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _available = available;
     _busy = busy;
     _status.stringValue = status;
+    _status.hidden = status.length == 0;
+    [self updateMessageSpacing];
     [self updateButtons];
 }
 

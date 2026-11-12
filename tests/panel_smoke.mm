@@ -313,7 +313,7 @@ static void RunSmoke(void) {
             source.enclosingScrollView.hasVerticalScroller && output.enclosingScrollView.hasVerticalScroller,
             @"Text panes must scroll independently");
 
-    [panel setAvailable:YES busy:NO status:@"Ready to translate"];
+    [panel setAvailable:YES busy:NO status:@""];
     [panel showForSelection:@" \n"];
     Require(!translate.enabled && !copy.enabled, @"Empty source/output must disable their actions");
     [panel showForSelection:english];
@@ -372,7 +372,7 @@ static void RunSmoke(void) {
     [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%"];
     Require(!translate.enabled, @"Translation must be disabled before model readiness");
     Capture(window, @"model-setup");
-    [panel setAvailable:YES busy:YES status:@"Translating…"];
+    [panel setAvailable:YES busy:YES status:@""];
     [panel setOutput:@"会議は来週"];
     Require([translate.title isEqualToString:@"Cancel"] && translate.enabled && copy.enabled,
             @"Busy state must offer cancellation and partial-output copying");
@@ -398,7 +398,7 @@ static void RunSmoke(void) {
     // Warm both native text/theme states before establishing object identity baselines.
     [panel showForSelection:english];
     [panel setOutput:japanese];
-    [panel setAvailable:YES busy:NO status:@"Translated"];
+    [panel setAvailable:YES busy:NO status:@""];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Settle(window);
     NSMutableSet<NSValue *> *baselineViews = [NSMutableSet set];
@@ -408,14 +408,14 @@ static void RunSmoke(void) {
     for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
         @autoreleasepool {
             [panel showForSelection:english];
-            [panel setAvailable:YES busy:NO status:@"Ready to translate"];
+            [panel setAvailable:YES busy:NO status:@""];
             [translate performClick:nil];
-            [panel setAvailable:YES busy:YES status:@"Translating…"];
+            [panel setAvailable:YES busy:YES status:@""];
             [panel setOutput:@"会議"];
             [panel setOutput:japanese];
-            [panel setAvailable:YES busy:NO status:@"Translated"];
+            [panel setAvailable:YES busy:NO status:@""];
             [translate performClick:nil];
-            [panel setAvailable:YES busy:YES status:@"Translating…"];
+            [panel setAvailable:YES busy:YES status:@""];
             [panel setOutput:@"会議は"];
             [translate performClick:nil];
             [panel setAvailable:YES busy:NO status:@"Translation cancelled"];
