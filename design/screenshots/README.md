@@ -1,9 +1,9 @@
 # Implemented UI captures
 
 These unmodified PNGs are AppKit content-view captures from the macOS CI run for
-implementation commit `28e2dc139d82f19c4abe5868574dc7f09142371d`:
-[run 43230269637](https://github.com/my-name-is-yu/Lore/actions/runs/43230269637),
-artifact `panel-view-captures` (ID `13948964337`).
+implementation commit `4c37cc4cecef332268052715afb9a33883dd0b94`:
+[run 43235555494](https://github.com/my-name-is-yu/Lore/actions/runs/43235555494),
+artifact `panel-view-captures` (ID `13953335272`).
 
 | File | Artifact source |
 | --- | --- |
@@ -15,3 +15,7 @@ artifact `panel-view-captures` (ID `13948964337`).
 The translation captures include the shared hard shadows on Translate, Copy and
 Swap. These are model-free smoke-test views, not full desktop screenshots; OS
 titlebar overlays and native window buttons are outside the captures.
+
+Settings captures show the same 720×500pt window after navigating from the
+translator, with the Translator back action in the fixed header and the body
+scrolling below it.
