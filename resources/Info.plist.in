@@ -5,6 +5,7 @@
     <key>CFBundleIdentifier</key><string>local.lore.Lore</string>
     <key>CFBundleName</key><string>Lore</string>
     <key>CFBundleDisplayName</key><string>Lore</string>
+    <key>CFBundleIconFile</key><string>AppIcon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>@PROJECT_VERSION@</string>
     <key>CFBundleVersion</key><string>@PROJECT_VERSION@</string>

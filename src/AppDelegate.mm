@@ -2,6 +2,7 @@
 #import "ModelStore.h"
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
+#import "LoreAppearance.h"
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -294,11 +295,15 @@ static NSString *StringFromUTF8(const std::string &text) {
     alert.messageText = @"Lore Settings";
     alert.informativeText = @"To translate with Double ⌘C, allow Lore under Input Monitoring. You can still type or paste text without this permission.";
     [alert addButtonWithTitle:@"Close"];
+    alert.buttons.firstObject.bezelColor = LoreAccentFillColor();
+    alert.buttons.firstObject.contentTintColor = NSColor.whiteColor;
     NSButton *permissions = [NSButton buttonWithTitle:@"Open Input Monitoring Settings…" target:self action:@selector(openInputMonitoring:)];
+    permissions.contentTintColor = LoreAccentColor();
     NSButton *login = [NSButton checkboxWithTitle:@"Launch Lore at login" target:self action:@selector(setLoginEnabled:)];
     SMAppServiceStatus status = SMAppService.mainAppService.status;
     login.state = status == SMAppServiceStatusEnabled || status == SMAppServiceStatusRequiresApproval ? NSControlStateValueOn : NSControlStateValueOff;
     NSButton *loginSettings = [NSButton buttonWithTitle:@"Open Login Items Settings…" target:self action:@selector(openLoginSettings:)];
+    loginSettings.contentTintColor = LoreAccentColor();
     _settingsHint = [NSTextField wrappingLabelWithString:@"The model and translation engine run locally within this app."];
     _settingsHint.font = [NSFont systemFontOfSize:12];
     _settingsHint.textColor = NSColor.secondaryLabelColor;

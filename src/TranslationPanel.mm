@@ -1,4 +1,5 @@
 #import "TranslationPanel.h"
+#import "LoreAppearance.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
 #import <QuartzCore/CAMediaTimingFunction.h>
@@ -7,7 +8,7 @@
 #include <algorithm>
 
 namespace {
-enum ColorRole { Background, Surface, Text, SecondaryText, Border, Button, Accent };
+enum ColorRole { Background, Surface, Text, SecondaryText, Border, Button };
 
 NSColor *RGB(unsigned value) {
     return [NSColor colorWithSRGBRed:((value >> 16) & 255) / 255.0
@@ -19,8 +20,8 @@ NSColor *Color(ColorRole role) {
     static NSArray<NSColor *> *colors;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        const unsigned light[] = {0xFAFAFA, 0xF1F2F4, 0x202124, 0x5F626B, 0xDEDFE4, 0xE7E8ED, 0x635BE9};
-        const unsigned dark[] = {0x202124, 0x252629, 0xF4F4F5, 0xB8BAC2, 0x42434A, 0x323338, 0x7775F8};
+        const unsigned light[] = {0xFAFAFA, 0xF1F2F4, 0x202124, 0x5F626B, 0xDEDFE4, 0xE7E8ED};
+        const unsigned dark[] = {0x202124, 0x252629, 0xF4F4F5, 0xB8BAC2, 0x42434A, 0x323338};
         NSArray<NSAppearanceName> *appearances = @[
             NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
             NSAppearanceNameAqua, NSAppearanceNameDarkAqua];
@@ -45,7 +46,7 @@ NSColor *Color(ColorRole role) {
 }
 
 void DrawButton(NSRect frame, BOOL primary, BOOL highlighted, BOOL enabled) {
-    NSColor *fill = Color(primary ? Accent : Button);
+    NSColor *fill = primary ? LoreAccentFillColor() : Color(Button);
     if (!enabled) fill = [fill colorWithAlphaComponent:0.4];
     else if (highlighted) fill = [fill blendedColorWithFraction:0.15 ofColor:Color(Text)];
     [fill setFill];
@@ -301,7 +302,11 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     text.richText = NO;
     text.font = [NSFont systemFontOfSize:16];
     text.textColor = Color(editable ? SecondaryText : Text);
-    text.insertionPointColor = Color(Text);
+    text.insertionPointColor = LoreAccentColor();
+    text.selectedTextAttributes = @{
+        NSBackgroundColorAttributeName: [LoreAccentColor() colorWithAlphaComponent:0.22],
+        NSForegroundColorAttributeName: text.textColor
+    };
     text.drawsBackground = NO;
     text.textContainerInset = NSMakeSize(0, 0);
     text.textContainer.lineFragmentPadding = 0;
@@ -378,7 +383,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
     NSImageView *mark = [[NSImageView alloc] initWithFrame:NSZeroRect];
     mark.image = Symbol(@"app", @"Lore", 20);
-    mark.contentTintColor = Color(Accent);
+    mark.contentTintColor = LoreAccentColor();
     mark.translatesAutoresizingMaskIntoConstraints = NO;
     [header addSubview:mark];
     NSTextField *name = Label(@"Lore", 20, NSFontWeightSemibold, Color(Text));
@@ -423,7 +428,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [content addSubview:messages];
     _messageSpacing = [sourceScroll.bottomAnchor constraintEqualToAnchor:messages.topAnchor];
 
-    _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), NO, NO);
+    _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), YES, NO);
     _translate.toolTip = @"Translate (⌘Return); cancel while translating";
     _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), YES, NO);
     _copyIcon = Symbol(@"doc.on.doc", @"", 13);
@@ -580,8 +585,10 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     BOOL hasInput = [_source.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     BOOL hasOutput = _output.string.length > 0;
     _translate.enabled = _busy || (_available && hasInput);
+    _translate.contentTintColor = _translate.enabled ? NSColor.whiteColor : nil;
     _translate.title = _busy ? @"Cancel" : (hasOutput ? @"Retranslate  ⌘↵" : @"Translate  ⌘↵");
     _copy.enabled = hasOutput;
+    _copy.contentTintColor = _copy.enabled ? NSColor.whiteColor : nil;
     _swap.enabled = _available && !_busy && hasOutput && _outputDirection != lore::Direction::Automatic;
 }
 
