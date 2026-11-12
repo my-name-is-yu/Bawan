@@ -18,12 +18,12 @@ final result: blocked
 - Source/control inspection confirms native AppKit views, editable source, selectable output, independent scrolling, metadata-based language labels, and one reused panel.
 - The previous regular-app configuration was applied: no LSUIElement agent flag, NSApplicationActivationPolicyRegular at launch.
 - Static color calculations include the actual paper asset's extrema composited at 3.5%. Minimum normal-text contrast is 4.59:1 on the textured light header; primary buttons exceed 4.70:1. Body, language headings, secondary text and settings status colors also exceed 4.5:1. Results are in `build/ui-validation/static-checks.json`.
-- Libclang 18.1.1 parsed the integrated UI sources and both smoke tests against actual macOS 14.5 SDK headers, targeting arm64 macOS 14. Both the product NSBundle loader and test-resource loader branches passed with zero errors. Warnings are limited to existing unused callback/main parameters. Reports: `build/native-syntax-check.json`, `build/native-product-syntax-check.json`. This is syntax/API checking, not native linking or execution.
+- Libclang 18.1.1 parsed the integrated UI sources, AppDelegate and both smoke tests against actual macOS 14.5 SDK headers, targeting arm64 macOS 14. Both the product NSBundle loader and test-resource loader branches passed with zero errors. Warnings are limited to existing unused callback/main parameters. Reports are retained under `build/`. This is syntax/API checking, not native linking or execution.
 - Rebased onto the configurable-shortcuts version of main, retaining both shortcut rows, key recording/release handling, panel recall/focus behavior and Command-Shift-C copying. Settings keep the 700pt width needed for the new controls.
 - Portable CMake configuration and build succeeded after integration. Both copy_gesture and shortcuts CTests passed (2/2) on Linux. This does not exercise AppKit.
 - `git diff --check` passes.
 
-## Native tests prepared, not yet run
+## Native automated acceptance checks
 
 - Both themes, initial and minimum sizes, paper-background repainting after appearance changes, header and footer bounds, loaded images, wrapping and separate text scrolling.
 - AUTO/— before direction resolution, both EN/JA directions, forced reverse translation, source editing during streaming, and reset for a new request.
@@ -39,11 +39,13 @@ final result: blocked
 - Gold headings and the swap button share clipped corners. Reset and section icons share explicit Medium symbol sizing.
 - Informational, warning and error messages receive explicit semantic roles. Recording, paused and key-release-wait states replace the misleading ready status while listening is suspended.
 - Command-Return invokes the same primary action as clicking: translate while idle and cancel while busy. Tests require cancellation without starting a new translation.
-- A fresh macOS CI run and capture review are required for these follow-up changes. Baseline CI captures for commit 8e556e2 were inspected during the consistency review; they do not validate this follow-up.
+- Input faces and primary-button contrast are sampled using the capture's own ICC color space before converting to sRGB. AppKit's generic color wrapper must not reinterpret the raw display samples.
+- Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
+- The latest follow-up macOS results and native captures are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
 
 ## Blocking verification
 
-This execution environment is Linux. The native build script exits with the requirement for an Apple Silicon Mac. No macOS build, signature validation, native screenshot, real-app operation or reference-to-runtime visual comparison has been completed in this change. Previous native QA results belong to the earlier interface and do not validate this design.
+This execution workspace is Linux. Native arm64 builds, signature validation and AppKit smoke checks run in macOS CI; the baseline run for commit 8e556e2 completed successfully, and follow-up runs are linked from PR #5. The AppKit content-view captures support component comparisons but omit native titlebar overlays and interactive operation in other apps. Full-window visual QA and real-app focus/permission/resource checks remain unverified, so the overall report stays blocked on those checks.
 
 On an Apple Silicon Mac:
 
