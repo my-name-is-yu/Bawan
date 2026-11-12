@@ -209,6 +209,11 @@ static void RunSmoke(void) {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     [NSApp finishLaunching];
+    const char *expectedMotion = std::getenv("LORE_EXPECT_REDUCE_MOTION");
+    if (expectedMotion) {
+        Require(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion ==
+                (std::atoi(expectedMotion) != 0), @"OS Reduce Motion does not match this test run");
+    }
     Require([NSFileManager.defaultManager createDirectoryAtPath:@"panel-smoke"
             withIntermediateDirectories:YES attributes:nil error:nil], @"Cannot create capture directory");
     [@"These are AppKit content-view captures from a model-free lifecycle smoke test.\n"
