@@ -1,6 +1,7 @@
 #import "TranslationPanel.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
+#import <QuartzCore/CAMediaTimingFunction.h>
 #import <QuartzCore/CATransaction.h>
 
 #include <algorithm>
