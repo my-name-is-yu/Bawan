@@ -1,7 +1,5 @@
 #import "TranslationPanel.h"
-#import <QuartzCore/CAAnimation.h>
-#import <QuartzCore/CATransaction.h>
-#import <QuartzCore/CATransform3D.h>
+#import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
 #include <cstdlib>
@@ -136,11 +134,29 @@ static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
        charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 }
 
+static BOOL PressMotionIsSettled(NSButton *button) {
+    CALayer *layer = button.layer;
+    if (!CATransform3DIsIdentity(layer.transform)) return NO;
+    for (NSString *key in layer.animationKeys) {
+        if ([key hasPrefix:@"lore."] && ![key isEqualToString:@"lore.press"]) return NO;
+    }
+    CAAnimation *animation = [layer animationForKey:@"lore.press"];
+    if (!animation) return YES;
+    CALayer *presentation = layer.presentationLayer;
+    // AppKit may retain one completed client-side record. Check its actual
+    // timing and presentation, rather than treating cached metadata as motion.
+    return presentation && CATransform3DIsIdentity(presentation.transform) &&
+        animation.duration > 0 && animation.duration <= 0.16 &&
+        animation.repeatCount == 0 && animation.repeatDuration == 0 && !animation.autoreverses &&
+        animation.speed == 1 && animation.timeOffset == 0 && animation.beginTime > 0 &&
+        [layer convertTime:CACurrentMediaTime() fromLayer:nil] >= animation.beginTime + animation.duration;
+}
+
 static void RequireNoPressMotion(NSButton *button, NSString *stage) {
     CALayer *layer = button.layer;
     CAAnimation *animation = [layer animationForKey:@"lore.press"];
     CATransform3D transform = layer.transform;
-    if (animation == nil && CATransform3DIsIdentity(transform)) return;
+    if (PressMotionIsSettled(button)) return;
     CATransform3D presented = layer.presentationLayer.transform;
     Require(NO, [NSString stringWithFormat:
         @"Pointer motion must finish at identity without a retained animation: stage=%@ button=%@ "
@@ -177,17 +193,29 @@ static void RequireNoPressMotion(NSButton *button, NSString *stage) {
 }
 @end
 
-static void ClickWithPointer(NSButton *button) {
+static CGFloat ClickWithPointer(NSButton *button, BOOL held = NO) {
     NSPoint point = [button convertPoint:NSMakePoint(NSMidX(button.bounds), NSMidY(button.bounds)) toView:nil];
     NSTimeInterval timestamp = NSProcessInfo.processInfo.systemUptime;
     NSEvent *down = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:point modifierFlags:0
         timestamp:timestamp windowNumber:button.window.windowNumber context:nil eventNumber:1 clickCount:1 pressure:1];
     NSEvent *up = [NSEvent mouseEventWithType:NSEventTypeLeftMouseUp location:point modifierFlags:0
-        timestamp:timestamp + 0.01 windowNumber:button.window.windowNumber context:nil eventNumber:2 clickCount:1 pressure:0];
-    // Native NSButton tracking consumes the queued mouse-up; no AX grant or OS
-    // preference changes are necessary to exercise the actual mouseDown path.
-    [NSApp postEvent:up atStart:YES];
-    [button mouseDown:down];
+        timestamp:timestamp + (held ? 0.16 : 0.01) windowNumber:button.window.windowNumber context:nil eventNumber:2 clickCount:1 pressure:0];
+    __block CGFloat pressedScale = 1;
+    NSTimer *release = nil;
+    if (held) {
+        // A future event timestamp alone does not hold a press. This test-only,
+        // one-shot tracking timer lets the real compositor show the pressed state.
+        release = [NSTimer timerWithTimeInterval:0.16 repeats:NO block:^(NSTimer *__unused timer) {
+            pressedScale = button.layer.presentationLayer.transform.m11;
+            [NSApp postEvent:up atStart:YES];
+        }];
+        [NSRunLoop.mainRunLoop addTimer:release forMode:NSEventTrackingRunLoopMode];
+    } else {
+        [NSApp postEvent:up atStart:YES];
+    }
+    @try { [button mouseDown:down]; }
+    @finally { [release invalidate]; }
+    return pressedScale;
 }
 
 static void CheckPointerFeedback(NSButton *copy) {
@@ -201,13 +229,16 @@ static void CheckPointerFeedback(NSButton *copy) {
     @try {
         ClickWithPointer(copy);
         ClickWithPointer(copy);
-        Require(probe.count == 2 && probe.releasedBeforeAction,
+        CGFloat pressedScale = ClickWithPointer(copy, YES);
+        Require(probe.count == 3 && probe.releasedBeforeAction,
                 @"Pointer actions must run once per click and release before forwarding");
         Require(NSEqualRects(frame, copy.frame), @"Press feedback must not change layout or hit testing");
         CAAnimation *animation = [copy.layer animationForKey:@"lore.press"];
         if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
             Require(animation == nil, @"Reduce Motion must keep pointer feedback immediate");
         } else {
+            Require(pressedScale >= 0.97 && pressedScale < 0.999,
+                    @"A held pointer press must visibly scale before its action runs");
             Require(animation != nil && animation.duration > 0 && animation.duration <= 0.16 &&
                     animation.repeatCount == 0 && animation.repeatDuration == 0 &&
                     !animation.autoreverses && animation.removedOnCompletion,
@@ -219,7 +250,7 @@ static void CheckPointerFeedback(NSButton *copy) {
         [CATransaction flush];
         NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
-        while ([copy.layer animationForKey:@"lore.press"] != nil && deadline.timeIntervalSinceNow > 0) {
+        while (!PressMotionIsSettled(copy) && deadline.timeIntervalSinceNow > 0) {
             NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
                 untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
                 inMode:NSDefaultRunLoopMode dequeue:YES];
@@ -391,6 +422,9 @@ static void RunSmoke(void) {
             window.appearance = [NSAppearance appearanceNamed:iteration % 2
                 ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
             [panel close];
+            Require([copy.layer animationForKey:@"lore.press"] == nil &&
+                    [translate.layer animationForKey:@"lore.press"] == nil,
+                    @"Closing must remove owned animation records");
             [panel showWithoutChangingInput];
             Settle(window);
             Require(PanelWindow() == window, @"Panel was recreated during its lifecycle");
