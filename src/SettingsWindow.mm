@@ -63,6 +63,48 @@
 }
 @end
 
+// AppKit still owns event tracking, key equivalents, menus and focus. Only the
+// input face is shared with Lore's other controls.
+@interface LoreShortcutButton : NSButton
+@end
+
+@implementation LoreShortcutButton
+- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
+- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
+- (NSRect)focusRingMaskBounds { return LoreInputPath(self.bounds).bounds; }
+- (void)drawFocusRingMask {
+    [LoreInputPath(self.bounds) fill];
+}
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    LoreDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
+    [super drawRect:dirtyRect];
+}
+@end
+
+@interface LoreShortcutPressCount : NSPopUpButton
+@end
+
+@implementation LoreShortcutPressCount
+- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
+- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
+- (NSRect)focusRingMaskBounds { return LoreInputPath(self.bounds).bounds; }
+- (void)drawFocusRingMask {
+    [LoreInputPath(self.bounds) fill];
+}
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    LoreDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
+    [super drawRect:dirtyRect];
+}
+@end
+
 namespace {
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
@@ -85,9 +127,7 @@ NSStackView *Stack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation or
 
 NSImageView *Icon(NSString *name) {
     NSImageView *icon = [[NSImageView alloc] init];
-    icon.image = [[NSImage imageWithSystemSymbolName:name accessibilityDescription:nil]
-        imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:17
-                                                                                   weight:NSFontWeightMedium]];
+    icon.image = LoreSymbol(name, nil, 17);
     icon.contentTintColor = LoreAccentColor();
     icon.translatesAutoresizingMaskIntoConstraints = NO;
     [icon.widthAnchor constraintEqualToConstant:22].active = YES;
@@ -187,11 +227,13 @@ NSString *RowID(NSUInteger index, NSString *control) {
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [masthead addSubview:mascot];
-    NSTextField *title = Label(@"Lore", 36, NSFontWeightBold, LoreColor(LoreHeaderText));
-    title.font = LoreLogoFont(36);
+    NSTextField *title = Label(@"Lore", LoreBrandLogoSize, NSFontWeightBold, LoreColor(LoreHeaderText));
+    title.identifier = @"settings-brand-name";
+    title.font = LoreLogoFont(LoreBrandLogoSize);
     NSTextField *subtitle = Label(@"Settings · Shortcuts and startup", 12, NSFontWeightRegular,
                                   LoreColor(LoreHeaderText));
-    NSStackView *header = Stack(@[title, subtitle], NSUserInterfaceLayoutOrientationVertical, 0);
+    subtitle.identifier = @"settings-subtitle";
+    NSStackView *header = Stack(@[title, subtitle], NSUserInterfaceLayoutOrientationHorizontal, 20);
     [masthead addSubview:header];
 
     NSStackView *shortcutTitle = Stack(@[Icon(@"keyboard"),
@@ -208,26 +250,38 @@ NSString *RowID(NSUInteger index, NSString *control) {
         enabled.tag = i;
         enabled.identifier = RowID(i, @"enabled");
         [enabled setAccessibilityLabel:[@"Enable " stringByAppendingString:ShortcutActionTitle(action)]];
-        NSButton *record = [NSButton buttonWithTitle:@"" target:self action:@selector(beginRecording:)];
-        record.font = LoreLabelFont(13);
-        record.bezelColor = LoreColor(LoreButton);
+        NSButton *record = [[LoreShortcutButton alloc] initWithFrame:NSZeroRect];
+        record.target = self;
+        record.action = @selector(beginRecording:);
+        [record setButtonType:NSButtonTypeMomentaryPushIn];
+        record.title = @"";
+        record.bordered = NO;
+        record.focusRingType = NSFocusRingTypeExterior;
+        record.font = LoreLabelFont(LoreInputFontSize);
         record.contentTintColor = LoreColor(LoreText);
+        record.translatesAutoresizingMaskIntoConstraints = NO;
         record.tag = i;
         record.identifier = RowID(i, @"key");
         record.toolTip = @"Click, then press a new key combination once. Set Once or Twice separately. Esc cancels.";
         [record.widthAnchor constraintEqualToConstant:140].active = YES;
+        [record.heightAnchor constraintEqualToConstant:LoreInputHeight].active = YES;
         [record setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" shortcut key"]];
-        NSPopUpButton *count = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+        NSPopUpButton *count = [[LoreShortcutPressCount alloc] initWithFrame:NSZeroRect pullsDown:NO];
         [count addItemsWithTitles:@[@"Once", @"Twice"]];
-        count.font = LoreBodyFont(12);
+        count.bordered = NO;
+        count.focusRingType = NSFocusRingTypeExterior;
+        count.font = LoreLabelFont(LoreInputFontSize);
+        count.contentTintColor = LoreColor(LoreText);
+        count.translatesAutoresizingMaskIntoConstraints = NO;
         count.target = self;
         count.action = @selector(changePressCount:);
         count.tag = i;
         count.identifier = RowID(i, @"count");
         count.toolTip = @"For Twice, release the key between presses and press again within 400 ms.";
         [count.widthAnchor constraintEqualToConstant:84].active = YES;
+        [count.heightAnchor constraintEqualToConstant:LoreInputHeight].active = YES;
         [count setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" press count"]];
-        NSImage *restoreImage = [NSImage imageWithSystemSymbolName:@"arrow.counterclockwise" accessibilityDescription:nil];
+        NSImage *restoreImage = LoreSymbol(@"arrow.counterclockwise", nil, 17);
         NSButton *restore = [NSButton buttonWithImage:restoreImage target:self action:@selector(restoreShortcut:)];
         restore.tag = i;
         restore.identifier = RowID(i, @"reset");
@@ -318,12 +372,12 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [masthead.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
         [masthead.topAnchor constraintEqualToAnchor:root.topAnchor],
-        [masthead.heightAnchor constraintEqualToConstant:80],
-        [mascot.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:24],
+        [masthead.heightAnchor constraintEqualToConstant:LoreHeaderHeight],
+        [mascot.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:LoreBrandLeading],
         [mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [mascot.widthAnchor constraintEqualToConstant:56],
-        [mascot.heightAnchor constraintEqualToConstant:56],
-        [header.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:14],
+        [mascot.widthAnchor constraintEqualToConstant:LoreBrandMarkSize],
+        [mascot.heightAnchor constraintEqualToConstant:LoreBrandMarkSize],
+        [header.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:LoreBrandGap],
         [header.trailingAnchor constraintLessThanOrEqualToAnchor:masthead.trailingAnchor constant:-24],
         [header.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [content.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:24],
@@ -373,26 +427,36 @@ NSString *RowID(NSUInteger index, NSString *control) {
     for (NSUInteger i = 0; i < 2; ++i) {
         lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
         lore::ShortcutBinding binding = [_preferences bindingForAction:action];
+        BOOL recordingRow = recording && _recordingAction == static_cast<NSInteger>(i);
         _enabledSwitches[i].state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
         _enabledSwitches[i].enabled = !recording;
-        _recordButtons[i].title = _recordingAction == static_cast<NSInteger>(i) ? @"Press keys…" : ShortcutKeyLabel(binding);
-        _recordButtons[i].enabled = !_finishingRecording && (!recording || _recordingAction == static_cast<NSInteger>(i));
+        _recordButtons[i].title = recordingRow && !_finishingRecording ? @"Press keys…" : ShortcutKeyLabel(binding);
+        _recordButtons[i].enabled = !_finishingRecording && (!recording || recordingRow);
         [_pressCounts[i] selectItemAtIndex:binding.pressCount - 1];
         _pressCounts[i].enabled = !recording;
         _restoreButtons[i].enabled = !recording;
         ShortcutAvailability availability = [_monitor availabilityForAction:action];
         NSString *status = @"Off";
         NSString *permission = @"Retry";
+        LoreColorRole statusRole = LoreSecondaryText;
         switch (availability) {
             case ShortcutAvailabilityOff: break;
-            case ShortcutAvailabilityAvailable: status = @"Shortcut ready"; break;
-            case ShortcutAvailabilityNeedsInputMonitoring: status = @"Input Monitoring required"; permission = @"Input Monitoring…"; break;
-            case ShortcutAvailabilityNeedsAccessibility: status = @"Accessibility required"; permission = @"Accessibility…"; break;
-            case ShortcutAvailabilityFailed: status = @"Could not start monitoring"; break;
+            case ShortcutAvailabilityAvailable:
+                status = @"Shortcut ready"; statusRole = LoreSuccess; break;
+            case ShortcutAvailabilityNeedsInputMonitoring:
+                status = @"Input Monitoring required"; permission = @"Input Monitoring…"; statusRole = LoreWarning; break;
+            case ShortcutAvailabilityNeedsAccessibility:
+                status = @"Accessibility required"; permission = @"Accessibility…"; statusRole = LoreWarning; break;
+            case ShortcutAvailabilityFailed:
+                status = @"Could not start monitoring"; statusRole = LoreError; break;
+        }
+        if (recording) {
+            status = recordingRow ? (_finishingRecording ? @"Waiting for key release…" : @"Recording shortcut…") :
+                (binding.enabled ? @"Paused while recording" : @"Off");
+            statusRole = LoreSecondaryText;
         }
         _statuses[i].stringValue = status;
-        _statuses[i].textColor = availability == ShortcutAvailabilityAvailable ? LoreColor(LoreSuccess) :
-            availability == ShortcutAvailabilityFailed ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
+        _statuses[i].textColor = LoreColor(statusRole);
         _permissionButtons[i].title = permission;
         [_permissionButtons[i] setAccessibilityLabel:[permission stringByAppendingFormat:@" for %@", ShortcutActionTitle(action)]];
         _permissionButtons[i].hidden = availability == ShortcutAvailabilityOff || availability == ShortcutAvailabilityAvailable;
@@ -498,7 +562,6 @@ NSString *RowID(NSUInteger index, NSString *control) {
 
 - (void)finishRecording {
     if (!_eventMonitor) return;
-    _recordingAction = NSNotFound;
     _finishingRecording = YES;
     // Key-up may go to another app after focus loss; never restart a global
     // listener while one of the recorder's swallowed keys remains down.
@@ -528,6 +591,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _releaseTimer = nil;
     [NSEvent removeMonitor:_eventMonitor];
     _eventMonitor = nil;
+    _recordingAction = NSNotFound;
     _finishingRecording = NO;
     _monitor.suspended = NO;
     [self refresh];

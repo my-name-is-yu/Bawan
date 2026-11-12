@@ -31,6 +31,16 @@ final result: blocked
 - Settings callbacks, permission/login states, long error auto-height, theme changes, and 20 reuse cycles.
 - CI explicitly builds both panel_smoke and settings_smoke and retains their captures.
 
+## Component consistency follow-up
+
+- Primary pressed color is a fixed darker vermilion in both themes; bitmap-based tests require at least 4.5:1 text contrast.
+- Both mastheads share 80pt height, 64pt mascot, 48pt wordmark, 80pt leading inset and 12pt brand gap. Settings place their subtitle beside the wordmark.
+- Key recorder and press-count controls retain AppKit tracking, menus and focus while sharing a 28pt face, 13pt type, warm background and dark border. Tests read the rendered face to detect native bezel overpainting.
+- Gold headings and the swap button share clipped corners. Reset and section icons share explicit Medium symbol sizing.
+- Informational, warning and error messages receive explicit semantic roles. Recording, paused and key-release-wait states replace the misleading ready status while listening is suspended.
+- Command-Return invokes the same primary action as clicking: translate while idle and cancel while busy. Tests require cancellation without starting a new translation.
+- A fresh macOS CI run and capture review are required for these follow-up changes. Baseline CI captures for commit 8e556e2 were inspected during the consistency review; they do not validate this follow-up.
+
 ## Blocking verification
 
 This execution environment is Linux. The native build script exits with the requirement for an Apple Silicon Mac. No macOS build, signature validation, native screenshot, real-app operation or reference-to-runtime visual comparison has been completed in this change. Previous native QA results belong to the earlier interface and do not validate this design.

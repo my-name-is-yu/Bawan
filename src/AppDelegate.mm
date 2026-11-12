@@ -96,7 +96,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
         [owner->_translationPanel showWithoutChangingInput];
-        [owner->_translationPanel setAvailable:owner->_modelReady busy:owner->_busy status:message];
+        [owner->_translationPanel setAvailable:owner->_modelReady busy:owner->_busy status:message kind:LoreStatusWarning];
         owner->_statusItem.button.toolTip = message;
     };
     _shortcut.onOpenPanel = ^{
@@ -187,7 +187,8 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
     _statusItem.button.toolTip = [@"Lore — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelReady ? @"" : _modelItem.title];
+    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelReady ? @"" : _modelItem.title
+                                         kind:_modelFailed ? LoreStatusError : LoreStatusInformation];
 }
 
 - (void)updateShortcutItem {
@@ -228,7 +229,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
     [_translationPanel setOutput:@"" direction:lore::Direction::Automatic];
-    [_translationPanel setAvailable:YES busy:YES status:@""];
+    [_translationPanel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
 }
 
 - (void)handleEngineEvent:(const lore::EngineEvent &)event {
@@ -260,17 +261,18 @@ static NSString *StringFromUTF8(const std::string &text) {
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             [_translationPanel setAvailable:_modelReady busy:NO status:event.truncated ?
-                @"Output limit reached. The translation is incomplete. Select less text and try again." : @""];
+                @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
+                                      kind:event.truncated ? LoreStatusWarning : LoreStatusInformation];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled"];
+            [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelReady busy:NO status:StringFromUTF8(event.text)];
+            [_translationPanel setAvailable:_modelReady busy:NO status:StringFromUTF8(event.text) kind:LoreStatusError];
             break;
         default: break;
     }
@@ -281,7 +283,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = NO;
     if (_engine) _engine->cancel();
-    [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled"];
+    [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
 }
 
 - (void)openTranslation:(id)sender { [_translationPanel showForManualInput]; }

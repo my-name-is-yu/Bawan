@@ -66,7 +66,7 @@ static void CollectObjects(NSView *view, NSMutableSet<NSValue *> *views,
 static void CheckBounds(NSWindow *window) {
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
-    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot",
+    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot", @"brand-name",
                                    @"source-heading", @"output-heading", @"source-language", @"output-language",
                                    @"status", @"instructions"]) {
         NSView *view = FindView(root, identifier);
@@ -77,6 +77,20 @@ static void CheckBounds(NSWindow *window) {
                 NSContainsRect(NSInsetRect(root.bounds, -0.5, -0.5), frame),
                 [@"Control clipped outside panel: " stringByAppendingString:identifier]);
     }
+    NSView *header = Control(window, @"header", NSView.class);
+    NSView *mascot = Control(window, @"mascot", NSView.class);
+    NSTextField *brand = (NSTextField *)Control(window, @"brand-name", NSTextField.class);
+    NSRect brandFrame = [brand convertRect:brand.bounds toView:header];
+    NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
+    Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
+            std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
+            std::abs(brand.font.pointSize - LoreBrandLogoSize) < 0.1 &&
+            std::abs(NSMinX(mascotFrame) - LoreBrandLeading) < 1 &&
+            std::abs(NSMinX(brandFrame) - NSMaxX(mascotFrame) - LoreBrandGap) < 1,
+            @"Translator branding must use the common header geometry and typography");
+    Require(NSContainsRect(header.bounds, brandFrame) && !NSIntersectsRect(brandFrame, mascotFrame),
+            @"The translator wordmark must fit beside its mascot");
     NSTextView *source = (NSTextView *)Control(window, @"source", NSTextView.class);
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
     NSRect sourcePane = [source.enclosingScrollView convertRect:source.enclosingScrollView.bounds toView:root];
@@ -160,6 +174,66 @@ static void Capture(NSWindow *window, NSString *name) {
     NSData *png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
     NSString *path = [@"panel-smoke" stringByAppendingPathComponent:[name stringByAppendingString:@".png"]];
     Require([png writeToFile:path atomically:YES], @"Could not save AppKit view capture");
+}
+
+static void RequireTint(NSWindow *window, NSColor *actual, NSColor *expected, NSString *message) {
+    [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        NSColor *a = [actual colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+        NSColor *b = [expected colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+        Require(a != nil && b != nil && std::abs(a.redComponent - b.redComponent) < 0.01 &&
+                std::abs(a.greenComponent - b.greenComponent) < 0.01 &&
+                std::abs(a.blueComponent - b.blueComponent) < 0.01, message);
+    }];
+}
+
+static void RequireTintInBothAppearances(NSWindow *window, NSColor *actual, NSColor *expected, NSString *message) {
+    NSAppearance *previous = window.appearance;
+    for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+        window.appearance = [NSAppearance appearanceNamed:appearance];
+        RequireTint(window, actual, expected, message);
+    }
+    window.appearance = previous;
+}
+
+static CGFloat Luminance(NSColor *color) {
+    NSColor *rgb = [color colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    Require(rgb != nil, @"Could not read a rendered contrast color");
+    auto linear = [](CGFloat channel) {
+        return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) +
+           0.0722 * linear(rgb.blueComponent);
+}
+
+static void CheckPressedPrimaryContrast(NSWindow *window, NSButton *button) {
+    NSAppearance *previous = window.appearance;
+    NSArray<NSAppearanceName> *appearances = @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua];
+    for (NSUInteger i = 0; i < appearances.count; ++i) {
+        window.appearance = [NSAppearance appearanceNamed:appearances[i]];
+        [button highlight:YES];
+        button.needsDisplay = YES;
+        Settle(window);
+        Require(button.cell.highlighted, @"The contrast capture must show the pressed button");
+        NSBitmapImageRep *bitmap = [button bitmapImageRepForCachingDisplayInRect:button.bounds];
+        Require(bitmap != nil, @"Could not capture the pressed primary button");
+        __block CGFloat foreground = 0;
+        [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+            [button cacheDisplayInRect:button.bounds toBitmapImageRep:bitmap];
+            foreground = Luminance(button.contentTintColor);
+        }];
+        // Sample blank face padding, clear of the centered title, border and shadow.
+        NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / button.bounds.size.width);
+        CGFloat background = Luminance([bitmap colorAtX:x y:bitmap.pixelsHigh / 2]);
+        CGFloat contrast = (MAX(foreground, background) + 0.05) / (MIN(foreground, background) + 0.05);
+        Require(contrast >= 4.5, [NSString stringWithFormat:
+            @"Pressed primary text must retain 4.5:1 contrast in %@; rendered %.2f:1", appearances[i], contrast]);
+        Capture(window, i == 0 ? @"pressed-light" : @"pressed-dark");
+        [button highlight:NO];
+        button.needsDisplay = YES;
+        Require(CATransform3DIsIdentity(button.layer.transform) && [button.layer animationForKey:@"lore.press"] == nil,
+                @"Programmatic pressed-color capture must not add motion");
+    }
+    window.appearance = previous;
 }
 
 static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
@@ -361,7 +435,7 @@ static void RunSmoke(void) {
             source.enclosingScrollView.hasVerticalScroller && output.enclosingScrollView.hasVerticalScroller,
             @"Text panes must scroll independently");
 
-    [panel setAvailable:YES busy:NO status:@""];
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
     [panel showForSelection:@" \n"];
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
@@ -374,6 +448,7 @@ static void RunSmoke(void) {
     RequireLanguages(window, @"AUTO", @"—");
     Require(translate.enabled && !copy.enabled && !swap.enabled,
             @"Nonempty source must enable translation only");
+    CheckPressedPrimaryContrast(window, translate);
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::Automatic && [lastInput isEqualToString:english],
             @"Fresh input must translate automatically");
@@ -394,7 +469,7 @@ static void RunSmoke(void) {
             @"Swap must move the translation into source, clear output and translate back once");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
     RequireLanguages(window, @"JA", @"EN");
-    [panel setAvailable:YES busy:YES status:@"Translating…"];
+    [panel setAvailable:YES busy:YES status:@"Translating…" kind:LoreStatusInformation];
     NSRect recallFrame = window.frame;
     recallFrame.origin.x += 17;
     recallFrame.origin.y += 23;
@@ -405,14 +480,14 @@ static void RunSmoke(void) {
     [panel showForManualInput];
     Require(NSEqualRects(window.frame, recallFrame) && window.firstResponder == source &&
             [source.string isEqualToString:japanese] && [output.string isEqualToString:english] &&
-            [translate.title isEqualToString:@"Cancel"] && !swap.enabled &&
+            [translate.title isEqualToString:@"Cancel  ⌘↵"] && !swap.enabled &&
             [status.stringValue isEqualToString:@"Translating…"] &&
             translations == beforeRecall && cancellations == 0,
             @"Recalling a visible panel must preserve its position, text and busy state while focusing source");
     [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
-    Require(translations == beforeRecall + 1 && lastDirection == lore::Direction::JapaneseToEnglish,
-            @"Recalling a panel must preserve the direction from its previous swap");
-    [panel setAvailable:YES busy:NO status:@""];
+    Require(translations == beforeRecall && cancellations == 1 && lastDirection == lore::Direction::JapaneseToEnglish,
+            @"Command-Return must cancel a recalled busy panel once without losing its swapped direction");
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::JapaneseToEnglish,
             @"Retranslation must retain the swapped direction");
@@ -437,16 +512,16 @@ static void RunSmoke(void) {
     RequireLanguages(window, @"AUTO", @"—");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
     RequireLanguages(window, @"JA", @"EN");
-    [panel setAvailable:YES busy:YES status:@""];
+    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
     NSUInteger beforeDisabledSwap = translations;
     [swap performClick:nil];
     Require(!swap.enabled && translations == beforeDisabledSwap && [source.string isEqualToString:japanese],
             @"Swap must not move partial text while translation is running");
-    [panel setAvailable:NO busy:NO status:@"Loading the model…"];
+    [panel setAvailable:NO busy:NO status:@"Loading the model…" kind:LoreStatusInformation];
     [swap performClick:nil];
     Require(!swap.enabled && translations == beforeDisabledSwap,
             @"Swap must remain disabled while the model is unavailable");
-    [panel setAvailable:YES busy:NO status:@""];
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
     [panel showForSelection:english];
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::Automatic && !swap.enabled,
@@ -524,60 +599,76 @@ static void RunSmoke(void) {
     // high-contrast appearance names directly does not exercise Increase Contrast.
     [window setContentSize:NSMakeSize(640, 420)];
     [panel setShortcutAvailable:NO];
-    [panel setAvailable:YES busy:NO status:@"The input exceeds the 4,096-token limit. Select a shorter passage and translate again."];
+    [panel setAvailable:YES busy:NO status:@"The input exceeds the 4,096-token limit. Select a shorter passage and translate again." kind:LoreStatusWarning];
+    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreWarning),
+            @"Input-limit warnings must use the shared warning color");
     Capture(window, @"minimum-permission-error");
     [window setContentSize:NSMakeSize(720, 500)];
     [panel setShortcutAvailable:YES];
-    [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%"];
+    [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%" kind:LoreStatusInformation];
     Require(!translate.enabled && !swap.enabled, @"Translation and swap must wait for model readiness");
+    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreSecondaryText),
+            @"Model preparation must use the informational status color");
     Capture(window, @"model-setup");
-    [panel setAvailable:YES busy:YES status:@""];
+    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
     [panel setOutput:@"会議は来週" direction:lore::Direction::EnglishToJapanese];
-    Require([translate.title isEqualToString:@"Cancel"] && translate.enabled && copy.enabled,
+    Require([translate.title isEqualToString:@"Cancel  ⌘↵"] && translate.enabled && copy.enabled,
             @"Busy state must offer cancellation and partial-output copying");
     NSUInteger beforeKey = translations;
+    NSUInteger beforeKeyCancellations = cancellations;
     [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
-    Require(translations == beforeKey + 1, @"Command-Return must retranslate while busy");
+    Require(translations == beforeKey && cancellations == beforeKeyCancellations + 1,
+            @"Command-Return must cancel once while busy without starting another translation");
     [window performKeyEquivalent:KeyEvent(window, @"\r",
         NSEventModifierFlagCommand | NSEventModifierFlagCapsLock, 36)];
-    Require(translations == beforeKey + 2, @"Caps Lock must not disable Command-Return");
+    Require(translations == beforeKey && cancellations == beforeKeyCancellations + 2,
+            @"Caps Lock must not disable the Command-Return cancellation action");
     for (NSNumber *extra in @[@(NSEventModifierFlagControl), @(NSEventModifierFlagOption),
                               @(NSEventModifierFlagShift)]) {
         [window performKeyEquivalent:KeyEvent(window, @"\r",
             NSEventModifierFlagCommand | extra.unsignedIntegerValue, 36)];
     }
-    Require(translations == beforeKey + 2, @"Modified Return must not trigger accidental retranslations");
+    Require(translations == beforeKey && cancellations == beforeKeyCancellations + 2,
+            @"Extra modifiers must not trigger either translation or cancellation");
     RequireNoPressMotion(translate, @"Command-Return while busy");
     RequireNoPressMotion(copy, @"Command-Return while busy");
     [translate performClick:nil];
-    Require(cancellations == 1, @"Busy action must route cancellation");
-    [panel setAvailable:YES busy:NO status:@"Translation cancelled"];
+    Require(cancellations == beforeKeyCancellations + 3 && translations == beforeKey,
+            @"The busy button must cancel once, matching Command-Return");
+    [panel setAvailable:YES busy:NO status:@"The model could not translate this passage." kind:LoreStatusError];
+    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreError),
+            @"Translation failures must use the same error color as Settings");
+    Capture(window, @"translation-error");
+    [panel setAvailable:YES busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
+    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreSecondaryText),
+            @"Informational messages must clear the previous error styling");
     Capture(window, @"cancelled");
 
     // Warm both native text/theme states before establishing object identity baselines.
     [panel showForSelection:english];
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
-    [panel setAvailable:YES busy:NO status:@""];
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Settle(window);
     NSMutableSet<NSValue *> *baselineViews = [NSMutableSet set];
     NSMutableSet<NSValue *> *baselineConstraints = [NSMutableSet set];
     CollectObjects(window.contentView, baselineViews, baselineConstraints);
     Require(baselineConstraints.count > 0, @"No explicitly identified app constraints were found");
+    NSUInteger beforeLifecycleCancellations = cancellations;
     for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
         @autoreleasepool {
             [panel showForSelection:english];
-            [panel setAvailable:YES busy:NO status:@""];
+            [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
             [translate performClick:nil];
-            [panel setAvailable:YES busy:YES status:@""];
+            [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
             [panel setOutput:@"会議" direction:lore::Direction::EnglishToJapanese];
             [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
-            [panel setAvailable:YES busy:NO status:@""];
+            [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
             [translate performClick:nil];
-            [panel setAvailable:YES busy:YES status:@""];
+            [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
             [panel setOutput:@"会議は" direction:lore::Direction::EnglishToJapanese];
             [translate performClick:nil];
-            [panel setAvailable:YES busy:NO status:@"Translation cancelled"];
+            [panel setAvailable:YES busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
             window.appearance = [NSAppearance appearanceNamed:iteration % 2
                 ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
             [panel close];
@@ -599,7 +690,8 @@ static void RunSmoke(void) {
             CheckBounds(window);
         }
     }
-    Require(cancellations == 21 && closes == 20, @"Repeated lifecycle callbacks were lost or duplicated");
+    Require(cancellations == beforeLifecycleCancellations + 20 && closes == 20,
+            @"Repeated lifecycle callbacks were lost or duplicated");
     [copy performClick:nil];
     Require([copy.title isEqualToString:@"Copied"], @"Copy confirmation must remain available after reuse");
     [closeButton performClick:nil];

@@ -3,6 +3,7 @@
 #import "LoreAppearance.h"
 
 #include <cstdlib>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <set>
@@ -91,7 +92,8 @@ static void CheckBounds(NSWindow *window) {
             @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
             @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-local-keys",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
-            @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot"]) {
+            @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
+            @"settings-brand-name", @"settings-subtitle"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -100,6 +102,30 @@ static void CheckBounds(NSWindow *window) {
                 NSContainsRect(NSInsetRect(root.bounds, -0.5, -0.5), frame),
                 [NSString stringWithFormat:@"Settings view clipped: %@ %@ in %@", identifier,
                     NSStringFromRect(frame), NSStringFromRect(root.bounds)]);
+    }
+    NSView *header = FindView(root, @"settings-header");
+    NSView *mascot = FindView(root, @"settings-mascot");
+    NSTextField *brand = (NSTextField *)FindView(root, @"settings-brand-name");
+    NSView *subtitle = FindView(root, @"settings-subtitle");
+    NSRect brandFrame = [brand convertRect:brand.bounds toView:header];
+    NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
+    NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
+    Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
+            std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
+            std::abs(brand.font.pointSize - LoreBrandLogoSize) < 0.1 &&
+            std::abs(NSMinX(mascotFrame) - LoreBrandLeading) < 1 &&
+            std::abs(NSMinX(brandFrame) - NSMaxX(mascotFrame) - LoreBrandGap) < 1,
+            @"Settings branding must use the same geometry and typography as the translator");
+    Require(NSContainsRect(header.bounds, brandFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
+            !NSIntersectsRect(brandFrame, subtitleFrame) && !NSIntersectsRect(brandFrame, mascotFrame),
+            @"Settings wordmark and subtitle must fit without overlapping the mascot or each other");
+    for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
+                                   @"shortcut-panel-count"]) {
+        NSControl *control = (NSControl *)FindView(root, identifier);
+        Require(std::abs(control.bounds.size.height - LoreInputHeight) < 1 &&
+                std::abs(control.font.pointSize - LoreInputFontSize) < 0.1,
+                @"Key recorders and press counts must share the same input height and typography");
     }
     NSView *shortcut = FindView(root, @"shortcut-group");
     NSView *login = FindView(root, @"login-group");
@@ -151,6 +177,47 @@ static void Capture(NSWindow *window, NSString *name) {
     NSData *png = [composite representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
     NSString *path = [@"settings-smoke" stringByAppendingPathComponent:[name stringByAppendingString:@".png"]];
     Require([png writeToFile:path atomically:YES], @"Could not save settings capture");
+}
+
+static void RequireTint(NSWindow *window, NSColor *actual, NSColor *expected, NSString *message) {
+    [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        NSColor *a = [actual colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+        NSColor *b = [expected colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+        Require(a != nil && b != nil && std::abs(a.redComponent - b.redComponent) < 0.01 &&
+                std::abs(a.greenComponent - b.greenComponent) < 0.01 &&
+                std::abs(a.blueComponent - b.blueComponent) < 0.01, message);
+    }];
+}
+
+static void RequireTintInBothAppearances(NSWindow *window, NSColor *actual, NSColor *expected, NSString *message) {
+    NSAppearance *previous = window.appearance;
+    for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+        window.appearance = [NSAppearance appearanceNamed:appearance];
+        RequireTint(window, actual, expected, message);
+    }
+    window.appearance = previous;
+}
+
+static void CheckInputFaces(NSWindow *window) {
+    NSAppearance *previous = window.appearance;
+    for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+        window.appearance = [NSAppearance appearanceNamed:appearance];
+        Settle(window);
+        for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
+                                       @"shortcut-panel-count"]) {
+            NSView *control = FindView(window.contentView, identifier);
+            NSBitmapImageRep *bitmap = [control bitmapImageRepForCachingDisplayInRect:control.bounds];
+            Require(bitmap != nil, @"Could not capture a shortcut input face");
+            [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+                [control cacheDisplayInRect:control.bounds toBitmapImageRep:bitmap];
+            }];
+            // Read empty vertical padding, clear of title glyphs, popup arrows and the border.
+            NSInteger y = static_cast<NSInteger>(4 * bitmap.pixelsHigh / control.bounds.size.height);
+            RequireTint(window, [bitmap colorAtX:bitmap.pixelsWide / 2 y:y], LoreColor(LoreBackground),
+                [@"Native cells must preserve Lore's shared input face: " stringByAppendingString:identifier]);
+        }
+    }
+    window.appearance = previous;
 }
 
 static void SendKey(SmokeSettingsWindow *settings, unsigned short code,
@@ -222,6 +289,11 @@ static void RunSmoke(void) {
     Require([selectionStatus.stringValue isEqualToString:@"Input Monitoring required"] &&
         [panelStatus.stringValue isEqualToString:@"Accessibility required"],
         @"Each shortcut must explain its own missing permission");
+    RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreWarning),
+        @"Input Monitoring permission must use the shared warning color");
+    RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreWarning),
+        @"Accessibility permission must use the same warning color");
+    CheckInputFaces(window);
     Capture(window, @"light");
     CGFloat baseHeight = root.bounds.size.height;
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
@@ -236,6 +308,8 @@ static void RunSmoke(void) {
     [settings refresh];
     Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcuts must show ready");
+    RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreSuccess),
+        @"Ready shortcuts must use the shared success color");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
     CGFloat darkBrightness = BackgroundBrightness(window);
@@ -247,6 +321,8 @@ static void RunSmoke(void) {
     Require([panelStatus.stringValue isEqualToString:@"Could not start monitoring"] &&
         !FindView(root, @"shortcut-panel-permission").hidden,
         @"A failed shortcut needs its own status and retry action");
+    RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreError),
+        @"Failed shortcuts must use the same error color as translation failures");
     monitor.panelAvailability = ShortcutAvailabilityAvailable;
     [settings refresh];
 
@@ -255,6 +331,8 @@ static void RunSmoke(void) {
     CheckBounds(window);
     Require(login.state == NSControlStateValueOff && !hint.hidden && [hint.stringValue isEqualToString:longError],
         @"Failed changes must restore the actual login state and retain the full error");
+    RequireTintInBothAppearances(window, hint.textColor, LoreColor(LoreError),
+        @"Login failures must use the common error color");
     NSRect textBounds = [hint.attributedStringValue boundingRectWithSize:NSMakeSize(hint.bounds.size.width, CGFLOAT_MAX)
         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
     Require(root.bounds.size.height > baseHeight && hint.bounds.size.height + 2 >= textBounds.size.height,
@@ -271,18 +349,43 @@ static void RunSmoke(void) {
     Require(![preferences bindingForAction:lore::ShortcutAction::TranslateSelection].enabled &&
         [preferences bindingForAction:lore::ShortcutAction::OpenPanel].enabled &&
         [selectionStatus.stringValue isEqualToString:@"Off"], @"Disabling one action must preserve the other");
+    RequireTintInBothAppearances(window, feedback.textColor, LoreColor(LoreSecondaryText),
+        @"Saved settings must use informational feedback rather than error styling");
     [selectionCount selectItemAtIndex:0];
     SendControlAction(selectionCount);
     Require([preferences bindingForAction:lore::ShortcutAction::TranslateSelection].pressCount == 1,
         @"A disabled action must still allow changing its press count");
 
+    [panelKey performClick:nil];
+    Require([selectionStatus.stringValue isEqualToString:@"Off"] &&
+        [panelStatus.stringValue isEqualToString:@"Recording shortcut…"],
+        @"Recording another shortcut must keep an independently disabled row Off");
+    [panelKey performClick:nil];
+    Require(!monitor.suspended && [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
+        @"Canceling an empty recording must restore the enabled row's ready status");
+
     [selectionKey performClick:nil];
     Require(monitor.suspended && !selectionEnabled.enabled, @"Recording must suspend global shortcuts");
+    Require([selectionStatus.stringValue isEqualToString:@"Recording shortcut…"] &&
+        [panelStatus.stringValue isEqualToString:@"Paused while recording"],
+        @"Recording and paused rows must not claim that shortcuts are ready");
+    RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreSecondaryText),
+        @"Recording status must use neutral feedback rather than success green");
+    RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreSecondaryText),
+        @"Paused shortcuts must use neutral feedback rather than success green");
+    Capture(window, @"recording");
     SendKey(settings, 17, NSEventModifierFlagOption, YES, @"t");
     Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 17,
         @"Recording must save the requested physical key but wait for its release");
+    Require([selectionStatus.stringValue isEqualToString:@"Waiting for key release…"] &&
+        [panelStatus.stringValue isEqualToString:@"Paused while recording"],
+        @"Accepted held keys must show release waiting on the correct row");
+    Capture(window, @"release-wait");
     SendKey(settings, 17, NSEventModifierFlagOption, NO, @"t");
     Require(!monitor.suspended && selectionEnabled.enabled, @"Key-up must safely restore monitoring");
+    Require([selectionStatus.stringValue isEqualToString:@"Off"] &&
+        [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
+        @"Key release must restore each row's actual enabled and ready state");
     selectionEnabled.state = NSControlStateValueOn;
     SendControlAction(selectionEnabled);
     Require(![preferences bindingForAction:lore::ShortcutAction::TranslateSelection].enabled &&

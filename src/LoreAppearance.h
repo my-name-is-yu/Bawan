@@ -1,9 +1,17 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
+static constexpr CGFloat LoreHeaderHeight = 80;
+static constexpr CGFloat LoreBrandMarkSize = 64;
+static constexpr CGFloat LoreBrandLogoSize = 48;
+static constexpr CGFloat LoreBrandLeading = 80;
+static constexpr CGFloat LoreBrandGap = 12;
+static constexpr CGFloat LoreInputHeight = 28;
+static constexpr CGFloat LoreInputFontSize = 13;
+
 typedef NS_ENUM(NSInteger, LoreColorRole) {
     LoreBackground, LoreSurface, LoreText, LoreSecondaryText, LoreBorder,
-    LoreButton, LoreHeader, LoreHeaderText, LoreGold, LoreGoldText, LoreSuccess, LoreError
+    LoreButton, LoreHeader, LoreHeaderText, LoreGold, LoreGoldText, LoreSuccess, LoreError, LoreWarning
 };
 
 static inline NSColor *LoreRGB(unsigned value) {
@@ -18,11 +26,11 @@ static inline NSColor *LoreColor(LoreColorRole role) {
     dispatch_once(&once, ^{
         const unsigned light[] = {
             0xF7E7BB, 0xFFF1CE, 0x443024, 0x72543B, 0x624530, 0xF2DBA8,
-            0xB53B28, 0xF7E7BB, 0xD99E3D, 0x443024, 0x35603B, 0xB53B28
+            0xB53B28, 0xF7E7BB, 0xD99E3D, 0x443024, 0x35603B, 0xB53B28, 0x76520D
         };
         const unsigned dark[] = {
             0x28211C, 0x332821, 0xF5E6C8, 0xC9B594, 0xA88150, 0x493725,
-            0x7B2D20, 0xF5E6C8, 0xC99B53, 0x28211C, 0x9BC29A, 0xF08A63
+            0x7B2D20, 0xF5E6C8, 0xC99B53, 0x28211C, 0x9BC29A, 0xF08A63, 0xE3B76A
         };
         NSMutableArray<NSColor *> *colors = [NSMutableArray array];
         for (NSUInteger i = 0; i < sizeof(light) / sizeof(light[0]); ++i) {
@@ -49,6 +57,46 @@ static inline NSColor *LoreColor(LoreColorRole role) {
 
 static inline NSColor *LoreAccentFillColor(void) { return LoreRGB(0xB53B28); }
 static inline NSColor *LoreAccentColor(void) { return LoreColor(LoreError); }
+
+// A pressed primary action darkens in both appearances; its ivory label keeps
+// at least 4.5:1 contrast instead of blending the red toward light text in dark mode.
+static inline NSColor *LorePrimaryButtonFill(BOOL highlighted) {
+    return highlighted ? LoreRGB(0x943020) : LoreAccentFillColor();
+}
+
+static inline NSImage *LoreSymbol(NSString *name, NSString *description, CGFloat size) {
+    NSImage *image = [NSImage imageWithSystemSymbolName:name accessibilityDescription:description];
+    return [image imageWithSymbolConfiguration:
+        [NSImageSymbolConfiguration configurationWithPointSize:size weight:NSFontWeightMedium]];
+}
+
+static inline NSBezierPath *LoreCutCornerPath(NSRect rect) {
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    [path moveToPoint:NSMakePoint(NSMinX(rect) + 5, NSMinY(rect))];
+    [path lineToPoint:NSMakePoint(NSMaxX(rect) - 5, NSMinY(rect))];
+    [path lineToPoint:NSMakePoint(NSMaxX(rect), NSMinY(rect) + 5)];
+    [path lineToPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect) - 5)];
+    [path lineToPoint:NSMakePoint(NSMaxX(rect) - 5, NSMaxY(rect))];
+    [path lineToPoint:NSMakePoint(NSMinX(rect) + 5, NSMaxY(rect))];
+    [path lineToPoint:NSMakePoint(NSMinX(rect), NSMaxY(rect) - 5)];
+    [path lineToPoint:NSMakePoint(NSMinX(rect), NSMinY(rect) + 5)];
+    [path closePath];
+    return path;
+}
+
+static inline NSBezierPath *LoreInputPath(NSRect rect) {
+    return [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 1, 1) xRadius:6 yRadius:6];
+}
+
+static inline void LoreDrawInputSurface(NSRect rect, BOOL enabled, BOOL highlighted) {
+    NSBezierPath *path = LoreInputPath(rect);
+    NSColor *fill = LoreColor(enabled && highlighted ? LoreButton : LoreBackground);
+    [(enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
+    [path fill];
+    [LoreColor(LoreBorder) setStroke];
+    path.lineWidth = 1.5;
+    [path stroke];
+}
 
 static inline NSFont *LoreSerifFont(CGFloat size, BOOL bold) {
     NSFont *latin = [NSFont fontWithName:bold ? @"Georgia-Bold" : @"Georgia" size:size];
