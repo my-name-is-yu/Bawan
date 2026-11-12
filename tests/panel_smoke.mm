@@ -213,8 +213,8 @@ static void CheckPointerFeedback(NSButton *copy) {
                     !animation.autoreverses && animation.removedOnCompletion,
                     @"Pointer feedback must be a finite, automatically removed animation");
         }
-        // This executable does not enter NSApp.run. Submit the displayed layer
-        // tree explicitly, then service AppKit while waiting for CA completion.
+        // Submit the displayed layer tree, then service AppKit while waiting
+        // for the compositor's completion event.
         [copy.window displayIfNeeded];
         [CATransaction flush];
         NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
@@ -235,9 +235,6 @@ static void CheckPointerFeedback(NSButton *copy) {
 }
 
 static void RunSmoke(void) {
-    [NSApplication sharedApplication];
-    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    [NSApp finishLaunching];
     const char *expectedMotion = std::getenv("LORE_EXPECT_REDUCE_MOTION");
     if (expectedMotion) {
         Require(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion ==
@@ -432,16 +429,26 @@ static void RunSmoke(void) {
 
 int main(void) {
     @autoreleasepool {
-        @try {
-            try {
-                RunSmoke();
-                return EXIT_SUCCESS;
-            } catch (const std::exception &error) {
-                std::cerr << "Panel smoke failed: " << error.what() << '\n';
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        __block int result = EXIT_FAILURE;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            @try {
+                try {
+                    RunSmoke();
+                    result = EXIT_SUCCESS;
+                } catch (const std::exception &error) {
+                    std::cerr << "Panel smoke failed: " << error.what() << '\n';
+                }
+            } @catch (NSException *exception) {
+                std::cerr << "Panel smoke failed: " << exception.reason.UTF8String << '\n';
             }
-        } @catch (NSException *exception) {
-            std::cerr << "Panel smoke failed: " << exception.reason.UTF8String << '\n';
-        }
-        return EXIT_FAILURE;
+            [NSApp stop:nil];
+            [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                location:NSZeroPoint modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
+                windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];
+        });
+        [NSApp run];
+        return result;
     }
 }
