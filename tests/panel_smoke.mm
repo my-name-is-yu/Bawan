@@ -313,6 +313,7 @@ static void RunSmoke(void) {
     NSButton *copy = (NSButton *)Control(window, @"copy", NSButton.class);
     NSButton *settingsButton = (NSButton *)Control(window, @"settings", NSButton.class);
     NSButton *dismiss = (NSButton *)Control(window, @"dismiss", NSButton.class);
+    NSTextField *status = (NSTextField *)Control(window, @"status", NSTextField.class);
     Require(source.editable && source.selectable && !output.editable && output.selectable,
             @"Source/output editing contract changed");
     Require(source.enclosingScrollView != output.enclosingScrollView &&
@@ -323,6 +324,11 @@ static void RunSmoke(void) {
     [panel showForSelection:@" \n"];
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
+    NSInteger emptyCopyCount = NSPasteboard.generalPasteboard.changeCount;
+    [window performKeyEquivalent:KeyEvent(window, @"C",
+        NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
+    Require(NSPasteboard.generalPasteboard.changeCount == emptyCopyCount,
+            @"Command-Shift-C must leave the clipboard unchanged when output is empty");
     [panel showForSelection:english];
     Require(translate.enabled && !copy.enabled && !swap.enabled,
             @"Nonempty source must enable translation only");
@@ -337,6 +343,25 @@ static void RunSmoke(void) {
             [lastInput isEqualToString:japanese] && lastDirection == lore::Direction::JapaneseToEnglish,
             @"Swap must move the translation into source, clear output and translate back once");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
+    [panel setAvailable:YES busy:YES status:@"Translating…"];
+    NSRect recallFrame = window.frame;
+    recallFrame.origin.x += 17;
+    recallFrame.origin.y += 23;
+    [window setFrame:recallFrame display:NO];
+    recallFrame = window.frame;
+    [window makeFirstResponder:output];
+    NSUInteger beforeRecall = translations;
+    [panel showForManualInput];
+    Require(NSEqualRects(window.frame, recallFrame) && window.firstResponder == source &&
+            [source.string isEqualToString:japanese] && [output.string isEqualToString:english] &&
+            [translate.title isEqualToString:@"Cancel"] && !swap.enabled &&
+            [status.stringValue isEqualToString:@"Translating…"] &&
+            translations == beforeRecall && cancellations == 0,
+            @"Recalling a visible panel must preserve its position, text and busy state while focusing source");
+    [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
+    Require(translations == beforeRecall + 1 && lastDirection == lore::Direction::JapaneseToEnglish,
+            @"Recalling a panel must preserve the direction from its previous swap");
+    [panel setAvailable:YES busy:NO status:@""];
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::JapaneseToEnglish,
             @"Retranslation must retain the swapped direction");
@@ -380,6 +405,27 @@ static void RunSmoke(void) {
     Require([copy.title isEqualToString:@"Copied"] && copy.image != nil,
             @"Successful copying must confirm without changing the translated content");
     RequireNoPressMotion(copy, @"programmatic copy before pointer input");
+    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:lore::Direction::EnglishToJapanese];
+    [window performKeyEquivalent:KeyEvent(window, @"C",
+        NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
+    Require([[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString]
+                isEqualToString:[japanese stringByAppendingString:@"\n"]] &&
+            [copy.title isEqualToString:@"Copied"],
+            @"Command-Shift-C must copy exact output and show the normal copy confirmation");
+    RequireNoPressMotion(copy, @"Command-Shift-C before pointer input");
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [window performKeyEquivalent:KeyEvent(window, @"C",
+        NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagCapsLock, 8)];
+    Require([[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:japanese],
+            @"Caps Lock must not disable Command-Shift-C");
+    NSInteger copiedCount = NSPasteboard.generalPasteboard.changeCount;
+    for (NSNumber *extra in @[@(NSEventModifierFlagControl), @(NSEventModifierFlagOption)]) {
+        [window performKeyEquivalent:KeyEvent(window, @"C",
+            NSEventModifierFlagCommand | NSEventModifierFlagShift | extra.unsignedIntegerValue, 8)];
+    }
+    Require(NSPasteboard.generalPasteboard.changeCount == copiedCount,
+            @"Extra modifiers must not trigger accidental translation copying");
+    RequireNoPressMotion(copy, @"Command-Shift-C with Caps Lock");
     Capture(window, @"copied");
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     Require([copy.title isEqualToString:@"Copied"],
@@ -398,6 +444,14 @@ static void RunSmoke(void) {
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     RequireNoPressMotion(copy, @"new passage and output after pointer input");
     RequireNoPressMotion(translate, @"new passage and output after pointer input");
+
+    NSTextField *instructions = (NSTextField *)Control(window, @"instructions", NSTextField.class);
+    [panel setShortcutInstructions:@"Translate Selection: ⌃T twice · Open Translator: ⌥T twice"];
+    Require(!instructions.hidden && [instructions.stringValue isEqualToString:
+                @"Translate Selection: ⌃T twice · Open Translator: ⌥T twice"],
+            @"The existing helper must display the current shortcut assignments");
+    [panel setShortcutInstructions:@""];
+    Require(instructions.hidden, @"An empty shortcut helper must leave no extra message row");
 
     [panel setShortcutAvailable:YES];
     [panel showForSelection:japanese];

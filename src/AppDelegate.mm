@@ -3,7 +3,6 @@
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
 #import "SettingsWindow.h"
-#import <CoreGraphics/CoreGraphics.h>
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -13,8 +12,10 @@
     NSStatusItem *_statusItem;
     NSMenuItem *_modelItem;
     NSMenuItem *_shortcutItem;
+    NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
     SettingsWindow *_settingsWindow;
+    ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
     ShortcutMonitor *_shortcut;
@@ -36,6 +37,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    _shortcutPreferences = [[ShortcutPreferences alloc] init];
     [self buildMenus];
     _modelStatus = @"Checking the model…";
     _translationPanel = [[TranslationPanel alloc] init];
@@ -78,7 +80,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [owner updateStatus];
     };
 
-    _shortcut = [[ShortcutMonitor alloc] init];
+    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
     _shortcut.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
@@ -93,14 +95,22 @@ static NSString *StringFromUTF8(const std::string &text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
-        if (owner->_shortcut.listening) {
-            [owner->_translationPanel showWithoutChangingInput];
-        }
+        [owner->_translationPanel showWithoutChangingInput];
         [owner->_translationPanel setAvailable:owner->_modelReady busy:owner->_busy status:message];
         owner->_statusItem.button.toolTip = message;
     };
-    id enabled = [NSUserDefaults.standardUserDefaults objectForKey:@"shortcutEnabled"];
-    if (!enabled || [enabled boolValue]) [_shortcut startRequestingPermission:NO];
+    _shortcut.onOpenPanel = ^{
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner->_translationPanel showForManualInput];
+    };
+    _shortcut.onAvailabilityChanged = ^{
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner updateShortcutItem];
+    };
+    [NSNotificationCenter.defaultCenter addObserver:self
+        selector:@selector(shortcutPreferencesDidChange:)
+        name:LoreShortcutsDidChangeNotification object:_shortcutPreferences];
+    [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
     [_modelStore prepare];
@@ -134,7 +144,11 @@ static NSString *StringFromUTF8(const std::string &text) {
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[self menuItem:@"Open Translator" action:@selector(openTranslation:) key:@""]];
     _shortcutItem = [self menuItem:@"Translate with Double ⌘C" action:@selector(toggleShortcut:) key:@""];
+    _shortcutItem.tag = static_cast<NSInteger>(lore::ShortcutAction::TranslateSelection);
     [menu addItem:_shortcutItem];
+    _panelShortcutItem = [self menuItem:@"Open Translator with Double ⌥T" action:@selector(toggleShortcut:) key:@""];
+    _panelShortcutItem.tag = static_cast<NSInteger>(lore::ShortcutAction::OpenPanel);
+    [menu addItem:_panelShortcutItem];
     _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(retryModel:) key:@""];
     _retryItem.hidden = YES;
     [menu addItem:_retryItem];
@@ -177,13 +191,35 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateShortcutItem {
-    _shortcutItem.state = _shortcut.listening ? NSControlStateValueOn : NSControlStateValueOff;
-    _shortcutItem.title = _shortcut.listening ? @"Translate with Double ⌘C" : @"Enable Double ⌘C Translation…";
-    [_translationPanel setShortcutAvailable:_shortcut.listening];
-    [_settingsWindow setShortcutAvailable:_shortcut.listening permissionGranted:CGPreflightListenEventAccess()];
+    NSMutableArray<NSString *> *instructions = [NSMutableArray array];
+    BOOL needsPermission = NO;
+    for (NSMenuItem *item in @[_shortcutItem, _panelShortcutItem]) {
+        auto action = static_cast<lore::ShortcutAction>(item.tag);
+        auto binding = [_shortcutPreferences bindingForAction:action];
+        ShortcutAvailability availability = [_shortcut availabilityForAction:action];
+        item.state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+        NSString *verb = action == lore::ShortcutAction::TranslateSelection ? @"Selection Translation" : @"Open Translator";
+        NSString *suffix = @"";
+        if (binding.enabled && availability != ShortcutAvailabilityAvailable) {
+            suffix = availability == ShortcutAvailabilityFailed ? @" (monitoring unavailable)" : @" (permission required)";
+            needsPermission = YES;
+        }
+        item.title = [NSString stringWithFormat:@"%@ — %@%@", verb, ShortcutBindingLabel(binding), suffix];
+        if (binding.enabled && availability == ShortcutAvailabilityAvailable) {
+            [instructions addObject:[NSString stringWithFormat:@"%@: %@", verb, ShortcutBindingLabel(binding)]];
+        }
+    }
+    if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
+    [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
+    [_settingsWindow refresh];
 }
 
-- (void)menuWillOpen:(NSMenu *)menu { [self updateShortcutItem]; }
+- (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
+
+- (void)menuWillOpen:(NSMenu *)menu {
+    [_shortcut refresh];
+    [self updateShortcutItem];
+}
 
 - (void)translateText:(NSString *)text direction:(lore::Direction)direction {
     if (!_modelReady || !_engine || _terminating) return;
@@ -250,11 +286,15 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)openTranslation:(id)sender { [_translationPanel showForManualInput]; }
 
-- (void)toggleShortcut:(id)sender {
-    BOOL enable = !_shortcut.listening;
-    [NSUserDefaults.standardUserDefaults setBool:enable forKey:@"shortcutEnabled"];
-    if (enable) [_shortcut startRequestingPermission:YES];
-    else [_shortcut stop];
+- (void)toggleShortcut:(NSMenuItem *)sender {
+    auto action = static_cast<lore::ShortcutAction>(sender.tag);
+    auto binding = [_shortcutPreferences bindingForAction:action];
+    binding.enabled = !binding.enabled;
+    NSString *error = nil;
+    if (![_shortcutPreferences setBinding:binding forAction:action error:&error]) {
+        [self openSettings:nil];
+        [_settingsWindow showError:error ?: @"Unable to enable this shortcut."];
+    }
     [self updateShortcutItem];
 }
 
@@ -265,14 +305,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStatus = @"Checking the model…";
     [self updateStatus];
     [_modelStore prepare];
-}
-
-- (void)openInputMonitoring:(id)sender {
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"shortcutEnabled"];
-    [_shortcut startRequestingPermission:YES];
-    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:
-        @"x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"]];
-    [self updateShortcutItem];
 }
 
 - (void)openLoginSettings:(id)sender { [SMAppService openSystemSettingsLoginItems]; }
@@ -291,22 +323,18 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)openSettings:(id)sender {
     if (!_settingsWindow) {
-        _settingsWindow = [[SettingsWindow alloc] init];
+        _settingsWindow = [[SettingsWindow alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
         __weak AppDelegate *weakSelf = self;
-        _settingsWindow.onInputMonitoring = ^{ [weakSelf openInputMonitoring:nil]; };
         _settingsWindow.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         _settingsWindow.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
     }
     [self refreshSettings];
-    [NSApp activateIgnoringOtherApps:YES];
-    [_settingsWindow showWindow:nil];
-    [_settingsWindow.window makeKeyAndOrderFront:nil];
+    [_settingsWindow showSettings];
 }
 
 - (void)refreshSettings {
     // Retry after returning from System Settings without prompting or polling.
-    id enabled = [NSUserDefaults.standardUserDefaults objectForKey:@"shortcutEnabled"];
-    if ((!enabled || [enabled boolValue]) && !_shortcut.listening) [_shortcut startRequestingPermission:NO];
+    [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsWindow setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
 }
@@ -324,6 +352,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
     _terminating = YES;
+    [NSNotificationCenter.defaultCenter removeObserver:self];
     [_shortcut stop];
     [_modelStore cancel];
     if (_engine) {

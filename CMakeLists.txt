@@ -63,20 +63,21 @@ target_include_directories(lore_engine PUBLIC src)
 target_link_libraries(lore_engine PUBLIC llama Threads::Threads)
 target_compile_options(lore_engine PRIVATE -Wall -Wextra -Wpedantic)
 
-add_library(lore_gesture STATIC src/CopyGesture.cpp)
+add_library(lore_gesture STATIC src/CopyGesture.cpp src/ShortcutBinding.cpp)
 target_include_directories(lore_gesture PUBLIC src)
 target_compile_options(lore_gesture PRIVATE -Wall -Wextra -Wpedantic)
 
 if(LORE_BUILD_APP)
     add_executable(Lore MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsWindow.mm
-        src/ShortcutMonitor.mm src/ModelStore.mm
+        src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
         resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
     set_source_files_properties(resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Lore PRIVATE lore_engine lore_gesture
         "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
-        "-framework CoreGraphics" "-framework ServiceManagement")
+        "-framework CoreGraphics" "-framework ServiceManagement"
+        "-framework ApplicationServices" "-framework Carbon")
     target_compile_options(Lore PRIVATE -fobjc-arc -Wall -Wextra)
     set_target_properties(Lore PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
@@ -95,7 +96,15 @@ if(LORE_BUILD_TESTS)
     add_executable(gesture_tests tests/gesture_tests.cpp)
     target_link_libraries(gesture_tests PRIVATE lore_gesture)
     add_test(NAME copy_gesture COMMAND gesture_tests)
+    add_executable(shortcut_tests tests/shortcut_tests.cpp)
+    target_link_libraries(shortcut_tests PRIVATE lore_gesture)
+    add_test(NAME shortcuts COMMAND shortcut_tests)
     if(APPLE)
+        add_executable(shortcut_preferences_tests tests/shortcut_preferences_tests.mm src/ShortcutPreferences.mm)
+        target_link_libraries(shortcut_preferences_tests PRIVATE lore_gesture
+            "-framework AppKit" "-framework Foundation" "-framework Carbon")
+        target_compile_options(shortcut_preferences_tests PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME shortcut_preferences COMMAND shortcut_preferences_tests)
         add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm)
         target_include_directories(panel_smoke PRIVATE src)
         target_link_libraries(panel_smoke PRIVATE "-framework AppKit" "-framework QuartzCore")
@@ -103,9 +112,11 @@ if(LORE_BUILD_TESTS)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
-        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsWindow.mm)
+        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsWindow.mm
+            src/ShortcutPreferences.mm src/ShortcutMonitor.mm)
         target_include_directories(settings_smoke PRIVATE src)
-        target_link_libraries(settings_smoke PRIVATE "-framework AppKit" "-framework ServiceManagement")
+        target_link_libraries(settings_smoke PRIVATE lore_gesture "-framework AppKit" "-framework ServiceManagement"
+            "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon")
         target_compile_options(settings_smoke PRIVATE -fobjc-arc -Wall -Wextra)
         add_test(NAME settings_window COMMAND settings_smoke)
         set_tests_properties(settings_window PROPERTIES
