@@ -78,12 +78,30 @@ static void CheckBounds(NSWindow *window) {
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
     NSRect sourcePane = [source.enclosingScrollView convertRect:source.enclosingScrollView.bounds toView:root];
     NSRect outputPane = [output.enclosingScrollView convertRect:output.enclosingScrollView.bounds toView:root];
+    CGFloat widthDifference = std::abs(sourcePane.size.width - outputPane.size.width);
+    CGFloat topDifference = std::abs(NSMinY(sourcePane) - NSMinY(outputPane));
     Require(sourcePane.size.width > 0 && sourcePane.size.height > 0 &&
             outputPane.size.width > 0 && outputPane.size.height > 0 &&
             !NSIntersectsRect(sourcePane, outputPane) &&
-            std::abs(sourcePane.size.width - outputPane.size.width) < 1 &&
-            std::abs(NSMinY(sourcePane) - NSMinY(outputPane)) < 1,
-            @"Text panes must remain equal-width, aligned and non-overlapping");
+            widthDifference < 1 && topDifference < 1,
+            [NSString stringWithFormat:@"Text panes must remain equal-width, aligned and non-overlapping: "
+                @"source=%@ translation=%@ width_delta=%.3f top_delta=%.3f overlap=%@ scale=%.1f",
+                NSStringFromRect(sourcePane), NSStringFromRect(outputPane), widthDifference, topDifference,
+                NSIntersectsRect(sourcePane, outputPane) ? @"yes" : @"no", window.backingScaleFactor]);
+    CGFloat pixelTolerance = 1.0 / MAX(1.0, window.backingScaleFactor) + 0.01;
+    for (NSTextView *text in @[source, output]) {
+        NSScrollView *scroll = text.enclosingScrollView;
+        CGFloat clipWidth = scroll.contentView.bounds.size.width;
+        CGFloat documentWidth = text.frame.size.width;
+        CGFloat containerWidth = text.textContainer.containerSize.width;
+        Require(!scroll.hasHorizontalScroller && !text.horizontallyResizable &&
+                text.textContainer.widthTracksTextView &&
+                std::abs(documentWidth - clipWidth) <= pixelTolerance &&
+                std::abs(containerWidth - clipWidth) <= pixelTolerance,
+                [NSString stringWithFormat:@"Text must wrap to its viewport without horizontal scrolling: "
+                    @"%@ clip=%.3f document=%.3f container=%.3f tolerance=%.3f",
+                    text.identifier, clipWidth, documentWidth, containerWidth, pixelTolerance]);
+    }
     NSView *translate = FindView(root, @"translate");
     NSView *copy = FindView(root, @"copy");
     NSRect translateFrame = [translate convertRect:translate.bounds toView:root];

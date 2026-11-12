@@ -240,9 +240,12 @@ static LoreButton *ButtonView(NSView *parent, NSString *identifier, NSString *ti
 
 static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, BOOL editable,
                                NSString *identifier, NSString *label, NSString *placeholder) {
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    // Start the clip view and document at the same width. Otherwise the first
+    // autoresize adds the initial document width and silently clips long lines.
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     scroll.borderType = NSNoBorder;
     scroll.hasVerticalScroller = YES;
+    scroll.autohidesScrollers = YES;
     scroll.scrollerStyle = NSScrollerStyleOverlay;
     scroll.drawsBackground = NO;
     scroll.contentView.drawsBackground = NO;
@@ -388,6 +391,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), YES, NO);
     _copy.image = Symbol(@"doc.on.doc", @"", 13);
     _copy.imagePosition = NSImageLeft;
+    _copy.imageHugsTitle = YES;
 
     AddConstraints(@[
         [header.topAnchor constraintEqualToAnchor:content.topAnchor],
@@ -424,10 +428,10 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [sourceLabel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
         [sourceLabel.heightAnchor constraintEqualToConstant:18],
         [outputLabel.topAnchor constraintEqualToAnchor:sourceLabel.topAnchor],
-        [outputLabel.leadingAnchor constraintEqualToAnchor:divider.trailingAnchor constant:24],
+        [outputLabel.leadingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:24],
         [outputLabel.heightAnchor constraintEqualToAnchor:sourceLabel.heightAnchor],
         [sourceScroll.leadingAnchor constraintEqualToAnchor:sourceLabel.leadingAnchor],
-        [sourceScroll.trailingAnchor constraintEqualToAnchor:divider.leadingAnchor constant:-24],
+        [sourceScroll.trailingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:-24],
         [sourceScroll.topAnchor constraintEqualToAnchor:sourceLabel.bottomAnchor constant:14],
         [sourceScroll.bottomAnchor constraintEqualToAnchor:_instructions.topAnchor constant:-12],
         [outputScroll.leadingAnchor constraintEqualToAnchor:outputLabel.leadingAnchor],
