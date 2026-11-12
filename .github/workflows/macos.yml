@@ -18,9 +18,37 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-          cmake --build build --target gesture_tests engine_smoke engine_profile --parallel 3
+          cmake --build build --target gesture_tests panel_smoke engine_smoke engine_profile --parallel 3
           codesign --verify --strict build/Lore.app
           ctest --test-dir build --output-on-failure
+      - name: Check pointer motion with OS Reduce Motion disabled
+        run: |
+          set -euo pipefail
+          lore_previous_reduce_motion=$(defaults read com.apple.universalaccess reduceMotion 2>/dev/null || true)
+          restore_lore_motion_preference() {
+            if [ -n "$lore_previous_reduce_motion" ]; then
+              case "$lore_previous_reduce_motion" in
+                1|true|yes) defaults write com.apple.universalaccess reduceMotion -bool true ;;
+                0|false|no) defaults write com.apple.universalaccess reduceMotion -bool false ;;
+                *) return 1 ;;
+              esac
+            else
+              defaults delete com.apple.universalaccess reduceMotion 2>/dev/null || true
+            fi
+          }
+          trap restore_lore_motion_preference EXIT
+          defaults write com.apple.universalaccess reduceMotion -bool false
+          cd build
+          LORE_EXPECT_REDUCE_MOTION=0 ./panel_smoke | tee panel-smoke/normal-motion.log
+      - name: Upload AppKit view captures (not full UI or resource validation)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-view-captures
+          path: |
+            build/panel-smoke/
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
       - name: Verify and translate with the official model
         run: |
           mkdir -p build/models

@@ -84,7 +84,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     if (!CGPreflightListenEventAccess() &&
         !(request && CGRequestListenEventAccess())) {
         if (report && self.onProblem) {
-            self.onProblem(@"⌘Cを2回押して翻訳するには、システム設定 → プライバシーとセキュリティ → 入力監視でLoreを許可してください。手入力での翻訳は使えます。");
+            self.onProblem(@"To translate with Double ⌘C, allow Lore in System Settings → Privacy & Security → Input Monitoring. You can still type or paste text.");
         }
         return NO;
     }
@@ -96,7 +96,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     if (!_tap || !_source) {
         [self removeTap];
         if (report && self.onProblem) {
-            self.onProblem(@"キーの監視を開始できませんでした。入力監視の許可を確認し、設定から再度有効にしてください。");
+            self.onProblem(@"Unable to start keyboard monitoring. Check Input Monitoring permissions and enable the shortcut again in Settings.");
         }
         return NO;
     }
@@ -142,7 +142,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
         if (_tap && CGPreflightListenEventAccess()) {
             CGEventTapEnable(_tap, true);
         } else if (self.onProblem) {
-            self.onProblem(@"キーの監視が停止しました。システム設定の入力監視を確認してください。手入力での翻訳は使えます。");
+            self.onProblem(@"Keyboard monitoring stopped. Check Input Monitoring in System Settings. You can still type or paste text.");
         }
         return;
     }
@@ -185,7 +185,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     if (@available(macOS 15.4, *)) {
         if (pasteboard.accessBehavior == NSPasteboardAccessBehaviorAlwaysDeny) {
             ++_readGeneration;
-            if (self.onProblem) self.onProblem(@"クリップボードの読み取りが拒否されています。システム設定でLoreのクリップボード利用を許可するか、原文を手入力してください。");
+            if (self.onProblem) self.onProblem(@"Clipboard access was denied. Allow clipboard access for Lore in System Settings, or type or paste the source text.");
             return;
         }
     }
@@ -199,13 +199,13 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
         if (text.length && [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {
             if (self.onText) self.onText(text);
         } else if (self.onProblem) {
-            self.onProblem(@"コピーしたテキストを読み取れませんでした。文章を選択して再度⌘Cを2回押すか、原文を手入力してください。");
+            self.onProblem(@"Unable to read the copied text. Select text and press ⌘C twice again, or type or paste the source text.");
         }
         return;
     }
     if (NSProcessInfo.processInfo.systemUptime >= deadline) {
         ++_readGeneration;
-        if (self.onProblem) self.onProblem(@"コピーの更新を確認できませんでした。文章を選択して再度⌘Cを2回押してください。");
+        if (self.onProblem) self.onProblem(@"No new copy was detected. Select text and press ⌘C twice again.");
         return;
     }
     __weak ShortcutMonitor *weakSelf = self;

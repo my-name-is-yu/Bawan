@@ -30,15 +30,15 @@
 
 static NSString *StringFromUTF8(const std::string &text) {
     return [[NSString alloc] initWithBytes:text.data() length:text.size()
-                                 encoding:NSUTF8StringEncoding] ?: @"文字列を表示できませんでした。";
+                                 encoding:NSUTF8StringEncoding] ?: @"Unable to display the text.";
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     [self buildMenus];
-    _modelStatus = @"モデルを確認しています…";
+    _modelStatus = @"Checking the model…";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
-    _translationPanel.onTranslate = ^(NSString *text, NSInteger direction) {
+    _translationPanel.onTranslate = ^(NSString *text, lore::Direction direction) {
         [weakSelf translateText:text direction:direction];
     };
     _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
@@ -63,7 +63,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStore.onReady = ^(NSURL *fileURL) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        owner->_modelStatus = @"モデルを読み込んでいます…";
+        owner->_modelStatus = @"Loading the model…";
         [owner updateStatus];
         owner->_engine->loadModel(fileURL.fileSystemRepresentation);
     };
@@ -82,7 +82,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (!owner || owner->_terminating) return;
         [owner->_translationPanel showForSelection:text];
         if (owner->_modelReady) {
-            [owner translateText:text direction:owner->_translationPanel.directionIndex];
+            [owner translateText:text direction:lore::Direction::Automatic];
         } else {
             [owner updateStatus];
         }
@@ -116,43 +116,43 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)buildMenus {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
-    NSImage *image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Lore 翻訳"];
+    NSImage *image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Lore Translator"];
     if (image) {
         [image setTemplate:YES];
         _statusItem.button.image = image;
     } else {
-        _statusItem.button.title = @"訳";
+        _statusItem.button.title = @"L";
     }
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Lore"];
     menu.autoenablesItems = NO;
     menu.delegate = self;
-    _modelItem = [self menuItem:@"モデルを準備しています…" action:NULL key:@""];
+    _modelItem = [self menuItem:@"Preparing the model…" action:NULL key:@""];
     _modelItem.enabled = NO;
     [menu addItem:_modelItem];
     [menu addItem:NSMenuItem.separatorItem];
-    [menu addItem:[self menuItem:@"翻訳画面を開く" action:@selector(openTranslation:) key:@""]];
-    _shortcutItem = [self menuItem:@"⌘C 2回で翻訳" action:@selector(toggleShortcut:) key:@""];
+    [menu addItem:[self menuItem:@"Open Translator" action:@selector(openTranslation:) key:@""]];
+    _shortcutItem = [self menuItem:@"Translate with Double ⌘C" action:@selector(toggleShortcut:) key:@""];
     [menu addItem:_shortcutItem];
-    _retryItem = [self menuItem:@"モデルの準備を再試行" action:@selector(retryModel:) key:@""];
+    _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(retryModel:) key:@""];
     _retryItem.hidden = YES;
     [menu addItem:_retryItem];
-    [menu addItem:[self menuItem:@"設定…" action:@selector(openSettings:) key:@","]];
+    [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [menu addItem:NSMenuItem.separatorItem];
-    [menu addItem:[self menuItem:@"Loreを終了" action:@selector(quit:) key:@"q"]];
+    [menu addItem:[self menuItem:@"Quit Lore" action:@selector(quit:) key:@"q"]];
     _statusItem.menu = menu;
 
     // Native editing commands are required when the nonactivating panel becomes key.
     NSMenu *main = [[NSMenu alloc] initWithTitle:@""];
     NSMenuItem *appItem = [[NSMenuItem alloc] initWithTitle:@"Lore" action:NULL keyEquivalent:@""];
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Lore"];
-    [appMenu addItem:[self menuItem:@"設定…" action:@selector(openSettings:) key:@","]];
+    [appMenu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [appMenu addItem:NSMenuItem.separatorItem];
-    [appMenu addItem:[self menuItem:@"Loreを終了" action:@selector(quit:) key:@"q"]];
+    [appMenu addItem:[self menuItem:@"Quit Lore" action:@selector(quit:) key:@"q"]];
     appItem.submenu = appMenu;
     [main addItem:appItem];
-    NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:@"編集" action:NULL keyEquivalent:@""];
-    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"編集"];
-    NSArray<NSString *> *titles = @[@"取り消す", @"やり直す", @"カット", @"コピー", @"ペースト", @"すべてを選択"];
+    NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
+    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"Edit"];
+    NSArray<NSString *> *titles = @[@"Undo", @"Redo", @"Cut", @"Copy", @"Paste", @"Select All"];
     NSArray<NSString *> *selectors = @[@"undo:", @"redo:", @"cut:", @"copy:", @"paste:", @"selectAll:"];
     NSArray<NSString *> *keys = @[@"z", @"z", @"x", @"c", @"v", @"a"];
     for (NSUInteger i = 0; i < titles.count; ++i) {
@@ -167,31 +167,29 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateStatus {
-    _modelItem.title = _modelStatus ?: @"モデルを準備しています…";
+    _modelItem.title = _modelStatus ?: @"Preparing the model…";
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
     _statusItem.button.toolTip = [@"Lore — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelItem.title];
+    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelReady ? @"" : _modelItem.title];
 }
 
 - (void)updateShortcutItem {
     _shortcutItem.state = _shortcut.listening ? NSControlStateValueOn : NSControlStateValueOff;
-    _shortcutItem.title = _shortcut.listening ? @"⌘C 2回で翻訳" : @"⌘C 2回で翻訳を有効にする…";
+    _shortcutItem.title = _shortcut.listening ? @"Translate with Double ⌘C" : @"Enable Double ⌘C Translation…";
     [_translationPanel setShortcutAvailable:_shortcut.listening];
 }
 
 - (void)menuWillOpen:(NSMenu *)menu { [self updateShortcutItem]; }
 
-- (void)translateText:(NSString *)text direction:(NSInteger)direction {
+- (void)translateText:(NSString *)text direction:(lore::Direction)direction {
     if (!_modelReady || !_engine || _terminating) return;
     const char *utf8 = text.UTF8String;
     if (!utf8) return;
-    lore::Direction target = direction == 1 ? lore::Direction::EnglishToJapanese :
-        direction == 2 ? lore::Direction::JapaneseToEnglish : lore::Direction::Automatic;
-    _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), target);
+    _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
-    [_translationPanel setOutput:@""];
-    [_translationPanel setAvailable:YES busy:YES status:@"翻訳しています…"];
+    [_translationPanel setOutput:@"" direction:lore::Direction::Automatic];
+    [_translationPanel setAvailable:YES busy:YES status:@""];
 }
 
 - (void)handleEngineEvent:(const lore::EngineEvent &)event {
@@ -200,11 +198,11 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (event.kind == Kind::Loading) {
             _modelReady = NO;
             _modelFailed = NO;
-            _modelStatus = @"モデルを読み込んでいます…";
+            _modelStatus = @"Loading the model…";
         } else if (event.kind == Kind::Ready) {
             _modelReady = YES;
             _modelFailed = NO;
-            _modelStatus = @"翻訳できます · 端末内で処理";
+            _modelStatus = @"Ready to translate · On-device processing";
         } else if (event.kind == Kind::Error) {
             _modelReady = NO;
             _modelFailed = YES;
@@ -216,19 +214,19 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (event.requestId != _activeRequestId) return;
     switch (event.kind) {
         case Kind::Text:
-            [_translationPanel setOutput:StringFromUTF8(event.text)];
+            [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             break;
         case Kind::Complete:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setOutput:StringFromUTF8(event.text)];
+            [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             [_translationPanel setAvailable:_modelReady busy:NO status:event.truncated ?
-                @"生成上限に達しました。訳文は途中までです。範囲を短くして再翻訳してください。" : @"翻訳しました"];
+                @"Output limit reached. The translation is incomplete. Select less text and try again." : @""];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelReady busy:NO status:@"翻訳を中止しました"];
+            [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled"];
             break;
         case Kind::Error:
             _busy = NO;
@@ -244,7 +242,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = NO;
     if (_engine) _engine->cancel();
-    [_translationPanel setAvailable:_modelReady busy:NO status:@"翻訳を中止しました"];
+    [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled"];
 }
 
 - (void)openTranslation:(id)sender { [_translationPanel showForManualInput]; }
@@ -261,7 +259,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self cancelTranslation];
     _modelReady = NO;
     _modelFailed = NO;
-    _modelStatus = @"モデルを確認しています…";
+    _modelStatus = @"Checking the model…";
     [self updateStatus];
     [_modelStore prepare];
 }
@@ -284,24 +282,24 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (!success) {
         sender.state = service.status == SMAppServiceStatusEnabled || service.status == SMAppServiceStatusRequiresApproval ?
             NSControlStateValueOn : NSControlStateValueOff;
-        _settingsHint.stringValue = error.localizedDescription ?: @"ログイン時の起動設定を変更できませんでした。";
+        _settingsHint.stringValue = error.localizedDescription ?: @"Unable to change the launch-at-login setting.";
     } else {
         _settingsHint.stringValue = service.status == SMAppServiceStatusRequiresApproval ?
-            @"システム設定の「ログイン項目」でLoreを許可してください。" : @"ログイン時の起動設定を変更しました。";
+            @"Allow Lore under Login Items in System Settings." : @"Launch-at-login setting updated.";
     }
 }
 
 - (void)openSettings:(id)sender {
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Loreの設定";
-    alert.informativeText = @"⌘Cを2回押して翻訳するには「入力監視」でLoreを許可してください。許可がなくても手入力で使えます。";
-    [alert addButtonWithTitle:@"閉じる"];
-    NSButton *permissions = [NSButton buttonWithTitle:@"入力監視の設定を開く…" target:self action:@selector(openInputMonitoring:)];
-    NSButton *login = [NSButton checkboxWithTitle:@"ログイン時にLoreを起動する" target:self action:@selector(setLoginEnabled:)];
+    alert.messageText = @"Lore Settings";
+    alert.informativeText = @"To translate with Double ⌘C, allow Lore under Input Monitoring. You can still type or paste text without this permission.";
+    [alert addButtonWithTitle:@"Close"];
+    NSButton *permissions = [NSButton buttonWithTitle:@"Open Input Monitoring Settings…" target:self action:@selector(openInputMonitoring:)];
+    NSButton *login = [NSButton checkboxWithTitle:@"Launch Lore at login" target:self action:@selector(setLoginEnabled:)];
     SMAppServiceStatus status = SMAppService.mainAppService.status;
     login.state = status == SMAppServiceStatusEnabled || status == SMAppServiceStatusRequiresApproval ? NSControlStateValueOn : NSControlStateValueOff;
-    NSButton *loginSettings = [NSButton buttonWithTitle:@"ログイン項目の設定を開く…" target:self action:@selector(openLoginSettings:)];
-    _settingsHint = [NSTextField wrappingLabelWithString:@"モデルと翻訳処理は、このアプリ内で動作します。"];
+    NSButton *loginSettings = [NSButton buttonWithTitle:@"Open Login Items Settings…" target:self action:@selector(openLoginSettings:)];
+    _settingsHint = [NSTextField wrappingLabelWithString:@"The model and translation engine run locally within this app."];
     _settingsHint.font = [NSFont systemFontOfSize:12];
     _settingsHint.textColor = NSColor.secondaryLabelColor;
     _settingsHint.preferredMaxLayoutWidth = 360;

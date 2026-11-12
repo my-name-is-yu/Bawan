@@ -47,10 +47,15 @@ private:
     std::vector<lore::EngineEvent> events_;
 };
 
-std::string completed(Events & events, std::uint64_t id) {
+std::string completed(Events & events, std::uint64_t id,
+                      lore::Direction expectedDirection = lore::Direction::Automatic) {
     const auto event = events.wait(id);
     if (event.kind != lore::EngineEvent::Kind::Complete || event.truncated || event.text.empty()) {
         throw std::runtime_error("Translation did not complete: " + event.text);
+    }
+    if (event.direction == lore::Direction::Automatic ||
+        (expectedDirection != lore::Direction::Automatic && event.direction != expectedDirection)) {
+        throw std::runtime_error("Translation output lost its resolved direction");
     }
     return event.text;
 }
@@ -85,13 +90,15 @@ int main(int argc, char ** argv) {
         }
 
         const std::string japanese = "会議は来週の月曜日に変更されました。";
-        const auto first = completed(events, engine.translate(japanese, lore::Direction::Automatic));
+        const auto first = completed(events, engine.translate(japanese, lore::Direction::Automatic),
+                                     lore::Direction::JapaneseToEnglish);
         if (first == japanese || first.find_first_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == std::string::npos) {
             throw std::runtime_error("Automatic Japanese-to-English direction failed");
         }
         std::cout << "JA→EN: " << first << '\n';
         const auto second = completed(events, engine.translate(
-            "The meeting has been moved to next Monday.", lore::Direction::Automatic));
+            "The meeting has been moved to next Monday.", lore::Direction::Automatic),
+            lore::Direction::EnglishToJapanese);
         if (!hasNonASCII(second)) { throw std::runtime_error("Automatic English-to-Japanese direction failed"); }
         std::cout << "EN→JA: " << second << '\n';
 
@@ -112,7 +119,8 @@ int main(int argc, char ** argv) {
         }
         const auto oldId = engine.translate(longText, lore::Direction::EnglishToJapanese);
         const auto streaming = events.wait(oldId, true);
-        if (streaming.kind != lore::EngineEvent::Kind::Text) {
+        if (streaming.kind != lore::EngineEvent::Kind::Text ||
+            streaming.direction != lore::Direction::EnglishToJapanese) {
             throw std::runtime_error("Long translation did not stream before completing");
         }
         const auto newId = engine.translate(japanese, lore::Direction::JapaneseToEnglish);
