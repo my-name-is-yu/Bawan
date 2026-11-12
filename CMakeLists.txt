@@ -69,7 +69,7 @@ target_compile_options(lore_gesture PRIVATE -Wall -Wextra -Wpedantic)
 
 if(LORE_BUILD_APP)
     add_executable(Lore MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm
+        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsWindow.mm
         src/ShortcutMonitor.mm src/ModelStore.mm
         resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
     set_source_files_properties(resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
@@ -103,6 +103,13 @@ if(LORE_BUILD_TESTS)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
+        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsWindow.mm)
+        target_include_directories(settings_smoke PRIVATE src)
+        target_link_libraries(settings_smoke PRIVATE "-framework AppKit" "-framework ServiceManagement")
+        target_compile_options(settings_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME settings_window COMMAND settings_smoke)
+        set_tests_properties(settings_window PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
     endif()
 endif()
 if(LORE_BUILD_SMOKE)

@@ -2,7 +2,8 @@
 #import "ModelStore.h"
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
-#import "LoreAppearance.h"
+#import "SettingsWindow.h"
+#import <CoreGraphics/CoreGraphics.h>
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -13,7 +14,7 @@
     NSMenuItem *_modelItem;
     NSMenuItem *_shortcutItem;
     NSMenuItem *_retryItem;
-    NSTextField *_settingsHint;
+    SettingsWindow *_settingsWindow;
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
     ShortcutMonitor *_shortcut;
@@ -179,6 +180,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _shortcutItem.state = _shortcut.listening ? NSControlStateValueOn : NSControlStateValueOff;
     _shortcutItem.title = _shortcut.listening ? @"Translate with Double ⌘C" : @"Enable Double ⌘C Translation…";
     [_translationPanel setShortcutAvailable:_shortcut.listening];
+    [_settingsWindow setShortcutAvailable:_shortcut.listening permissionGranted:CGPreflightListenEventAccess()];
 }
 
 - (void)menuWillOpen:(NSMenu *)menu { [self updateShortcutItem]; }
@@ -275,59 +277,42 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)openLoginSettings:(id)sender { [SMAppService openSystemSettingsLoginItems]; }
 
-- (void)setLoginEnabled:(NSButton *)sender {
+- (void)setLoginEnabled:(BOOL)enable {
     SMAppService *service = SMAppService.mainAppService;
-    BOOL enable = sender.state == NSControlStateValueOn;
     NSError *error = nil;
     BOOL success = enable ? [service registerAndReturnError:&error] : [service unregisterAndReturnError:&error];
     if (!success) {
-        sender.state = service.status == SMAppServiceStatusEnabled || service.status == SMAppServiceStatusRequiresApproval ?
-            NSControlStateValueOn : NSControlStateValueOff;
-        _settingsHint.stringValue = error.localizedDescription ?: @"Unable to change the launch-at-login setting.";
+        [_settingsWindow setLoginStatus:service.status
+            message:error.localizedDescription ?: @"Unable to change the launch-at-login setting." error:YES];
     } else {
-        _settingsHint.stringValue = service.status == SMAppServiceStatusRequiresApproval ?
-            @"Allow Lore under Login Items in System Settings." : @"Launch-at-login setting updated.";
+        [_settingsWindow setLoginStatus:service.status message:nil error:NO];
     }
 }
 
 - (void)openSettings:(id)sender {
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Lore Settings";
-    alert.informativeText = @"To translate with Double ⌘C, allow Lore under Input Monitoring. You can still type or paste text without this permission.";
-    [alert addButtonWithTitle:@"Close"];
-    alert.buttons.firstObject.bezelColor = LoreAccentFillColor();
-    alert.buttons.firstObject.contentTintColor = NSColor.whiteColor;
-    NSButton *permissions = [NSButton buttonWithTitle:@"Open Input Monitoring Settings…" target:self action:@selector(openInputMonitoring:)];
-    permissions.contentTintColor = LoreAccentColor();
-    NSButton *login = [NSButton checkboxWithTitle:@"Launch Lore at login" target:self action:@selector(setLoginEnabled:)];
-    SMAppServiceStatus status = SMAppService.mainAppService.status;
-    login.state = status == SMAppServiceStatusEnabled || status == SMAppServiceStatusRequiresApproval ? NSControlStateValueOn : NSControlStateValueOff;
-    NSButton *loginSettings = [NSButton buttonWithTitle:@"Open Login Items Settings…" target:self action:@selector(openLoginSettings:)];
-    loginSettings.contentTintColor = LoreAccentColor();
-    _settingsHint = [NSTextField wrappingLabelWithString:@"The model and translation engine run locally within this app."];
-    _settingsHint.font = [NSFont systemFontOfSize:12];
-    _settingsHint.textColor = NSColor.secondaryLabelColor;
-    _settingsHint.preferredMaxLayoutWidth = 360;
-    NSStackView *options = [NSStackView stackViewWithViews:@[permissions, login, loginSettings, _settingsHint]];
-    options.orientation = NSUserInterfaceLayoutOrientationVertical;
-    options.alignment = NSLayoutAttributeLeading;
-    options.spacing = 12;
-    [options.widthAnchor constraintEqualToConstant:360].active = YES;
-    [_settingsHint.widthAnchor constraintEqualToAnchor:options.widthAnchor].active = YES;
-    // NSAlert reserves its accessory's frame, rather than solving its size
-    // constraints. Lay out the wrapping label at the intended width first.
-    options.frame = NSMakeRect(0, 0, 360, 160);
-    [options layoutSubtreeIfNeeded];
-    [options setFrameSize:NSMakeSize(360, MAX(160, options.fittingSize.height))];
-    [options layoutSubtreeIfNeeded];
-    alert.accessoryView = options;
+    if (!_settingsWindow) {
+        _settingsWindow = [[SettingsWindow alloc] init];
+        __weak AppDelegate *weakSelf = self;
+        _settingsWindow.onInputMonitoring = ^{ [weakSelf openInputMonitoring:nil]; };
+        _settingsWindow.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
+        _settingsWindow.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+    }
+    [self refreshSettings];
     [NSApp activateIgnoringOtherApps:YES];
-    [alert runModal];
-    _settingsHint = nil;
-    // TCC grants can become available after visiting System Settings; no polling is needed.
+    [_settingsWindow showWindow:nil];
+    [_settingsWindow.window makeKeyAndOrderFront:nil];
+}
+
+- (void)refreshSettings {
+    // Retry after returning from System Settings without prompting or polling.
     id enabled = [NSUserDefaults.standardUserDefaults objectForKey:@"shortcutEnabled"];
-    if (!enabled || [enabled boolValue]) [_shortcut startRequestingPermission:NO];
+    if ((!enabled || [enabled boolValue]) && !_shortcut.listening) [_shortcut startRequestingPermission:NO];
     [self updateShortcutItem];
+    [_settingsWindow setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    if (_settingsWindow.window.visible) [self refreshSettings];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
