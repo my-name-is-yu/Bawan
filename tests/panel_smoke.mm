@@ -432,7 +432,10 @@ int main(void) {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
         __block int result = EXIT_FAILURE;
-        dispatch_async(dispatch_get_main_queue(), ^{
+        // A long main-GCD block cannot service completion work queued back to
+        // that same serial queue. Start on the run loop so nested AppKit events
+        // can deliver Core Animation's completion normally.
+        [NSRunLoop.mainRunLoop performBlock:^{
             @try {
                 try {
                     RunSmoke();
@@ -447,7 +450,7 @@ int main(void) {
             [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined
                 location:NSZeroPoint modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
                 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];
-        });
+        }];
         [NSApp run];
         return result;
     }
