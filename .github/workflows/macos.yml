@@ -18,9 +18,16 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-          cmake --build build --target gesture_tests engine_smoke engine_profile --parallel 3
+          cmake --build build --target gesture_tests panel_smoke engine_smoke engine_profile --parallel 3
           codesign --verify --strict build/Lore.app
           ctest --test-dir build --output-on-failure
+      - name: Upload AppKit view captures (not full UI or resource validation)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-view-captures
+          path: build/panel-smoke/
+          if-no-files-found: warn
       - name: Verify and translate with the official model
         run: |
           mkdir -p build/models

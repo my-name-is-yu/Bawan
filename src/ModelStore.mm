@@ -27,16 +27,16 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     std::unique_ptr<FILE, decltype(&std::fclose)> file(
         std::fopen(url.fileSystemRepresentation, "rb"), &std::fclose);
     if (!file) {
-        *reason = @"モデルファイルを開けませんでした。保存先のアクセス権を確認してください。";
+        *reason = @"Unable to open the model file. Check the folder permissions.";
         return Verification::Failed;
     }
     struct stat info {};
     if (fstat(fileno(file.get()), &info) != 0) {
-        *reason = @"モデルファイルのサイズを確認できませんでした。";
+        *reason = @"Unable to check the model file size.";
         return Verification::Failed;
     }
     if (!S_ISREG(info.st_mode) || info.st_size != ModelSize) {
-        *reason = @"モデルファイルのサイズが正しくありません。";
+        *reason = @"The model file size is incorrect.";
         return Verification::Invalid;
     }
 
@@ -53,7 +53,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         }
         if (count < sizeof(buffer)) {
             if (std::ferror(file.get())) {
-                *reason = @"モデルファイルの読み取りに失敗しました。";
+                *reason = @"Unable to read the model file.";
                 return Verification::Failed;
             }
             break;
@@ -69,7 +69,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     }
     hex[sizeof(hex) - 1] = '\0';
     if (total != static_cast<size_t>(ModelSize) || std::strcmp(hex, ModelSHA256) != 0) {
-        *reason = @"モデルファイルのSHA256が一致しません。";
+        *reason = @"The model file failed SHA256 verification.";
         return Verification::Invalid;
     }
     return generation.load() == expectedGeneration ? Verification::Valid : Verification::Cancelled;
@@ -120,7 +120,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSURL *directory = [support URLByAppendingPathComponent:@"local.lore.Lore" isDirectory:YES];
     if (!support || ![files createDirectoryAtURL:directory withIntermediateDirectories:YES
                                      attributes:nil error:&error]) {
-        [self reportError:@"モデルの保存先を作成できませんでした。" generation:generation];
+        [self reportError:@"Unable to create the model folder." generation:generation];
         return;
     }
     _modelURL = [directory URLByAppendingPathComponent:ModelFilename];
@@ -139,12 +139,12 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
             if (self.onReady) self.onReady(_modelURL);
             return;
         }
-        [self reportProgress:0 message:@"保存済みモデルを確認中…" generation:generation];
+        [self reportProgress:0 message:@"Checking the saved model…" generation:generation];
         [self verifyURL:_modelURL downloaded:NO generation:generation];
         return;
     }
     _verifiedURL = nil;
-    [self reportProgress:0 message:@"モデルをダウンロード中…" generation:generation];
+    [self reportProgress:0 message:@"Downloading the model…" generation:generation];
     if (_generation.load() != generation) return;
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.URLCache = nil;
@@ -180,17 +180,17 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                     return;
                 }
                 if (result != Verification::Valid) {
-                    NSString *failureReason = reason ?: @"モデルの検証に失敗しました。";
+                    NSString *failureReason = reason ?: @"Model verification failed.";
                     // Only remove a pre-existing model if its size/hash proves
                     // corruption. A read/permission failure must not delete it.
                     if (downloaded || result == Verification::Invalid) {
                         NSError *removeError = nil;
                         if (![files removeItemAtURL:url error:&removeError] &&
                             [files fileExistsAtPath:url.path]) {
-                            failureReason = @"不正なモデルファイルを削除できませんでした。保存先のアクセス権を確認してください。";
+                            failureReason = @"Unable to remove the invalid model file. Check the folder permissions.";
                         }
                     }
-                    [self reportError:[failureReason stringByAppendingString:@" 再試行してください。"]
+                    [self reportError:[failureReason stringByAppendingString:@" Please try again."]
                            generation:generation];
                     return;
                 }
@@ -198,13 +198,13 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                     NSError *moveError = nil;
                     if (![files moveItemAtURL:url toURL:destination error:&moveError]) {
                         [files removeItemAtURL:url error:nil];
-                        [self reportError:@"検証済みモデルを保存できませんでした。再試行してください。"
+                        [self reportError:@"Unable to save the verified model. Please try again."
                                generation:generation];
                         return;
                     }
                 }
                 self->_verifiedURL = destination;
-                [self reportProgress:1 message:@"モデルの確認が完了しました。" generation:generation];
+                [self reportProgress:1 message:@"Model verification complete." generation:generation];
                 if (self->_generation.load() == generation && self.onReady) self.onReady(destination);
             });
         }
@@ -219,7 +219,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     if (fraction - _lastReportedFraction >= 0.01 || fraction == 1) {
         _lastReportedFraction = fraction;
         [self reportProgress:fraction
-                     message:[NSString stringWithFormat:@"モデルをダウンロード中… %.0f%%", fraction * 100]
+                     message:[NSString stringWithFormat:@"Downloading the model… %.0f%%", fraction * 100]
                   generation:_generation.load()];
     }
 }
@@ -234,7 +234,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     _session = nil;
     [session finishTasksAndInvalidate];
     if (status < 200 || status >= 300) {
-        [self reportError:[NSString stringWithFormat:@"モデルのダウンロードに失敗しました（HTTP %ld）。再試行してください。", (long)status]
+        [self reportError:[NSString stringWithFormat:@"Model download failed (HTTP %ld). Please try again.", (long)status]
                generation:generation];
         return;
     }
@@ -245,11 +245,11 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", NSUUID.UUID.UUIDString]];
     NSError *error = nil;
     if (![NSFileManager.defaultManager moveItemAtURL:location toURL:temporary error:&error]) {
-        [self reportError:@"ダウンロードしたモデルを保存できませんでした。空き容量とアクセス権を確認してください。"
+        [self reportError:@"Unable to save the downloaded model. Check free disk space and folder permissions."
                generation:generation];
         return;
     }
-    [self reportProgress:1 message:@"ダウンロード完了。SHA256を確認中…" generation:generation];
+    [self reportProgress:1 message:@"Download complete. Verifying SHA256…" generation:generation];
     [self verifyURL:temporary downloaded:YES generation:generation];
 }
 
@@ -260,7 +260,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     _task = nil;
     _session = nil;
     [session finishTasksAndInvalidate];
-    [self reportError:[NSString stringWithFormat:@"モデルのダウンロードに失敗しました。%@ 再試行してください。", error.localizedDescription]
+    [self reportError:[NSString stringWithFormat:@"Model download failed. %@ Please try again.", error.localizedDescription]
            generation:generation];
 }
 
