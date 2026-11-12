@@ -1,5 +1,6 @@
 #import "SettingsWindow.h"
 #import <CoreGraphics/CoreGraphics.h>
+#import "LoreAppearance.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -90,7 +91,7 @@ static void CheckBounds(NSWindow *window) {
             @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
             @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-local-keys",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
-            @"local-processing", @"shortcut-group", @"login-group"]) {
+            @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -106,6 +107,20 @@ static void CheckBounds(NSWindow *window) {
     Require(!NSIntersectsRect(FrameInRoot(shortcut), FrameInRoot(login)) &&
             !NSIntersectsRect(FrameInRoot(login), FrameInRoot(privacy)),
             @"Settings groups and privacy footer must not overlap");
+}
+
+static CGFloat BackgroundBrightness(NSWindow *window) {
+    Settle(window);
+    NSView *root = window.contentView;
+    NSBitmapImageRep *bitmap = [root bitmapImageRepForCachingDisplayInRect:root.bounds];
+    Require(bitmap != nil, @"Could not capture the settings theme");
+    [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        [root cacheDisplayInRect:root.bounds toBitmapImageRep:bitmap];
+    }];
+    NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / root.bounds.size.width);
+    NSColor *color = [[bitmap colorAtX:x y:bitmap.pixelsHigh / 2] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    Require(color != nil, @"Could not read the settings background");
+    return color.redComponent * 0.2126 + color.greenComponent * 0.7152 + color.blueComponent * 0.0722;
 }
 
 static void Capture(NSWindow *window, NSString *name) {
@@ -164,6 +179,8 @@ static void RunSmoke(void) {
     NSWindow *window = settings.window;
     [settings showSettings];
     CheckBounds(window);
+    Require(LoreMascotImage() != nil && LorePaperImage() != nil,
+            @"Settings captures must load the real mascot and paper assets");
     NSView *root = window.contentView;
     NSSwitch *login = (NSSwitch *)FindView(root, @"launch-at-login");
     NSTextField *hint = (NSTextField *)FindView(root, @"login-hint");
@@ -221,6 +238,10 @@ static void RunSmoke(void) {
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcuts must show ready");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
+    CGFloat darkBrightness = BackgroundBrightness(window);
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    Require(BackgroundBrightness(window) > darkBrightness + 0.3,
+            @"Changing appearance on visible settings must repaint its paper background");
     monitor.panelAvailability = ShortcutAvailabilityFailed;
     [settings refresh];
     Require([panelStatus.stringValue isEqualToString:@"Could not start monitoring"] &&

@@ -40,7 +40,7 @@ jobs:
           defaults write com.apple.universalaccess reduceMotion -bool false
           cd build
           LORE_EXPECT_REDUCE_MOTION=0 ./panel_smoke | tee panel-smoke/normal-motion.log
-      - name: Upload AppKit view captures (not full UI or resource validation)
+      - name: Upload AppKit view captures (not full UI validation)
         if: always()
         uses: actions/upload-artifact@v4
         with:

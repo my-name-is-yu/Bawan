@@ -1,4 +1,5 @@
 #import "TranslationPanel.h"
+#import "LoreAppearance.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -65,7 +66,8 @@ static void CollectObjects(NSView *view, NSMutableSet<NSValue *> *views,
 static void CheckBounds(NSWindow *window) {
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
-    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"dismiss",
+    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot",
+                                   @"source-heading", @"output-heading", @"source-language", @"output-language",
                                    @"status", @"instructions"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing view: " stringByAppendingString:identifier]);
@@ -116,6 +118,34 @@ static void CheckBounds(NSWindow *window) {
     Require(!NSIntersectsRect(translateFrame, copyFrame) &&
             !NSIntersectsRect(sourcePane, translateFrame) && !NSIntersectsRect(outputPane, copyFrame),
             @"Text panes and footer actions must not overlap");
+    for (NSString *identifier in @[@"source-heading", @"output-heading", @"source-language", @"output-language"]) {
+        NSView *heading = FindView(root, identifier);
+        NSRect frame = [heading convertRect:heading.bounds toView:root];
+        Require(!NSIntersectsRect(frame, sourcePane) && !NSIntersectsRect(frame, outputPane),
+                @"Pane headings must not cover editable or translated text");
+    }
+}
+
+static void RequireLanguages(NSWindow *window, NSString *source, NSString *output) {
+    NSTextField *sourceLabel = (NSTextField *)Control(window, @"source-language", NSTextField.class);
+    NSTextField *outputLabel = (NSTextField *)Control(window, @"output-language", NSTextField.class);
+    Require([sourceLabel.stringValue isEqualToString:source] && [outputLabel.stringValue isEqualToString:output],
+            [NSString stringWithFormat:@"Inaccurate language labels: %@ / %@; expected %@ / %@",
+                sourceLabel.stringValue, outputLabel.stringValue, source, output]);
+}
+
+static CGFloat BackgroundBrightness(NSWindow *window) {
+    Settle(window);
+    NSView *root = window.contentView;
+    NSBitmapImageRep *bitmap = [root bitmapImageRepForCachingDisplayInRect:root.bounds];
+    Require(bitmap != nil, @"Could not capture the panel's theme");
+    [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        [root cacheDisplayInRect:root.bounds toBitmapImageRep:bitmap];
+    }];
+    NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / root.bounds.size.width);
+    NSColor *color = [[bitmap colorAtX:x y:bitmap.pixelsHigh / 2] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    Require(color != nil, @"Could not read the panel background");
+    return color.redComponent * 0.2126 + color.greenComponent * 0.7152 + color.blueComponent * 0.0722;
 }
 
 static void Capture(NSWindow *window, NSString *name) {
@@ -284,8 +314,8 @@ static void RunSmoke(void) {
       @"real inference, or actual-app CPU/memory regression. Those checks remain separate.\n"
        writeToFile:@"panel-smoke/README.txt" atomically:YES encoding:NSUTF8StringEncoding error:nil];
 
-    NSString *english = @"The meeting has been moved to next Monday. Please review the updated document and send your feedback by Friday.";
-    NSString *japanese = @"会議は来週の月曜日に変更されました。更新された資料を確認し、金曜日までにフィードバックをお送りください。";
+    NSString *english = @"The meeting has been moved to next Monday.\nPlease review the updated document.";
+    NSString *japanese = @"会議は来週の月曜日に変更されました。\n更新された資料を確認してください。";
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0, settings = 0;
     __block lore::Direction lastDirection = lore::Direction::Automatic;
@@ -312,7 +342,18 @@ static void RunSmoke(void) {
     NSButton *translate = (NSButton *)Control(window, @"translate", NSButton.class);
     NSButton *copy = (NSButton *)Control(window, @"copy", NSButton.class);
     NSButton *settingsButton = (NSButton *)Control(window, @"settings", NSButton.class);
-    NSButton *dismiss = (NSButton *)Control(window, @"dismiss", NSButton.class);
+    Require(FindView(window.contentView, @"dismiss") == nil,
+            @"The redundant close control must not remain beside Settings");
+    NSButton *closeButton = [window standardWindowButton:NSWindowCloseButton];
+    for (NSNumber *kind in @[@(NSWindowCloseButton), @(NSWindowMiniaturizeButton), @(NSWindowZoomButton)]) {
+        NSButton *standardButton = [window standardWindowButton:static_cast<NSWindowButton>(kind.integerValue)];
+        Require(standardButton != nil && !standardButton.hidden,
+                @"Native window controls must remain visible");
+    }
+    NSImageView *mascot = (NSImageView *)Control(window, @"mascot", NSImageView.class);
+    Require(mascot.image != nil && LoreMascotImage() != nil && LorePaperImage() != nil,
+            @"Native captures must load the real mascot and paper assets");
+    RequireLanguages(window, @"AUTO", @"—");
     NSTextField *status = (NSTextField *)Control(window, @"status", NSTextField.class);
     Require(source.editable && source.selectable && !output.editable && output.selectable,
             @"Source/output editing contract changed");
@@ -330,11 +371,20 @@ static void RunSmoke(void) {
     Require(NSPasteboard.generalPasteboard.changeCount == emptyCopyCount,
             @"Command-Shift-C must leave the clipboard unchanged when output is empty");
     [panel showForSelection:english];
+    RequireLanguages(window, @"AUTO", @"—");
     Require(translate.enabled && !copy.enabled && !swap.enabled,
             @"Nonempty source must enable translation only");
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::Automatic && [lastInput isEqualToString:english],
             @"Fresh input must translate automatically");
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    RequireLanguages(window, @"EN", @"JA");
+    source.string = japanese;
+    [source didChangeText];
+    RequireLanguages(window, @"AUTO", @"JA");
+    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:lore::Direction::EnglishToJapanese];
+    RequireLanguages(window, @"AUTO", @"JA");
+    [panel showForSelection:english];
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     NSUInteger beforeSwap = translations;
     [swap performClick:nil];
@@ -343,6 +393,7 @@ static void RunSmoke(void) {
             [lastInput isEqualToString:japanese] && lastDirection == lore::Direction::JapaneseToEnglish,
             @"Swap must move the translation into source, clear output and translate back once");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
+    RequireLanguages(window, @"JA", @"EN");
     [panel setAvailable:YES busy:YES status:@"Translating…"];
     NSRect recallFrame = window.frame;
     recallFrame.origin.x += 17;
@@ -376,10 +427,16 @@ static void RunSmoke(void) {
             @"Mixed-script output must reverse its actual direction instead of being detected again");
     source.string = japanese;
     [source didChangeText];
+    RequireLanguages(window, @"AUTO", @"—");
+    [panel setOutput:@"Output from the previous request" direction:lore::Direction::EnglishToJapanese];
+    RequireLanguages(window, @"AUTO", @"JA");
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::Automatic,
             @"Editing swapped input must restore automatic direction");
+    [panel setOutput:@"" direction:lore::Direction::Automatic];
+    RequireLanguages(window, @"AUTO", @"—");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
+    RequireLanguages(window, @"JA", @"EN");
     [panel setAvailable:YES busy:YES status:@""];
     NSUInteger beforeDisabledSwap = translations;
     [swap performClick:nil];
@@ -454,12 +511,15 @@ static void RunSmoke(void) {
     Require(instructions.hidden, @"An empty shortcut helper must leave no extra message row");
 
     [panel setShortcutAvailable:YES];
-    [panel showForSelection:japanese];
-    [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
+    [panel showForSelection:english];
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
+    CGFloat darkBrightness = BackgroundBrightness(window);
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     Capture(window, @"light");
+    Require(BackgroundBrightness(window) > darkBrightness + 0.3,
+            @"Changing appearance on the visible panel must repaint its paper background");
     // AppKit selects accessibility appearances from the OS preference. Assigning
     // high-contrast appearance names directly does not exercise Increase Contrast.
     [window setContentSize:NSMakeSize(640, 420)];
@@ -542,16 +602,20 @@ static void RunSmoke(void) {
     Require(cancellations == 21 && closes == 20, @"Repeated lifecycle callbacks were lost or duplicated");
     [copy performClick:nil];
     Require([copy.title isEqualToString:@"Copied"], @"Copy confirmation must remain available after reuse");
-    [dismiss performClick:nil];
-    Require(closes == 21, @"Dismiss button must use the close callback");
+    [closeButton performClick:nil];
+    Require(closes == 21 && !window.visible, @"The native close button must use the close callback");
     Require([copy.title isEqualToString:@"Copy Translation"], @"Closing must clear copy confirmation");
-    RequireNoPressMotion(copy, @"dismiss button after lifecycle cycles");
-    RequireNoPressMotion(translate, @"dismiss button after lifecycle cycles");
+    RequireNoPressMotion(copy, @"native close after lifecycle cycles");
+    RequireNoPressMotion(translate, @"native close after lifecycle cycles");
     [panel showForManualInput];
     Settle(window);
     [window sendEvent:KeyEvent(window, @"\033", 0, 53)];
     Settle(window);
     Require(closes == 22, @"Escape must close the panel through its close callback");
+    [panel showForManualInput];
+    Settle(window);
+    Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand, 13)] &&
+            closes == 23 && !window.visible, @"Command-W must use the same close callback");
     std::cout << "panel_smoke_complete=true\nreused_panel_cycles=20\n"
               << "app_view_count=" << baselineViews.count << '\n'
               << "app_constraint_count=" << baselineConstraints.count << '\n'

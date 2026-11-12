@@ -8,61 +8,27 @@
 #include <algorithm>
 
 namespace {
-enum ColorRole { Background, Surface, Text, SecondaryText, Border, Button };
-
-NSColor *RGB(unsigned value) {
-    return [NSColor colorWithSRGBRed:((value >> 16) & 255) / 255.0
-                              green:((value >> 8) & 255) / 255.0
-                               blue:(value & 255) / 255.0 alpha:1];
-}
-
-NSColor *Color(ColorRole role) {
-    static NSArray<NSColor *> *colors;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        const unsigned light[] = {0xFAFAFA, 0xF1F2F4, 0x202124, 0x5F626B, 0xDEDFE4, 0xE7E8ED};
-        const unsigned dark[] = {0x202124, 0x252629, 0xF4F4F5, 0xB8BAC2, 0x42434A, 0x323338};
-        NSArray<NSAppearanceName> *appearances = @[
-            NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
-            NSAppearanceNameAqua, NSAppearanceNameDarkAqua];
-        NSMutableArray<NSColor *> *palette = [NSMutableArray array];
-        for (NSUInteger i = 0; i < sizeof(light) / sizeof(light[0]); ++i) {
-            NSColor *lightColor = RGB(light[i]);
-            NSColor *darkColor = RGB(dark[i]);
-            NSColor *contrastLight = i == Border ? RGB(0x757780) :
-                (i == SecondaryText ? RGB(0x44464D) : lightColor);
-            NSColor *contrastDark = i == Border ? RGB(0x8A8C94) :
-                (i == SecondaryText ? RGB(0xD0D1D6) : darkColor);
-            [palette addObject:[NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *appearance) {
-                NSString *match = [appearance bestMatchFromAppearancesWithNames:appearances];
-                if ([match isEqualToString:NSAppearanceNameAccessibilityHighContrastAqua]) return contrastLight;
-                if ([match isEqualToString:NSAppearanceNameAccessibilityHighContrastDarkAqua]) return contrastDark;
-                return [match isEqualToString:NSAppearanceNameDarkAqua] ? darkColor : lightColor;
-            }]];
-        }
-        colors = [palette copy];
-    });
-    return colors[role];
-}
-
-void DrawButton(NSRect frame, BOOL primary, BOOL highlighted, BOOL enabled) {
-    NSColor *fill = primary ? LoreAccentFillColor() : Color(Button);
+void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL enabled) {
+    NSColor *fill = primary ? LoreAccentFillColor() : LoreColor(gold ? LoreGold : LoreBackground);
     if (!enabled) fill = [fill colorWithAlphaComponent:0.4];
-    else if (highlighted) fill = [fill blendedColorWithFraction:0.15 ofColor:Color(Text)];
-    [fill setFill];
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(frame, 0.5, 0.5)
-                                                       xRadius:10 yRadius:10];
-    [path fill];
-    if (!primary) {
-        [Color(Border) setStroke];
-        path.lineWidth = 1;
-        [path stroke];
+    else if (highlighted) fill = [fill blendedColorWithFraction:0.12 ofColor:LoreColor(LoreText)];
+    NSRect face = NSInsetRect(frame, 1, 1);
+    if (primary && enabled) {
+        face.size.height -= 3;
+        [LoreColor(LoreBorder) setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:NSOffsetRect(face, 0, 3) xRadius:8 yRadius:8] fill];
     }
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:face xRadius:gold ? 5 : 8 yRadius:gold ? 5 : 8];
+    [fill setFill];
+    [path fill];
+    [LoreColor(LoreBorder) setStroke];
+    path.lineWidth = 1.5;
+    [path stroke];
 }
 
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = [NSFont systemFontOfSize:size weight:weight];
+    label.font = weight >= NSFontWeightMedium ? LoreLabelFont(size) : LoreBodyFont(size);
     label.textColor = color;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
@@ -89,6 +55,10 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
         (NSEventModifierFlagCommand | NSEventModifierFlagShift |
          NSEventModifierFlagControl | NSEventModifierFlagOption);
     NSString *key = event.charactersIgnoringModifiers;
+    if (modifiers == NSEventModifierFlagCommand && [key.lowercaseString isEqualToString:@"w"]) {
+        [self performClose:nil];
+        return YES;
+    }
     if (modifiers == NSEventModifierFlagCommand &&
         ([key isEqualToString:@"\r"] || [key isEqualToString:@"\n"])) {
         if (self.onTranslateKey) self.onTranslateKey();
@@ -103,16 +73,18 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 }
 @end
 
-// These surfaces draw with dynamic NSColors, so appearance changes require no
-// alternate view tree, image cache, notification observer or background work.
-@interface LoreSurface : NSView
+// Appearance changes reuse the same surfaces, constraints and static art.
+@interface LoreSurfaceView : NSView
 @property(nonatomic, strong) NSColor *fillColor;
 @property(nonatomic, strong) NSColor *borderColor;
 @property(nonatomic) CGFloat cornerRadius;
 @property(nonatomic) BOOL draggable;
+@property(nonatomic) BOOL textured;
+@property(nonatomic) BOOL masthead;
+@property(nonatomic) BOOL cutCorners;
 @end
 
-@implementation LoreSurface
+@implementation LoreSurfaceView
 - (BOOL)isFlipped { return YES; }
 - (BOOL)mouseDownCanMoveWindow { return self.draggable; }
 - (void)viewDidChangeEffectiveAppearance {
@@ -120,29 +92,50 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    NSRect frame = self.borderColor ? NSInsetRect(self.bounds, 0.5, 0.5) : self.bounds;
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:frame
-                                                       xRadius:self.cornerRadius yRadius:self.cornerRadius];
+    if (self.masthead) { LoreDrawHeader(self.bounds); return; }
+    NSRect frame = self.borderColor ? NSInsetRect(self.bounds, 0.75, 0.75) : self.bounds;
+    NSBezierPath *path;
+    if (self.cutCorners) {
+        path = [NSBezierPath bezierPath];
+        [path moveToPoint:NSMakePoint(NSMinX(frame) + 5, NSMinY(frame))];
+        [path lineToPoint:NSMakePoint(NSMaxX(frame) - 5, NSMinY(frame))];
+        [path lineToPoint:NSMakePoint(NSMaxX(frame), NSMinY(frame) + 5)];
+        [path lineToPoint:NSMakePoint(NSMaxX(frame), NSMaxY(frame) - 5)];
+        [path lineToPoint:NSMakePoint(NSMaxX(frame) - 5, NSMaxY(frame))];
+        [path lineToPoint:NSMakePoint(NSMinX(frame) + 5, NSMaxY(frame))];
+        [path lineToPoint:NSMakePoint(NSMinX(frame), NSMaxY(frame) - 5)];
+        [path lineToPoint:NSMakePoint(NSMinX(frame), NSMinY(frame) + 5)];
+        [path closePath];
+    } else {
+        path = [NSBezierPath bezierPathWithRoundedRect:frame xRadius:self.cornerRadius yRadius:self.cornerRadius];
+    }
     [self.fillColor setFill];
     [path fill];
+    if (self.textured) {
+        [NSGraphicsContext saveGraphicsState];
+        [path addClip];
+        LoreDrawPaper(self.bounds);
+        [NSGraphicsContext restoreGraphicsState];
+    }
     if (self.borderColor) {
         [self.borderColor setStroke];
-        path.lineWidth = 1;
+        path.lineWidth = 1.5;
         [path stroke];
     }
 }
 @end
 
-@interface LoreButton : NSButton {
+@interface LoreActionButton : NSButton {
     BOOL _trackingPointer;
 }
 @property(nonatomic) BOOL primary;
+@property(nonatomic) BOOL gold;
 @property(nonatomic) BOOL plain;
 @property(nonatomic) BOOL pressFeedback;
 - (void)resetPressFeedback;
 @end
 
-@implementation LoreButton
+@implementation LoreActionButton
 // Our bezel fills the bounds; native button ornament insets must not enlarge it.
 - (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
 - (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
@@ -211,7 +204,12 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 }
 - (void)drawRect:(NSRect)dirtyRect {
     BOOL highlighted = self.cell.highlighted;
-    if (!self.plain || highlighted) DrawButton(self.bounds, self.primary, highlighted, self.enabled);
+    if (!self.plain) {
+        DrawButton(self.bounds, self.primary, self.gold, highlighted, self.enabled);
+    } else if (highlighted) {
+        [[LoreColor(LoreHeaderText) colorWithAlphaComponent:0.12] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:6 yRadius:6] fill];
+    }
     [super drawRect:dirtyRect];
 }
 @end
@@ -229,36 +227,50 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     [super drawRect:dirtyRect];
     if (self.string.length == 0) {
         [self.placeholder drawInRect:NSInsetRect(self.bounds, 1, 1) withAttributes:
-            @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:Color(SecondaryText)}];
+            @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:LoreColor(LoreSecondaryText)}];
     }
 }
+@end
+
+@interface LoreMascotView : NSImageView
+@end
+@implementation LoreMascotView
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirtyRect { LoreDrawMedallion(self.bounds); }
 @end
 
 @interface TranslationPanel () <NSWindowDelegate, NSTextViewDelegate> {
     LorePanel *_panel;
     LoreTextView *_source;
     LoreTextView *_output;
-    LoreButton *_swap;
+    LoreActionButton *_swap;
     lore::Direction _inputDirection;
     lore::Direction _outputDirection;
     NSTextField *_status;
     NSTextField *_instructions;
+    NSTextField *_sourceLanguage;
+    NSTextField *_outputLanguage;
+    NSTextField *_shortcutHint;
     NSLayoutConstraint *_messageSpacing;
-    LoreButton *_translate;
-    LoreButton *_copy;
+    LoreActionButton *_translate;
+    LoreActionButton *_copy;
     NSImage *_copyIcon;
     NSImage *_copiedIcon;
     BOOL _available;
     BOOL _busy;
+    BOOL _sourceEditedSinceRequest;
 }
 @end
 
 @implementation TranslationPanel
 
-static LoreSurface *SurfaceView(NSView *parent, NSString *identifier, ColorRole role) {
-    LoreSurface *view = [[LoreSurface alloc] initWithFrame:NSZeroRect];
+static LoreSurfaceView *SurfaceView(NSView *parent, NSString *identifier, LoreColorRole role) {
+    LoreSurfaceView *view = [[LoreSurfaceView alloc] initWithFrame:NSZeroRect];
     view.identifier = identifier;
-    view.fillColor = Color(role);
+    view.fillColor = LoreColor(role);
     view.translatesAutoresizingMaskIntoConstraints = NO;
     [parent addSubview:view];
     return view;
@@ -269,15 +281,37 @@ static void AddConstraints(NSArray<NSLayoutConstraint *> *constraints) {
     [NSLayoutConstraint activateConstraints:constraints];
 }
 
-static LoreButton *ButtonView(NSView *parent, NSString *identifier, NSString *title,
+static LoreSurfaceView *HeadingView(NSView *parent, NSString *identifier, NSString *title,
+                                NSString *languageIdentifier, NSTextField *__strong *language) {
+    LoreSurfaceView *heading = SurfaceView(parent, identifier, LoreGold);
+    heading.cutCorners = YES;
+    NSTextField *name = Label(title, 14, NSFontWeightBold, LoreColor(LoreGoldText));
+    NSTextField *badge = Label(@"", 12, NSFontWeightBold, LoreColor(LoreGoldText));
+    badge.identifier = languageIdentifier;
+    name.maximumNumberOfLines = 1;
+    badge.maximumNumberOfLines = 1;
+    [heading addSubview:name];
+    [heading addSubview:badge];
+    AddConstraints(@[
+        [name.leadingAnchor constraintEqualToAnchor:heading.leadingAnchor constant:12],
+        [name.centerYAnchor constraintEqualToAnchor:heading.centerYAnchor],
+        [name.trailingAnchor constraintLessThanOrEqualToAnchor:badge.leadingAnchor constant:-8],
+        [badge.trailingAnchor constraintEqualToAnchor:heading.trailingAnchor constant:-12],
+        [badge.centerYAnchor constraintEqualToAnchor:heading.centerYAnchor]
+    ]);
+    *language = badge;
+    return heading;
+}
+
+static LoreActionButton *ButtonView(NSView *parent, NSString *identifier, NSString *title,
                                id target, SEL action, BOOL primary, BOOL plain) {
-    LoreButton *button = [[LoreButton alloc] initWithFrame:NSZeroRect];
+    LoreActionButton *button = [[LoreActionButton alloc] initWithFrame:NSZeroRect];
     button.identifier = identifier;
     [button setButtonType:NSButtonTypeMomentaryPushIn];
     button.bordered = NO;
     button.title = title;
-    button.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
-    button.contentTintColor = primary ? NSColor.whiteColor : Color(Text);
+    button.font = LoreLabelFont(14);
+    button.contentTintColor = LoreColor(primary ? LoreHeaderText : LoreText);
     button.primary = primary;
     button.plain = plain;
     button.target = target;
@@ -306,8 +340,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     text.editable = editable;
     text.selectable = YES;
     text.richText = NO;
-    text.font = [NSFont systemFontOfSize:16];
-    text.textColor = Color(editable ? SecondaryText : Text);
+    text.font = LoreBodyFont(18);
+    text.textColor = LoreColor(LoreText);
     text.insertionPointColor = LoreAccentColor();
     text.selectedTextAttributes = @{
         NSBackgroundColorAttributeName: [LoreAccentColor() colorWithAlphaComponent:0.22],
@@ -318,6 +352,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     text.textContainer.lineFragmentPadding = 0;
     NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
     paragraph.lineSpacing = 5;
+    paragraph.paragraphSpacing = 10;
     text.defaultParagraphStyle = paragraph;
     text.verticallyResizable = YES;
     text.horizontallyResizable = NO;
@@ -345,7 +380,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     if (!self) return nil;
     _panel = [[LorePanel alloc] initWithContentRect:NSMakeRect(0, 0, 720, 500)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable |
-                  NSWindowStyleMaskNonactivatingPanel | NSWindowStyleMaskFullSizeContentView
+                  NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskNonactivatingPanel |
+                  NSWindowStyleMaskFullSizeContentView
         backing:NSBackingStoreBuffered defer:NO];
     _panel.title = @"Lore";
     _panel.titleVisibility = NSWindowTitleHidden;
@@ -355,10 +391,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _panel.hasShadow = YES;
     _panel.movableByWindowBackground = YES;
     _panel.minSize = NSMakeSize(640, 420);
+    _panel.tabbingMode = NSWindowTabbingModeDisallowed;
     [_panel setFrame:NSMakeRect(0, 0, 720, 500) display:NO];
-    for (NSNumber *kind in @[@(NSWindowCloseButton), @(NSWindowMiniaturizeButton), @(NSWindowZoomButton)]) {
-        [_panel standardWindowButton:static_cast<NSWindowButton>(kind.integerValue)].hidden = YES;
-    }
     _panel.releasedWhenClosed = NO;
     _panel.hidesOnDeactivate = NO;
     _panel.floatingPanel = YES;
@@ -370,52 +404,66 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _panel.onTranslateKey = ^{ [weakSelf translate:nil]; };
     _panel.onCopyKey = ^{ [weakSelf copyOutput:nil]; };
 
-    LoreSurface *content = [[LoreSurface alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
+    LoreSurfaceView *content = [[LoreSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
     content.identifier = @"lore-panel";
-    content.fillColor = Color(Background);
-    content.borderColor = Color(Border);
+    content.fillColor = LoreColor(LoreBackground);
+    content.borderColor = LoreColor(LoreBorder);
+    content.textured = YES;
     content.cornerRadius = 16;
     content.wantsLayer = YES;
     content.layer.cornerRadius = 16;
     content.layer.masksToBounds = YES;
     _panel.contentView = content;
 
-    LoreSurface *header = SurfaceView(content, @"header", Surface);
+    LoreSurfaceView *header = SurfaceView(content, @"header", LoreHeader);
+    header.masthead = YES;
     header.draggable = YES;
-    LoreSurface *headerLine = SurfaceView(content, @"header-divider", Border);
-    LoreSurface *footer = SurfaceView(content, @"footer", Surface);
-    LoreSurface *footerLine = SurfaceView(content, @"footer-divider", Border);
-    LoreSurface *dividerTop = SurfaceView(content, @"pane-divider-top", Border);
-    LoreSurface *dividerBottom = SurfaceView(content, @"pane-divider-bottom", Border);
+    LoreSurfaceView *footer = SurfaceView(content, @"footer", LoreBackground);
+    footer.textured = YES;
+    LoreSurfaceView *footerLine = SurfaceView(content, @"footer-divider", LoreBorder);
+    LoreSurfaceView *dividerTop = SurfaceView(content, @"pane-divider-top", LoreBorder);
+    LoreSurfaceView *dividerBottom = SurfaceView(content, @"pane-divider-bottom", LoreBorder);
 
-    NSTextField *name = Label(@"Lore", 20, NSFontWeightSemibold, Color(Text));
+    LoreMascotView *mascot = [[LoreMascotView alloc] init];
+    mascot.identifier = @"mascot";
+    mascot.image = LoreMascotImage();
+    mascot.translatesAutoresizingMaskIntoConstraints = NO;
+    [mascot setAccessibilityElement:NO];
+    [header addSubview:mascot];
+    NSTextField *name = Label(@"Lore", 48, NSFontWeightBold, LoreColor(LoreHeaderText));
+    name.font = LoreLogoFont(48);
     [header addSubview:name];
-    LoreButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
-    settings.image = Symbol(@"gearshape", @"Settings", 17);
+    LoreActionButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
+    settings.image = Symbol(@"gearshape", @"Settings", 20);
+    settings.contentTintColor = LoreColor(LoreHeaderText);
     settings.imagePosition = NSImageOnly;
     settings.toolTip = @"Settings";
     [settings setAccessibilityLabel:@"Settings"];
-    LoreButton *dismiss = ButtonView(header, @"dismiss", @"Esc", self, @selector(dismiss:), NO, YES);
-    dismiss.contentTintColor = Color(SecondaryText);
-    dismiss.toolTip = @"Close (Esc)";
-    [dismiss setAccessibilityLabel:@"Close translator"];
+
+    LoreSurfaceView *sourceHeading = HeadingView(content, @"source-heading", @"ORIGINAL",
+                                              @"source-language", &_sourceLanguage);
+    LoreSurfaceView *outputHeading = HeadingView(content, @"output-heading", @"TRANSLATION",
+                                              @"output-language", &_outputLanguage);
+    LoreSurfaceView *sourceRule = SurfaceView(content, @"source-rule", LoreBorder);
+    LoreSurfaceView *outputRule = SurfaceView(content, @"output-rule", LoreBorder);
 
     _swap = ButtonView(content, @"swap", @"", self, @selector(swapText:), NO, NO);
-    _swap.image = Symbol(@"arrow.right.arrow.left", @"", 16);
+    _swap.gold = YES;
+    _swap.contentTintColor = LoreColor(LoreGoldText);
+    _swap.image = Symbol(@"arrow.right.arrow.left", @"", 17);
     _swap.imagePosition = NSImageOnly;
     _swap.toolTip = @"Swap text and translate back";
     [_swap setAccessibilityLabel:@"Swap text and translate back"];
 
     NSScrollView *sourceScroll = TextArea(content, &_source, YES, @"source", @"Source text",
                                          @"Type or paste text");
-    NSScrollView *outputScroll = TextArea(content, &_output, NO, @"output", @"Translation",
-                                         @"");
+    NSScrollView *outputScroll = TextArea(content, &_output, NO, @"output", @"Translation", @"");
     _source.delegate = self;
 
-    _instructions = Label(@"", 11, NSFontWeightRegular, Color(SecondaryText));
+    _instructions = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     _instructions.identifier = @"instructions";
     _instructions.maximumNumberOfLines = 2;
-    _status = Label(@"", 11, NSFontWeightRegular, Color(SecondaryText));
+    _status = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     _status.identifier = @"status";
     _status.maximumNumberOfLines = 3;
     [_status setAccessibilityLabel:@"Translation status"];
@@ -432,15 +480,20 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
     _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), YES, NO);
     _translate.toolTip = @"Translate (⌘Return); cancel while translating";
-    _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), YES, NO);
+    _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), NO, NO);
     _copy.toolTip = @"Copy Translation (⇧⌘C)";
     _copyIcon = Symbol(@"doc.on.doc", @"", 13);
     _copiedIcon = Symbol(@"checkmark", @"", 13);
     _copy.image = _copyIcon;
     _copy.imagePosition = NSImageLeft;
     _copy.imageHugsTitle = YES;
+    _shortcutHint = Label(@"Type or paste text to translate", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _shortcutHint.identifier = @"shortcut-hint";
+    _shortcutHint.alignment = NSTextAlignmentCenter;
+    _shortcutHint.maximumNumberOfLines = 2;
+    [footer addSubview:_shortcutHint];
     // Only the two footer actions need their own composited press feedback.
-    for (LoreButton *button in @[_translate, _copy]) {
+    for (LoreActionButton *button in @[_translate, _copy]) {
         button.wantsLayer = YES;
         button.pressFeedback = YES;
     }
@@ -449,36 +502,49 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [header.topAnchor constraintEqualToAnchor:content.topAnchor],
         [header.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [header.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [header.heightAnchor constraintEqualToConstant:48],
-        [headerLine.topAnchor constraintEqualToAnchor:header.bottomAnchor],
-        [headerLine.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-        [headerLine.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [headerLine.heightAnchor constraintEqualToConstant:1],
-        [name.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:24],
+        [header.heightAnchor constraintEqualToConstant:80],
+        [mascot.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:80],
+        [mascot.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
+        [mascot.widthAnchor constraintEqualToConstant:64],
+        [mascot.heightAnchor constraintEqualToConstant:64],
+        [name.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:12],
         [name.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [dismiss.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
-        [dismiss.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [dismiss.widthAnchor constraintEqualToConstant:48],
-        [dismiss.heightAnchor constraintEqualToConstant:32],
-        [settings.trailingAnchor constraintEqualToAnchor:dismiss.leadingAnchor constant:-8],
+        [settings.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
         [settings.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [settings.widthAnchor constraintEqualToConstant:32],
-        [settings.heightAnchor constraintEqualToConstant:32],
+        [settings.widthAnchor constraintEqualToConstant:36],
+        [settings.heightAnchor constraintEqualToConstant:36],
+        [name.trailingAnchor constraintLessThanOrEqualToAnchor:settings.leadingAnchor constant:-24],
+        [sourceHeading.topAnchor constraintEqualToAnchor:header.bottomAnchor constant:24],
+        [sourceHeading.leadingAnchor constraintEqualToAnchor:sourceScroll.leadingAnchor],
+        [sourceHeading.widthAnchor constraintEqualToConstant:222],
+        [sourceHeading.heightAnchor constraintEqualToConstant:28],
+        [outputHeading.topAnchor constraintEqualToAnchor:sourceHeading.topAnchor],
+        [outputHeading.leadingAnchor constraintEqualToAnchor:outputScroll.leadingAnchor],
+        [outputHeading.widthAnchor constraintEqualToAnchor:sourceHeading.widthAnchor],
+        [outputHeading.heightAnchor constraintEqualToAnchor:sourceHeading.heightAnchor],
+        [sourceRule.topAnchor constraintEqualToAnchor:sourceHeading.bottomAnchor constant:10],
+        [sourceRule.leadingAnchor constraintEqualToAnchor:sourceScroll.leadingAnchor],
+        [sourceRule.trailingAnchor constraintEqualToAnchor:sourceScroll.trailingAnchor],
+        [sourceRule.heightAnchor constraintEqualToConstant:1.5],
+        [outputRule.topAnchor constraintEqualToAnchor:sourceRule.topAnchor],
+        [outputRule.leadingAnchor constraintEqualToAnchor:outputScroll.leadingAnchor],
+        [outputRule.trailingAnchor constraintEqualToAnchor:outputScroll.trailingAnchor],
+        [outputRule.heightAnchor constraintEqualToAnchor:sourceRule.heightAnchor],
         [_swap.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
         [_swap.centerYAnchor constraintEqualToAnchor:sourceScroll.centerYAnchor],
-        [_swap.widthAnchor constraintEqualToConstant:32],
-        [_swap.heightAnchor constraintEqualToConstant:32],
+        [_swap.widthAnchor constraintEqualToConstant:36],
+        [_swap.heightAnchor constraintEqualToConstant:36],
         [dividerTop.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
-        [dividerTop.topAnchor constraintEqualToAnchor:sourceScroll.topAnchor],
+        [dividerTop.topAnchor constraintEqualToAnchor:sourceHeading.topAnchor],
         [dividerTop.bottomAnchor constraintEqualToAnchor:_swap.topAnchor constant:-8],
-        [dividerTop.widthAnchor constraintEqualToConstant:1],
+        [dividerTop.widthAnchor constraintEqualToConstant:1.5],
         [dividerBottom.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
         [dividerBottom.topAnchor constraintEqualToAnchor:_swap.bottomAnchor constant:8],
         [dividerBottom.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
-        [dividerBottom.widthAnchor constraintEqualToConstant:1],
+        [dividerBottom.widthAnchor constraintEqualToConstant:1.5],
         [sourceScroll.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
         [sourceScroll.trailingAnchor constraintEqualToAnchor:content.centerXAnchor constant:-24],
-        [sourceScroll.topAnchor constraintEqualToAnchor:headerLine.bottomAnchor constant:24],
+        [sourceScroll.topAnchor constraintEqualToAnchor:sourceRule.bottomAnchor constant:16],
         _messageSpacing,
         [outputScroll.leadingAnchor constraintEqualToAnchor:content.centerXAnchor constant:24],
         [outputScroll.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-24],
@@ -486,25 +552,28 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [outputScroll.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
         [messages.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
         [messages.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-24],
-        [messages.bottomAnchor constraintEqualToAnchor:footerLine.topAnchor constant:-24],
+        [messages.bottomAnchor constraintEqualToAnchor:footerLine.topAnchor constant:-16],
         [_instructions.widthAnchor constraintEqualToAnchor:messages.widthAnchor],
         [_status.widthAnchor constraintEqualToAnchor:messages.widthAnchor],
         [footerLine.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [footerLine.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [footerLine.bottomAnchor constraintEqualToAnchor:footer.topAnchor],
-        [footerLine.heightAnchor constraintEqualToConstant:1],
+        [footerLine.heightAnchor constraintEqualToConstant:1.5],
         [footer.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [footer.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [footer.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
-        [footer.heightAnchor constraintEqualToConstant:64],
-        [_copy.centerXAnchor constraintEqualToAnchor:outputScroll.centerXAnchor],
-        [_copy.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [_copy.widthAnchor constraintEqualToConstant:168],
-        [_copy.heightAnchor constraintEqualToConstant:32],
-        [_translate.centerXAnchor constraintEqualToAnchor:sourceScroll.centerXAnchor],
+        [footer.heightAnchor constraintEqualToConstant:72],
+        [_translate.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:24],
         [_translate.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [_translate.widthAnchor constraintEqualToAnchor:_copy.widthAnchor],
-        [_translate.heightAnchor constraintEqualToAnchor:_copy.heightAnchor]
+        [_translate.widthAnchor constraintEqualToConstant:184],
+        [_translate.heightAnchor constraintEqualToConstant:40],
+        [_copy.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor constant:-24],
+        [_copy.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
+        [_copy.widthAnchor constraintEqualToConstant:176],
+        [_copy.heightAnchor constraintEqualToAnchor:_translate.heightAnchor],
+        [_shortcutHint.leadingAnchor constraintEqualToAnchor:_translate.trailingAnchor constant:12],
+        [_shortcutHint.trailingAnchor constraintEqualToAnchor:_copy.leadingAnchor constant:-12],
+        [_shortcutHint.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor]
     ]);
     [self setShortcutAvailable:NO];
     [self updateButtons];
@@ -575,6 +644,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)setOutput:(NSString *)output direction:(lore::Direction)direction {
+    if (output.length == 0 && direction == lore::Direction::Automatic) _sourceEditedSinceRequest = NO;
     _outputDirection = direction;
     if (![_output.string isEqualToString:output]) {
         [self resetCopyFeedback];
@@ -585,14 +655,26 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)updateButtons {
+    [self updateLanguageLabels];
     BOOL hasInput = [_source.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     BOOL hasOutput = _output.string.length > 0;
     _translate.enabled = _busy || (_available && hasInput);
-    _translate.contentTintColor = _translate.enabled ? NSColor.whiteColor : nil;
+    _translate.contentTintColor = _translate.enabled ? LoreColor(LoreHeaderText) : nil;
     _translate.title = _busy ? @"Cancel" : (hasOutput ? @"Retranslate  ⌘↵" : @"Translate  ⌘↵");
     _copy.enabled = hasOutput;
-    _copy.contentTintColor = _copy.enabled ? NSColor.whiteColor : nil;
+    _copy.contentTintColor = _copy.enabled ? LoreColor(LoreText) : nil;
     _swap.enabled = _available && !_busy && hasOutput && _outputDirection != lore::Direction::Automatic;
+}
+
+- (void)updateLanguageLabels {
+    lore::Direction sourceDirection = _inputDirection;
+    if (sourceDirection == lore::Direction::Automatic && !_sourceEditedSinceRequest) {
+        sourceDirection = _outputDirection;
+    }
+    _sourceLanguage.stringValue = sourceDirection == lore::Direction::EnglishToJapanese ? @"EN" :
+        sourceDirection == lore::Direction::JapaneseToEnglish ? @"JA" : @"AUTO";
+    _outputLanguage.stringValue = _outputDirection == lore::Direction::EnglishToJapanese ? @"JA" :
+        _outputDirection == lore::Direction::JapaneseToEnglish ? @"EN" : @"—";
 }
 
 - (void)translate:(id)sender {
@@ -617,7 +699,6 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)openSettings:(id)sender { if (self.onSettings) self.onSettings(); }
-- (void)dismiss:(id)sender { [_panel close]; }
 
 - (void)copyOutput:(id)sender {
     if (_output.string.length == 0) return;
@@ -639,6 +720,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)textDidChange:(NSNotification *)notification {
+    _sourceEditedSinceRequest = YES;
     _inputDirection = lore::Direction::Automatic;
     _source.needsDisplay = YES;
     [self updateButtons];

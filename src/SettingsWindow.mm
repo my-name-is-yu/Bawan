@@ -22,10 +22,51 @@
 }
 @end
 
+@interface LoreSettingsPaper : NSView
+@end
+
+@implementation LoreSettingsPaper
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    [LoreColor(LoreBackground) setFill];
+    NSRectFill(self.bounds);
+    LoreDrawPaper(self.bounds);
+}
+@end
+
+@interface LoreSettingsMasthead : LoreSettingsPaper
+@end
+
+@implementation LoreSettingsMasthead
+- (void)drawRect:(NSRect)dirtyRect { LoreDrawHeader(self.bounds); }
+@end
+
+@interface LoreSettingsMedallion : LoreSettingsPaper
+@end
+
+@implementation LoreSettingsMedallion
+- (void)drawRect:(NSRect)dirtyRect { LoreDrawMedallion(self.bounds); }
+@end
+
+@interface LoreSettingsGroup : NSBox
+@end
+
+@implementation LoreSettingsGroup
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.borderColor = LoreColor(LoreBorder);
+    self.fillColor = LoreColor(LoreSurface);
+    self.needsDisplay = YES;
+}
+@end
+
 namespace {
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = [NSFont systemFontOfSize:size weight:weight];
+    label.font = weight >= NSFontWeightMedium ? LoreLabelFont(size) : LoreBodyFont(size);
     label.textColor = color;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
@@ -56,13 +97,13 @@ NSImageView *Icon(NSString *name) {
 }
 
 NSBox *Group(NSView *content) {
-    NSBox *box = [[NSBox alloc] init];
+    NSBox *box = [[LoreSettingsGroup alloc] init];
     box.boxType = NSBoxCustom;
     box.titlePosition = NSNoTitle;
-    box.borderWidth = 1;
-    box.borderColor = NSColor.separatorColor;
-    box.fillColor = NSColor.controlBackgroundColor;
-    box.cornerRadius = 12;
+    box.borderWidth = 1.5;
+    box.borderColor = LoreColor(LoreBorder);
+    box.fillColor = LoreColor(LoreSurface);
+    box.cornerRadius = 8;
     box.contentViewMargins = NSZeroSize;
     box.translatesAutoresizingMaskIntoConstraints = NO;
     [box.contentView addSubview:content];
@@ -126,24 +167,40 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _statuses = [NSMutableArray array];
     _permissionButtons = [NSMutableArray array];
     window.title = @"Lore Settings";
+    window.backgroundColor = LoreColor(LoreBackground);
+    window.titlebarAppearsTransparent = YES;
     window.releasedWhenClosed = NO;
     window.tabbingMode = NSWindowTabbingModeDisallowed;
     window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace |
                                 NSWindowCollectionBehaviorFullScreenAuxiliary;
     window.delegate = self;
-    NSView *root = window.contentView;
+    NSView *root = [[LoreSettingsPaper alloc] initWithFrame:window.contentView.bounds];
+    window.contentView = root;
     root.identifier = @"lore-settings";
 
-    NSTextField *title = Label(@"Settings", 24, NSFontWeightSemibold, NSColor.labelColor);
-    NSTextField *subtitle = Label(@"Shortcuts and startup", 13, NSFontWeightRegular, NSColor.secondaryLabelColor);
-    NSStackView *header = Stack(@[title, subtitle], NSUserInterfaceLayoutOrientationVertical, 5);
+    LoreSettingsMasthead *masthead = [[LoreSettingsMasthead alloc] init];
+    masthead.identifier = @"settings-header";
+    masthead.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:masthead];
+    LoreSettingsMedallion *mascot = [[LoreSettingsMedallion alloc] init];
+    mascot.identifier = @"settings-mascot";
+    mascot.translatesAutoresizingMaskIntoConstraints = NO;
+    [mascot setAccessibilityElement:NO];
+    [masthead addSubview:mascot];
+    NSTextField *title = Label(@"Lore", 36, NSFontWeightBold, LoreColor(LoreHeaderText));
+    title.font = LoreLogoFont(36);
+    NSTextField *subtitle = Label(@"Settings · Shortcuts and startup", 12, NSFontWeightRegular,
+                                  LoreColor(LoreHeaderText));
+    NSStackView *header = Stack(@[title, subtitle], NSUserInterfaceLayoutOrientationVertical, 0);
+    [masthead addSubview:header];
+
     NSStackView *shortcutTitle = Stack(@[Icon(@"keyboard"),
-        Label(@"Global shortcuts", 14, NSFontWeightSemibold, NSColor.labelColor)],
+        Label(@"Global shortcuts", 14, NSFontWeightSemibold, LoreColor(LoreText))],
         NSUserInterfaceLayoutOrientationHorizontal, 10);
     NSStackView *shortcutContent = Stack(@[shortcutTitle], NSUserInterfaceLayoutOrientationVertical, 12);
     for (NSUInteger i = 0; i < 2; ++i) {
         lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
-        NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, NSColor.labelColor);
+        NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, LoreColor(LoreText));
         [name.widthAnchor constraintEqualToConstant:128].active = YES;
         NSSwitch *enabled = [[NSSwitch alloc] init];
         enabled.target = self;
@@ -152,6 +209,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
         enabled.identifier = RowID(i, @"enabled");
         [enabled setAccessibilityLabel:[@"Enable " stringByAppendingString:ShortcutActionTitle(action)]];
         NSButton *record = [NSButton buttonWithTitle:@"" target:self action:@selector(beginRecording:)];
+        record.font = LoreLabelFont(13);
+        record.bezelColor = LoreColor(LoreButton);
+        record.contentTintColor = LoreColor(LoreText);
         record.tag = i;
         record.identifier = RowID(i, @"key");
         record.toolTip = @"Click, then press a new key combination once. Set Once or Twice separately. Esc cancels.";
@@ -159,6 +219,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [record setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" shortcut key"]];
         NSPopUpButton *count = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
         [count addItemsWithTitles:@[@"Once", @"Twice"]];
+        count.font = LoreBodyFont(12);
         count.target = self;
         count.action = @selector(changePressCount:);
         count.tag = i;
@@ -176,7 +237,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [restore.widthAnchor constraintEqualToConstant:28].active = YES;
         [restore setAccessibilityLabel:[@"Restore defaults for " stringByAppendingString:ShortcutActionTitle(action)]];
         NSStackView *controls = Stack(@[name, enabled, record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 8);
-        NSTextField *status = Label(@"", 12, NSFontWeightMedium, NSColor.secondaryLabelColor);
+        NSTextField *status = Label(@"", 12, NSFontWeightMedium, LoreColor(LoreSecondaryText));
         status.identifier = RowID(i, @"status");
         [status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                        forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -184,7 +245,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         permission.tag = i;
         permission.identifier = RowID(i, @"permission");
         permission.bordered = NO;
-        permission.font = [NSFont systemFontOfSize:12];
+        permission.font = LoreLabelFont(12);
         permission.contentTintColor = LoreAccentColor();
         NSView *spacer = [[NSView alloc] init];
         NSStackView *state = Stack(@[status, spacer, permission], NSUserInterfaceLayoutOrientationHorizontal, 10);
@@ -201,12 +262,12 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [_permissionButtons addObject:permission];
     }
     NSTextField *reservation = Label(@"Except for selection translation with ⌘C twice, enabled keys are reserved for Lore—even a single press. Other apps’ shortcuts cannot be checked automatically.",
-        12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+        12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     reservation.identifier = @"shortcut-reservation";
     NSTextField *localKeys = Label(@"In Lore: ⌘Return to translate · ⌘⇧C to copy translation · Esc to close",
-        12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+        12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     localKeys.identifier = @"shortcut-local-keys";
-    _shortcutHint = Label(@"", 12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+    _shortcutHint = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     _shortcutHint.identifier = @"shortcut-feedback";
     _shortcutHint.hidden = YES;
     for (NSTextField *label in @[reservation, localKeys, _shortcutHint]) {
@@ -223,18 +284,18 @@ NSString *RowID(NSUInteger index, NSString *control) {
     [_loginSwitch setAccessibilityLabel:@"Launch Lore at login"];
     NSView *loginSpacer = [[NSView alloc] init];
     NSStackView *loginTitle = Stack(@[Icon(@"power"),
-        Label(@"Launch at login", 14, NSFontWeightSemibold, NSColor.labelColor), loginSpacer, _loginSwitch],
+        Label(@"Launch at login", 14, NSFontWeightSemibold, LoreColor(LoreText)), loginSpacer, _loginSwitch],
         NSUserInterfaceLayoutOrientationHorizontal, 10);
     NSTextField *loginDescription = Label(@"Open Lore automatically when you sign in.",
-        13, NSFontWeightRegular, NSColor.secondaryLabelColor);
+        13, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     NSButton *loginSettings = [NSButton buttonWithTitle:@"Login Items…" target:self action:@selector(openLoginSettings:)];
     loginSettings.identifier = @"login-items";
     loginSettings.bordered = NO;
-    loginSettings.font = [NSFont systemFontOfSize:12];
+    loginSettings.font = LoreLabelFont(12);
     loginSettings.contentTintColor = LoreAccentColor();
     loginSettings.alignment = NSTextAlignmentLeft;
     [loginSettings setAccessibilityLabel:@"Open Login Items settings"];
-    _loginHint = Label(@"", 12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+    _loginHint = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     _loginHint.identifier = @"login-hint";
     _loginHint.hidden = YES;
     NSStackView *loginContent = Stack(@[loginTitle, loginDescription, loginSettings, _loginHint],
@@ -245,19 +306,29 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [view.widthAnchor constraintEqualToAnchor:loginContent.widthAnchor].active = YES;
     }
     NSImageView *privacyIcon = Icon(@"lock.shield");
-    privacyIcon.contentTintColor = NSColor.secondaryLabelColor;
+    privacyIcon.contentTintColor = LoreColor(LoreSecondaryText);
     NSTextField *privacy = Label(@"Translation runs locally on your Mac.",
-        12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+        12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     privacy.identifier = @"local-processing";
     NSStackView *footer = Stack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
-    NSStackView *content = Stack(@[header, shortcutGroup, loginGroup, footer],
+    NSStackView *content = Stack(@[shortcutGroup, loginGroup, footer],
         NSUserInterfaceLayoutOrientationVertical, 16);
-    [content setCustomSpacing:24 afterView:header];
     [root addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
+        [masthead.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
+        [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
+        [masthead.topAnchor constraintEqualToAnchor:root.topAnchor],
+        [masthead.heightAnchor constraintEqualToConstant:80],
+        [mascot.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:24],
+        [mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
+        [mascot.widthAnchor constraintEqualToConstant:56],
+        [mascot.heightAnchor constraintEqualToConstant:56],
+        [header.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:14],
+        [header.trailingAnchor constraintLessThanOrEqualToAnchor:masthead.trailingAnchor constant:-24],
+        [header.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [content.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:24],
         [content.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-24],
-        [content.topAnchor constraintEqualToAnchor:root.topAnchor constant:24],
+        [content.topAnchor constraintEqualToAnchor:masthead.bottomAnchor constant:24],
         [content.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-24],
         [shortcutGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [loginGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
@@ -320,8 +391,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
             case ShortcutAvailabilityFailed: status = @"Could not start monitoring"; break;
         }
         _statuses[i].stringValue = status;
-        _statuses[i].textColor = availability == ShortcutAvailabilityAvailable ? NSColor.systemGreenColor :
-            availability == ShortcutAvailabilityFailed ? NSColor.systemRedColor : NSColor.secondaryLabelColor;
+        _statuses[i].textColor = availability == ShortcutAvailabilityAvailable ? LoreColor(LoreSuccess) :
+            availability == ShortcutAvailabilityFailed ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
         _permissionButtons[i].title = permission;
         [_permissionButtons[i] setAccessibilityLabel:[permission stringByAppendingFormat:@" for %@", ShortcutActionTitle(action)]];
         _permissionButtons[i].hidden = availability == ShortcutAvailabilityOff || availability == ShortcutAvailabilityAvailable;
@@ -332,7 +403,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 
 - (void)setShortcutMessage:(NSString *)message error:(BOOL)error {
     _shortcutHint.stringValue = message;
-    _shortcutHint.textColor = error ? NSColor.systemRedColor : NSColor.secondaryLabelColor;
+    _shortcutHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
     _shortcutHint.hidden = message.length == 0;
     [self resizeToFit];
 }
@@ -468,7 +539,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSString *hint = message ?: (status == SMAppServiceStatusRequiresApproval ?
         @"Allow Lore in System Settings → General → Login Items." : @"");
     _loginHint.stringValue = hint;
-    _loginHint.textColor = error ? NSColor.systemRedColor : NSColor.secondaryLabelColor;
+    _loginHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
     _loginHint.hidden = hint.length == 0;
     [self resizeToFit];
 }
