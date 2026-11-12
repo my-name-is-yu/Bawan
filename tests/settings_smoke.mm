@@ -1,8 +1,63 @@
 #import "SettingsWindow.h"
+#import <CoreGraphics/CoreGraphics.h>
 
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <set>
+
+@interface SmokeShortcutMonitor : ShortcutMonitor {
+    ShortcutPreferences *_testPreferences;
+    BOOL _testSuspended;
+    BOOL _testSettingsActive;
+}
+@property(nonatomic) ShortcutAvailability selectionAvailability;
+@property(nonatomic) ShortcutAvailability panelAvailability;
+@property(nonatomic) NSUInteger permissionRequests;
+@property(nonatomic) lore::ShortcutAction lastPermissionAction;
+@end
+
+@implementation SmokeShortcutMonitor
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences {
+    self = [super initWithPreferences:preferences];
+    if (self) {
+        _testPreferences = preferences;
+        _selectionAvailability = ShortcutAvailabilityNeedsInputMonitoring;
+        _panelAvailability = ShortcutAvailabilityNeedsAccessibility;
+    }
+    return self;
+}
+- (void)start {}
+- (void)stop {}
+- (void)refresh {}
+- (BOOL)suspended { return _testSuspended; }
+- (void)setSuspended:(BOOL)value { _testSuspended = value; }
+- (BOOL)settingsActive { return _testSettingsActive; }
+- (void)setSettingsActive:(BOOL)value { _testSettingsActive = value; }
+- (ShortcutAvailability)availabilityForAction:(lore::ShortcutAction)action {
+    if (![_testPreferences bindingForAction:action].enabled) return ShortcutAvailabilityOff;
+    return action == lore::ShortcutAction::TranslateSelection ? _selectionAvailability : _panelAvailability;
+}
+- (void)requestPermissionForAction:(lore::ShortcutAction)action {
+    ++_permissionRequests;
+    _lastPermissionAction = action;
+}
+@end
+
+// Send events through NSApplication and its real local event monitor, while
+// keeping physical release checks deterministic without injecting OS input.
+@interface SmokeSettingsWindow : SettingsWindow {
+    std::set<CGKeyCode> _testHeldKeys;
+}
+- (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down;
+@end
+@implementation SmokeSettingsWindow
+- (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down {
+    if (down) _testHeldKeys.insert(key);
+    else _testHeldKeys.erase(key);
+}
+- (BOOL)isRecordingKeyDown:(CGKeyCode)key { return _testHeldKeys.count(key) != 0; }
+@end
 
 static void Require(BOOL condition, NSString *message) {
     if (!condition) throw std::runtime_error(message.UTF8String);
@@ -30,8 +85,12 @@ static void CheckBounds(NSWindow *window) {
     Settle(window);
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Settings layout is ambiguous");
-    for (NSString *identifier in @[@"shortcut-status", @"input-monitoring", @"launch-at-login",
-            @"login-items", @"login-hint", @"local-processing", @"shortcut-group", @"login-group"]) {
+    for (NSString *identifier in @[@"shortcut-selection-enabled", @"shortcut-selection-key", @"shortcut-selection-count",
+            @"shortcut-selection-reset", @"shortcut-selection-status", @"shortcut-selection-permission",
+            @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
+            @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-local-keys",
+            @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
+            @"local-processing", @"shortcut-group", @"login-group"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -79,94 +138,201 @@ static void Capture(NSWindow *window, NSString *name) {
     Require([png writeToFile:path atomically:YES], @"Could not save settings capture");
 }
 
+static void SendKey(SmokeSettingsWindow *settings, unsigned short code,
+                    NSEventModifierFlags modifiers, BOOL down, NSString *characters) {
+    [settings setRecordedKey:code down:down];
+    NSEvent *event = [NSEvent keyEventWithType:down ? NSEventTypeKeyDown : NSEventTypeKeyUp
+        location:NSZeroPoint modifierFlags:modifiers timestamp:NSProcessInfo.processInfo.systemUptime
+        windowNumber:settings.window.windowNumber context:nil characters:characters
+        charactersIgnoringModifiers:characters isARepeat:NO keyCode:code];
+    [NSApp sendEvent:event];
+}
+
+static void SendControlAction(NSControl *control) {
+    [NSApp sendAction:control.action to:control.target from:control];
+}
+
 static void RunSmoke(void) {
     [NSFileManager.defaultManager createDirectoryAtPath:@"settings-smoke"
         withIntermediateDirectories:YES attributes:nil error:nil];
-    SettingsWindow *settings = [[SettingsWindow alloc] init];
+    NSString *suite = [@"local.lore.settings-smoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults removePersistentDomainForName:suite];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    SmokeShortcutMonitor *monitor = [[SmokeShortcutMonitor alloc] initWithPreferences:preferences];
+    SmokeSettingsWindow *settings = [[SmokeSettingsWindow alloc] initWithPreferences:preferences monitor:monitor];
     NSWindow *window = settings.window;
-    [settings showWindow:nil];
-    [NSApp activateIgnoringOtherApps:YES];
-    [window makeKeyAndOrderFront:nil];
+    [settings showSettings];
     CheckBounds(window);
     NSView *root = window.contentView;
     NSSwitch *login = (NSSwitch *)FindView(root, @"launch-at-login");
     NSTextField *hint = (NSTextField *)FindView(root, @"login-hint");
-    NSTextField *shortcut = (NSTextField *)FindView(root, @"shortcut-status");
+    NSTextField *selectionStatus = (NSTextField *)FindView(root, @"shortcut-selection-status");
+    NSTextField *panelStatus = (NSTextField *)FindView(root, @"shortcut-panel-status");
+    NSTextField *feedback = (NSTextField *)FindView(root, @"shortcut-feedback");
     NSTextField *privacy = (NSTextField *)FindView(root, @"local-processing");
+    NSSwitch *selectionEnabled = (NSSwitch *)FindView(root, @"shortcut-selection-enabled");
+    NSSwitch *panelEnabled = (NSSwitch *)FindView(root, @"shortcut-panel-enabled");
+    NSButton *selectionKey = (NSButton *)FindView(root, @"shortcut-selection-key");
+    NSButton *panelKey = (NSButton *)FindView(root, @"shortcut-panel-key");
+    NSPopUpButton *selectionCount = (NSPopUpButton *)FindView(root, @"shortcut-selection-count");
     NSString *privacyText = privacy.stringValue;
-    __block NSUInteger permissions = 0, loginSettings = 0, loginChanges = 0;
+    Require(selectionEnabled.state == NSControlStateValueOn && panelEnabled.state == NSControlStateValueOn &&
+        selectionCount.indexOfSelectedItem == 1 &&
+        [selectionKey.title isEqualToString:ShortcutKeyLabel(lore::defaultShortcuts()[0])] &&
+        [panelKey.title isEqualToString:ShortcutKeyLabel(lore::defaultShortcuts()[1])],
+        @"Both shortcuts must show their enabled defaults and separate press counts");
+    __block NSUInteger loginSettings = 0, loginChanges = 0;
     __block BOOL requestedLogin = NO;
-    settings.onInputMonitoring = ^{ ++permissions; };
     settings.onLoginSettings = ^{ ++loginSettings; };
     settings.onLoginChanged = ^(BOOL enabled) { ++loginChanges; requestedLogin = enabled; };
-    [(NSButton *)FindView(root, @"input-monitoring") performClick:nil];
+    [(NSButton *)FindView(root, @"shortcut-selection-permission") performClick:nil];
+    Require(monitor.permissionRequests == 1 && monitor.lastPermissionAction == lore::ShortcutAction::TranslateSelection,
+        @"Selection permission action must reach its own monitor action");
+    [(NSButton *)FindView(root, @"shortcut-panel-permission") performClick:nil];
+    Require(monitor.permissionRequests == 2 && monitor.lastPermissionAction == lore::ShortcutAction::OpenPanel,
+        @"Panel permission action must reach its own monitor action");
     [(NSButton *)FindView(root, @"login-items") performClick:nil];
     login.state = NSControlStateValueOn;
-    [NSApp sendAction:login.action to:login.target from:login];
-    Require(permissions == 1 && loginSettings == 1 && loginChanges == 1 && requestedLogin,
-            @"Settings actions must forward exactly once without changing system services");
+    SendControlAction(login);
+    Require(loginSettings == 1 && loginChanges == 1 && requestedLogin,
+        @"Login actions must forward exactly once without changing system services");
 
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
     Require(login.state == NSControlStateValueOff && hint.hidden,
-            @"Unregistered login service must show off without a stale message");
+        @"Unregistered login service must show off without a stale message");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-    [settings setShortcutAvailable:NO permissionGranted:NO];
-    Require([shortcut.stringValue isEqualToString:@"Input Monitoring required"],
-            @"Missing Input Monitoring permission needs an accurate status");
+    Require([selectionStatus.stringValue isEqualToString:@"Input Monitoring required"] &&
+        [panelStatus.stringValue isEqualToString:@"Accessibility required"],
+        @"Each shortcut must explain its own missing permission");
     Capture(window, @"light");
     CGFloat baseHeight = root.bounds.size.height;
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
     Require(login.state == NSControlStateValueOn && !hint.hidden && hint.stringValue.length > 0,
-            @"Pending approval must remain on with an explanatory message");
+        @"Pending approval must remain on with an explanatory message");
     Capture(window, @"approval");
     [settings setLoginStatus:SMAppServiceStatusEnabled message:nil error:NO];
     Require(login.state == NSControlStateValueOn && hint.hidden,
-            @"Enabled service must show on and clear approval feedback");
-    [settings setShortcutAvailable:YES permissionGranted:YES];
-    Require([shortcut.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcut must show ready");
+        @"Enabled service must show on and clear approval feedback");
+    monitor.selectionAvailability = ShortcutAvailabilityAvailable;
+    monitor.panelAvailability = ShortcutAvailabilityAvailable;
+    [settings refresh];
+    Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
+        [panelStatus.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcuts must show ready");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
-    [settings setShortcutAvailable:NO permissionGranted:YES];
-    Require([shortcut.stringValue isEqualToString:@"Shortcut not active"],
-            @"An inactive shortcut with permission must not be described as ready");
+    monitor.panelAvailability = ShortcutAvailabilityFailed;
+    [settings refresh];
+    Require([panelStatus.stringValue isEqualToString:@"Could not start monitoring"] &&
+        !FindView(root, @"shortcut-panel-permission").hidden,
+        @"A failed shortcut needs its own status and retry action");
+    monitor.panelAvailability = ShortcutAvailabilityAvailable;
+    [settings refresh];
 
     NSString *longError = @"Lore could not change the launch-at-login setting. The operating system returned an error while updating this application’s registration. Open Login Items in System Settings, review the current permissions, and try again.";
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:longError error:YES];
     CheckBounds(window);
     Require(login.state == NSControlStateValueOff && !hint.hidden && [hint.stringValue isEqualToString:longError],
-            @"Failed changes must restore the actual login state and retain the full error");
+        @"Failed changes must restore the actual login state and retain the full error");
     NSRect textBounds = [hint.attributedStringValue boundingRectWithSize:NSMakeSize(hint.bounds.size.width, CGFLOAT_MAX)
         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
     Require(root.bounds.size.height > baseHeight && hint.bounds.size.height + 2 >= textBounds.size.height,
-            @"Long login errors must wrap and grow the window rather than clip");
+        @"Long login errors must wrap and grow the window rather than clip");
     Require([privacy.stringValue isEqualToString:privacyText], @"Login feedback must preserve the privacy explanation");
     Capture(window, @"long-error");
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
     Settle(window);
     Require(hint.hidden && root.bounds.size.height <= baseHeight + 1,
-            @"Clearing feedback must restore the compact settings height");
+        @"Clearing feedback must restore the compact settings height");
+
+    selectionEnabled.state = NSControlStateValueOff;
+    SendControlAction(selectionEnabled);
+    Require(![preferences bindingForAction:lore::ShortcutAction::TranslateSelection].enabled &&
+        [preferences bindingForAction:lore::ShortcutAction::OpenPanel].enabled &&
+        [selectionStatus.stringValue isEqualToString:@"Off"], @"Disabling one action must preserve the other");
+    [selectionCount selectItemAtIndex:0];
+    SendControlAction(selectionCount);
+    Require([preferences bindingForAction:lore::ShortcutAction::TranslateSelection].pressCount == 1,
+        @"A disabled action must still allow changing its press count");
+
+    [selectionKey performClick:nil];
+    Require(monitor.suspended && !selectionEnabled.enabled, @"Recording must suspend global shortcuts");
+    SendKey(settings, 17, NSEventModifierFlagOption, YES, @"t");
+    Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 17,
+        @"Recording must save the requested physical key but wait for its release");
+    SendKey(settings, 17, NSEventModifierFlagOption, NO, @"t");
+    Require(!monitor.suspended && selectionEnabled.enabled, @"Key-up must safely restore monitoring");
+    selectionEnabled.state = NSControlStateValueOn;
+    SendControlAction(selectionEnabled);
+    Require(![preferences bindingForAction:lore::ShortcutAction::TranslateSelection].enabled &&
+        selectionEnabled.state == NSControlStateValueOff && !feedback.hidden,
+        @"A conflicting single/double assignment must reject enabling without changing the old setting");
+
+    [selectionKey performClick:nil];
+    NSEventModifierFlags customModifiers = NSEventModifierFlagControl | NSEventModifierFlagOption;
+    SendKey(settings, 40, customModifiers, YES, @"k");
+    Require(monitor.suspended, @"An accepted key must remain suspended until release");
+    SendKey(settings, 40, customModifiers, NO, @"k");
+    selectionEnabled.state = NSControlStateValueOn;
+    SendControlAction(selectionEnabled);
+    lore::ShortcutBinding custom = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
+    Require(custom.enabled && custom.keyCode == 40 && custom.modifiers == (lore::Control | lore::Option) &&
+        custom.pressCount == 1 && [selectionKey.title isEqualToString:ShortcutKeyLabel(custom)],
+        @"Custom key, press count, enabled state, and visible label must agree");
+    ShortcutPreferences *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    lore::ShortcutBinding persisted = [reloaded bindingForAction:lore::ShortcutAction::TranslateSelection];
+    Require(persisted.enabled && persisted.keyCode == custom.keyCode && persisted.modifiers == custom.modifiers &&
+        persisted.pressCount == custom.pressCount, @"Recorded settings must survive reloading preferences");
+    Capture(window, @"custom-shortcut");
+
+    [selectionKey performClick:nil];
+    SendKey(settings, 12, NSEventModifierFlagCommand, YES, @"q");
+    SendKey(settings, 12, NSEventModifierFlagCommand, NO, @"q");
+    Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
+        @"Reserved commands must be consumed without quitting or replacing the old key");
+    SendKey(settings, 53, 0, YES, @"\x1b");
+    Require(monitor.suspended && window.visible, @"Esc cancels recording without closing or resuming before key-up");
+    SendKey(settings, 53, 0, NO, @"\x1b");
+    Require(!monitor.suspended && window.visible &&
+        [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
+        @"Canceling recording must preserve the old assignment and the settings window");
+
+    [selectionKey performClick:nil];
+    SendKey(settings, 0, 0, YES, @"a");
+    Require(monitor.suspended, @"An invalid key keeps the recorder active");
+    [window orderOut:nil];
+    Settle(window);
+    Require(monitor.suspended && !monitor.settingsActive,
+        @"Focus loss must cancel recording but keep a swallowed held key suspended");
+    [settings setRecordedKey:0 down:NO];
+    [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.08]];
+    Require(!monitor.suspended, @"Physical release after focus loss must restore global monitoring");
+    [settings showSettings];
+    [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
+    lore::ShortcutBinding restored = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
+    Require(restored.enabled && lore::isPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
+        @"Reset restores the default key, press count, and enabled state");
+    [settings showError:@""];
     for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
         [settings close];
-        [settings showWindow:nil];
+        [settings showSettings];
         Require(settings.window == window && window.contentView == root,
-                @"Closing and reopening must reuse the settings window and view tree");
+            @"Closing and reopening must reuse the settings window and view tree");
         CheckBounds(window);
     }
-    [window makeKeyAndOrderFront:nil];
-    [NSApp activateIgnoringOtherApps:YES];
-    Settle(window);
     [window makeFirstResponder:window];
     [window cancelOperation:nil];
     Settle(window);
     Require(!window.visible, @"The Escape responder command must close the settings window");
-    [settings showWindow:nil];
+    [settings showSettings];
     NSEvent *closeKey = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
         modifierFlags:NSEventModifierFlagCommand timestamp:NSProcessInfo.processInfo.systemUptime
         windowNumber:window.windowNumber context:nil characters:@"w" charactersIgnoringModifiers:@"w"
         isARepeat:NO keyCode:13];
     Require([window performKeyEquivalent:closeKey] && !window.visible,
-            @"Command-W must close the settings window");
-    std::cout << "settings_smoke_complete=true\nreused_window_cycles=20\ncaptures=settings-smoke\n";
+        @"Command-W must close the settings window");
+    [defaults removePersistentDomainForName:suite];
+    std::cout << "settings_smoke_complete=true\nreused_window_cycles=20\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
 }
 
 int main(void) {

@@ -77,6 +77,7 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 
 @interface LorePanel : NSPanel
 @property(nonatomic, copy) void (^onTranslateKey)(void);
+@property(nonatomic, copy) void (^onCopyKey)(void);
 @end
 
 @implementation LorePanel
@@ -91,6 +92,11 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     if (modifiers == NSEventModifierFlagCommand &&
         ([key isEqualToString:@"\r"] || [key isEqualToString:@"\n"])) {
         if (self.onTranslateKey) self.onTranslateKey();
+        return YES;
+    }
+    if (modifiers == (NSEventModifierFlagCommand | NSEventModifierFlagShift) &&
+        [key.lowercaseString isEqualToString:@"c"]) {
+        if (self.onCopyKey) self.onCopyKey();
         return YES;
     }
     return [super performKeyEquivalent:event];
@@ -362,6 +368,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _panel.delegate = self;
     __weak TranslationPanel *weakSelf = self;
     _panel.onTranslateKey = ^{ [weakSelf translate:nil]; };
+    _panel.onCopyKey = ^{ [weakSelf copyOutput:nil]; };
 
     LoreSurface *content = [[LoreSurface alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
     content.identifier = @"lore-panel";
@@ -426,6 +433,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), YES, NO);
     _translate.toolTip = @"Translate (⌘Return); cancel while translating";
     _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), YES, NO);
+    _copy.toolTip = @"Copy Translation (⇧⌘C)";
     _copyIcon = Symbol(@"doc.on.doc", @"", 13);
     _copiedIcon = Symbol(@"checkmark", @"", 13);
     _copy.image = _copyIcon;
@@ -536,9 +544,13 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)setShortcutAvailable:(BOOL)available {
-    _instructions.stringValue = available ? @"" :
-        @"Enable Double ⌘C in Settings to translate selected text.";
-    _instructions.hidden = available;
+    [self setShortcutInstructions:available ? @"" :
+        @"Enable Double ⌘C in Settings to translate selected text."];
+}
+
+- (void)setShortcutInstructions:(NSString *)instructions {
+    _instructions.stringValue = instructions;
+    _instructions.hidden = instructions.length == 0;
     [self updateMessageSpacing];
 }
 
@@ -547,7 +559,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)showForManualInput {
-    [self positionNearPointer];
+    if (!_panel.isVisible) [self positionNearPointer];
     [NSApp activateIgnoringOtherApps:YES];
     [_panel makeKeyAndOrderFront:nil];
     [_panel makeFirstResponder:_source];

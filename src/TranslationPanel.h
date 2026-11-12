@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showForSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
+- (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;
 - (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status;
 - (void)setOutput:(NSString *)output direction:(lore::Direction)direction;
