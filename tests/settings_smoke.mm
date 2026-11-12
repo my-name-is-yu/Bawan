@@ -146,6 +146,17 @@ static void CheckBounds(NSWindow *window) {
             @"Settings groups and privacy footer must not overlap");
 }
 
+// colorAtX: labels display components as Generic RGB. Retain the capture's ICC
+// color space when rebuilding the sample before converting it for comparison.
+static NSColor *BitmapColor(NSBitmapImageRep *bitmap, NSInteger x, NSInteger y) {
+    NSColor *pixel = [bitmap colorAtX:x y:y];
+    NSColorSpace *space = bitmap.colorSpace;
+    Require(pixel != nil && space.colorSpaceModel == NSColorSpaceModelRGB,
+            [NSString stringWithFormat:@"Expected an RGB capture with a color profile: %@", space]);
+    CGFloat components[] = {pixel.redComponent, pixel.greenComponent, pixel.blueComponent, pixel.alphaComponent};
+    return [NSColor colorWithColorSpace:space components:components count:4];
+}
+
 static CGFloat BackgroundBrightness(NSWindow *window) {
     Settle(window);
     NSView *root = window.contentView;
@@ -155,7 +166,7 @@ static CGFloat BackgroundBrightness(NSWindow *window) {
         [root cacheDisplayInRect:root.bounds toBitmapImageRep:bitmap];
     }];
     NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / root.bounds.size.width);
-    NSColor *color = [[bitmap colorAtX:x y:bitmap.pixelsHigh / 2] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    NSColor *color = [BitmapColor(bitmap, x, bitmap.pixelsHigh / 2) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
     Require(color != nil, @"Could not read the settings background");
     return color.redComponent * 0.2126 + color.greenComponent * 0.7152 + color.blueComponent * 0.0722;
 }
@@ -231,8 +242,9 @@ static void CheckInputFaces(NSWindow *window) {
             Require([png writeToFile:path atomically:YES], @"Could not save the shortcut input diagnostic");
             // Read empty vertical padding, clear of title glyphs, popup arrows and the border.
             NSInteger y = static_cast<NSInteger>(4 * bitmap.pixelsHigh / control.bounds.size.height);
-            RequireTint(window, [bitmap colorAtX:bitmap.pixelsWide / 2 y:y], LoreColor(LoreBackground),
-                [@"Native cells must preserve Lore's shared input face: " stringByAppendingString:identifier]);
+            RequireTint(window, BitmapColor(bitmap, bitmap.pixelsWide / 2, y), LoreColor(LoreBackground),
+                [NSString stringWithFormat:@"Native cells must preserve Lore's shared input face: %@; bitmapColorSpace=%@",
+                    identifier, bitmap.colorSpace]);
         }
     }
     window.appearance = previous;

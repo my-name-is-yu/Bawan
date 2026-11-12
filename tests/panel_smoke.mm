@@ -159,6 +159,17 @@ static void RequireLanguages(NSWindow *window, NSString *source, NSString *outpu
                 sourceLabel.stringValue, outputLabel.stringValue, source, output]);
 }
 
+// colorAtX: labels display components as Generic RGB. Retain the capture's ICC
+// color space when rebuilding the sample before converting it for comparison.
+static NSColor *BitmapColor(NSBitmapImageRep *bitmap, NSInteger x, NSInteger y) {
+    NSColor *pixel = [bitmap colorAtX:x y:y];
+    NSColorSpace *space = bitmap.colorSpace;
+    Require(pixel != nil && space.colorSpaceModel == NSColorSpaceModelRGB,
+            [NSString stringWithFormat:@"Expected an RGB capture with a color profile: %@", space]);
+    CGFloat components[] = {pixel.redComponent, pixel.greenComponent, pixel.blueComponent, pixel.alphaComponent};
+    return [NSColor colorWithColorSpace:space components:components count:4];
+}
+
 static CGFloat BackgroundBrightness(NSWindow *window) {
     Settle(window);
     NSView *root = window.contentView;
@@ -168,7 +179,7 @@ static CGFloat BackgroundBrightness(NSWindow *window) {
         [root cacheDisplayInRect:root.bounds toBitmapImageRep:bitmap];
     }];
     NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / root.bounds.size.width);
-    NSColor *color = [[bitmap colorAtX:x y:bitmap.pixelsHigh / 2] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    NSColor *color = [BitmapColor(bitmap, x, bitmap.pixelsHigh / 2) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
     Require(color != nil, @"Could not read the panel background");
     return color.redComponent * 0.2126 + color.greenComponent * 0.7152 + color.blueComponent * 0.0722;
 }
@@ -234,10 +245,11 @@ static void CheckPressedPrimaryContrast(NSWindow *window, NSButton *button) {
         }];
         // Sample blank face padding, clear of the centered title, border and shadow.
         NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / button.bounds.size.width);
-        CGFloat background = Luminance([bitmap colorAtX:x y:bitmap.pixelsHigh / 2]);
+        CGFloat background = Luminance(BitmapColor(bitmap, x, bitmap.pixelsHigh / 2));
         CGFloat contrast = (MAX(foreground, background) + 0.05) / (MIN(foreground, background) + 0.05);
         Require(contrast >= 4.5, [NSString stringWithFormat:
-            @"Pressed primary text must retain 4.5:1 contrast in %@; rendered %.2f:1", appearances[i], contrast]);
+            @"Pressed primary text must retain 4.5:1 contrast in %@; rendered %.2f:1; bitmapColorSpace=%@",
+            appearances[i], contrast, bitmap.colorSpace]);
         Capture(window, i == 0 ? @"pressed-light" : @"pressed-dark");
         [button highlight:NO];
         button.needsDisplay = YES;
