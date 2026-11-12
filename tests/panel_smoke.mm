@@ -1,4 +1,6 @@
 #import "TranslationPanel.h"
+#import <QuartzCore/CAAnimation.h>
+#import <QuartzCore/CATransform3D.h>
 
 #include <cmath>
 #include <cstdlib>
@@ -133,6 +135,76 @@ static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
        charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 }
 
+static void RequireNoPressMotion(NSButton *button) {
+    Require([button.layer animationForKey:@"lore.press"] == nil &&
+            CATransform3DIsIdentity(button.layer.transform),
+            @"Pointer motion must finish at identity without a retained animation");
+}
+
+@interface PointerActionProbe : NSObject
+@property(nonatomic, weak) id originalTarget;
+@property(nonatomic) SEL originalAction;
+@property(nonatomic) NSUInteger count;
+@property(nonatomic) BOOL releasedBeforeAction;
+- (void)invoke:(NSButton *)button;
+@end
+
+@implementation PointerActionProbe
+- (void)invoke:(NSButton *)button {
+    ++self.count;
+    self.releasedBeforeAction = self.releasedBeforeAction &&
+        CATransform3DIsIdentity(button.layer.transform);
+    [NSApp sendAction:self.originalAction to:self.originalTarget from:button];
+}
+@end
+
+static void ClickWithPointer(NSButton *button) {
+    NSPoint point = [button convertPoint:NSMakePoint(NSMidX(button.bounds), NSMidY(button.bounds)) toView:nil];
+    NSTimeInterval timestamp = NSProcessInfo.processInfo.systemUptime;
+    NSEvent *down = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:point modifierFlags:0
+        timestamp:timestamp windowNumber:button.window.windowNumber context:nil eventNumber:1 clickCount:1 pressure:1];
+    NSEvent *up = [NSEvent mouseEventWithType:NSEventTypeLeftMouseUp location:point modifierFlags:0
+        timestamp:timestamp + 0.01 windowNumber:button.window.windowNumber context:nil eventNumber:2 clickCount:1 pressure:0];
+    // Native NSButton tracking consumes the queued mouse-up; no AX grant or OS
+    // preference changes are necessary to exercise the actual mouseDown path.
+    [NSApp postEvent:up atStart:YES];
+    [button mouseDown:down];
+}
+
+static void CheckPointerFeedback(NSButton *copy) {
+    PointerActionProbe *probe = [[PointerActionProbe alloc] init];
+    probe.originalTarget = copy.target;
+    probe.originalAction = copy.action;
+    probe.releasedBeforeAction = YES;
+    NSRect frame = copy.frame;
+    copy.target = probe;
+    copy.action = @selector(invoke:);
+    @try {
+        ClickWithPointer(copy);
+        ClickWithPointer(copy);
+        Require(probe.count == 2 && probe.releasedBeforeAction,
+                @"Pointer actions must run once per click and release before forwarding");
+        Require(NSEqualRects(frame, copy.frame), @"Press feedback must not change layout or hit testing");
+        CAAnimation *animation = [copy.layer animationForKey:@"lore.press"];
+        if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
+            Require(animation == nil, @"Reduce Motion must keep pointer feedback immediate");
+        } else {
+            Require(animation != nil && animation.duration > 0 && animation.duration <= 0.16 &&
+                    animation.repeatCount == 0 && animation.repeatDuration == 0 &&
+                    !animation.autoreverses && animation.removedOnCompletion,
+                    @"Pointer feedback must be a finite, automatically removed animation");
+        }
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
+        while ([copy.layer animationForKey:@"lore.press"] != nil && deadline.timeIntervalSinceNow > 0) {
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        }
+        RequireNoPressMotion(copy);
+    } @finally {
+        copy.target = probe.originalTarget;
+        copy.action = probe.originalAction;
+    }
+}
+
 static void RunSmoke(void) {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
@@ -200,12 +272,38 @@ static void RunSmoke(void) {
     [copy performClick:nil];
     Require([[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:japanese],
             @"Copy action must write the exact translated text");
+    Require([copy.title isEqualToString:@"Copied"] && copy.image != nil,
+            @"Successful copying must confirm without changing the translated content");
+    RequireNoPressMotion(copy);
+    Capture(window, @"copied");
+    [panel setOutput:japanese];
+    Require([copy.title isEqualToString:@"Copied"],
+            @"Identical final output must preserve the copy confirmation");
+    [panel setOutput:[japanese stringByAppendingString:@"\n"]];
+    Require([copy.title isEqualToString:@"Copy Translation"],
+            @"New translation output must reset stale copy confirmation");
+    [panel setOutput:japanese];
+    CheckPointerFeedback(copy);
+    Require([copy.title isEqualToString:@"Copied"] &&
+            [[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:japanese],
+            @"Pointer copy feedback must preserve clipboard content");
+    [panel showForSelection:english];
+    Require([copy.title isEqualToString:@"Copy Translation"] && !copy.enabled,
+            @"A new selected passage must clear the previous copy confirmation");
+    [panel setOutput:japanese];
+    RequireNoPressMotion(copy);
+    RequireNoPressMotion(translate);
 
     [panel setShortcutAvailable:YES];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     Capture(window, @"light");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAccessibilityHighContrastAqua];
+    Capture(window, @"high-contrast-light");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAccessibilityHighContrastDarkAqua];
+    Capture(window, @"high-contrast-dark");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     [window setContentSize:NSMakeSize(640, 420)];
     [panel setShortcutAvailable:NO];
     [panel setAvailable:YES busy:NO status:@"The input exceeds the 4,096-token limit. Select a shorter passage and translate again."];
@@ -231,6 +329,8 @@ static void RunSmoke(void) {
             NSEventModifierFlagCommand | extra.unsignedIntegerValue, 36)];
     }
     Require(translations == beforeKey + 2, @"Modified Return must not trigger accidental retranslations");
+    RequireNoPressMotion(translate);
+    RequireNoPressMotion(copy);
     [translate performClick:nil];
     Require(cancellations == 1, @"Busy action must route cancellation");
     [panel setAvailable:YES busy:NO status:@"Translation cancelled"];
@@ -271,12 +371,19 @@ static void RunSmoke(void) {
             CollectObjects(window.contentView, views, constraints);
             Require([views isEqualToSet:baselineViews] && [constraints isEqualToSet:baselineConstraints],
                     @"App views or explicit constraints were recreated during updates");
+            RequireNoPressMotion(copy);
+            RequireNoPressMotion(translate);
             CheckBounds(window);
         }
     }
     Require(cancellations == 21 && closes == 20, @"Repeated lifecycle callbacks were lost or duplicated");
+    [copy performClick:nil];
+    Require([copy.title isEqualToString:@"Copied"], @"Copy confirmation must remain available after reuse");
     [dismiss performClick:nil];
     Require(closes == 21, @"Dismiss button must use the close callback");
+    Require([copy.title isEqualToString:@"Copy Translation"], @"Closing must clear copy confirmation");
+    RequireNoPressMotion(copy);
+    RequireNoPressMotion(translate);
     [panel showForManualInput];
     Settle(window);
     [window sendEvent:KeyEvent(window, @"\033", 0, 53)];

@@ -75,7 +75,7 @@ if(LORE_BUILD_APP)
     set_source_files_properties(resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Lore PRIVATE lore_engine lore_gesture
-        "-framework AppKit" "-framework Foundation"
+        "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
         "-framework CoreGraphics" "-framework ServiceManagement")
     target_compile_options(Lore PRIVATE -fobjc-arc -Wall -Wextra)
     set_target_properties(Lore PROPERTIES
@@ -98,7 +98,7 @@ if(LORE_BUILD_TESTS)
     if(APPLE)
         add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm)
         target_include_directories(panel_smoke PRIVATE src)
-        target_link_libraries(panel_smoke PRIVATE "-framework AppKit")
+        target_link_libraries(panel_smoke PRIVATE "-framework AppKit" "-framework QuartzCore")
         target_compile_options(panel_smoke PRIVATE -fobjc-arc -Wall -Wextra)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES

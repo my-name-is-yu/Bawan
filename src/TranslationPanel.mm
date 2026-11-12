@@ -1,5 +1,7 @@
 #import "TranslationPanel.h"
 #import <QuartzCore/CALayer.h>
+#import <QuartzCore/CAAnimation.h>
+#import <QuartzCore/CATransaction.h>
 
 #include <algorithm>
 
@@ -18,13 +20,21 @@ NSColor *Color(ColorRole role) {
     dispatch_once(&once, ^{
         const unsigned light[] = {0xFAFAFA, 0xF1F2F4, 0x202124, 0x5F626B, 0xDEDFE4, 0xE7E8ED, 0x635BE9};
         const unsigned dark[] = {0x202124, 0x252629, 0xF4F4F5, 0xB8BAC2, 0x42434A, 0x323338, 0x7775F8};
+        NSArray<NSAppearanceName> *appearances = @[
+            NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
+            NSAppearanceNameAqua, NSAppearanceNameDarkAqua];
         NSMutableArray<NSColor *> *palette = [NSMutableArray array];
         for (NSUInteger i = 0; i < sizeof(light) / sizeof(light[0]); ++i) {
             NSColor *lightColor = RGB(light[i]);
             NSColor *darkColor = RGB(dark[i]);
+            NSColor *contrastLight = i == Border ? RGB(0x757780) :
+                (i == SecondaryText ? RGB(0x44464D) : lightColor);
+            NSColor *contrastDark = i == Border ? RGB(0x8A8C94) :
+                (i == SecondaryText ? RGB(0xD0D1D6) : darkColor);
             [palette addObject:[NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *appearance) {
-                NSString *match = [appearance bestMatchFromAppearancesWithNames:
-                    @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+                NSString *match = [appearance bestMatchFromAppearancesWithNames:appearances];
+                if ([match isEqualToString:NSAppearanceNameAccessibilityHighContrastAqua]) return contrastLight;
+                if ([match isEqualToString:NSAppearanceNameAccessibilityHighContrastDarkAqua]) return contrastDark;
                 return [match isEqualToString:NSAppearanceNameDarkAqua] ? darkColor : lightColor;
             }]];
         }
@@ -115,12 +125,74 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 }
 @end
 
-@interface LoreButton : NSButton
+@interface LoreButton : NSButton {
+    BOOL _trackingPointer;
+}
 @property(nonatomic) BOOL primary;
 @property(nonatomic) BOOL plain;
+- (void)resetPressFeedback;
 @end
 
 @implementation LoreButton
+- (void)resetPressFeedback {
+    _trackingPointer = NO;
+    [self.layer removeAnimationForKey:@"lore.press"];
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.layer.transform = CATransform3DIdentity;
+    [CATransaction commit];
+}
+- (void)animatePressed:(BOOL)pressed {
+    CALayer *layer = self.layer;
+    if (!layer || !self.window.visible || NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
+        [self resetPressFeedback];
+        return;
+    }
+    CALayer *presentation = layer.presentationLayer;
+    CATransform3D current = presentation ? presentation.transform : layer.transform;
+    CGFloat scale = pressed ? 0.98 : 1;
+    CATransform3D target = CATransform3DMakeScale(scale, scale, 1);
+    // AppKit owns anchorPoint/position. Compensate inside the transform so the
+    // control scales around its center without changing hit testing or layout.
+    target.m41 = (0.5 - layer.anchorPoint.x) * NSWidth(self.bounds) * (1 - scale);
+    target.m42 = (0.5 - layer.anchorPoint.y) * NSHeight(self.bounds) * (1 - scale);
+    CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"transform"];
+    animation.fromValue = [NSValue valueWithCATransform3D:current];
+    animation.toValue = [NSValue valueWithCATransform3D:target];
+    animation.duration = 0.12;
+    animation.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.23 :1 :0.32 :1];
+    // One replaceable finite animation; a rapid reversal starts at presentation.
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    layer.transform = target;
+    [layer addAnimation:animation forKey:@"lore.press"];
+    [CATransaction commit];
+}
+- (void)mouseDown:(NSEvent *)event {
+    if (self.plain || !self.enabled) {
+        [super mouseDown:event];
+        return;
+    }
+    _trackingPointer = YES;
+    [self animatePressed:YES];
+    @try {
+        [super mouseDown:event];
+    } @finally {
+        // Dragging outside the button does not send an action, but still releases.
+        if (_trackingPointer) {
+            _trackingPointer = NO;
+            [self animatePressed:NO];
+        }
+    }
+}
+- (BOOL)sendAction:(SEL)action to:(id)target {
+    if (_trackingPointer) {
+        _trackingPointer = NO;
+        [self animatePressed:NO];
+    }
+    // Never wait for motion before translating, cancelling or copying.
+    return [super sendAction:action to:target];
+}
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
@@ -198,6 +270,8 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     NSLayoutConstraint *_instructionsHeight;
     LoreButton *_translate;
     LoreButton *_copy;
+    NSImage *_copyIcon;
+    NSImage *_copiedIcon;
     BOOL _available;
     BOOL _busy;
 }
@@ -230,6 +304,8 @@ static LoreButton *ButtonView(NSView *parent, NSString *identifier, NSString *ti
     button.contentTintColor = primary ? NSColor.whiteColor : Color(Text);
     button.primary = primary;
     button.plain = plain;
+    // Only the two footer actions need their own composited press feedback.
+    button.wantsLayer = !plain;
     button.target = target;
     button.action = action;
     button.translatesAutoresizingMaskIntoConstraints = NO;
@@ -389,7 +465,9 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), NO, NO);
     _translate.toolTip = @"Translate (⌘Return); cancel while translating";
     _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), YES, NO);
-    _copy.image = Symbol(@"doc.on.doc", @"", 13);
+    _copyIcon = Symbol(@"doc.on.doc", @"", 13);
+    _copiedIcon = Symbol(@"checkmark", @"", 13);
+    _copy.image = _copyIcon;
     _copy.imagePosition = NSImageLeft;
     _copy.imageHugsTitle = YES;
 
@@ -528,8 +606,11 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)setOutput:(NSString *)output {
-    _output.string = output;
-    [_output scrollRangeToVisible:NSMakeRange(output.length, 0)];
+    if (![_output.string isEqualToString:output]) {
+        [self resetCopyFeedback];
+        _output.string = output;
+        [_output scrollRangeToVisible:NSMakeRange(output.length, 0)];
+    }
     [self updateButtons];
 }
 
@@ -558,15 +639,32 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
 - (void)copyOutput:(id)sender {
     if (_output.string.length == 0) return;
+    [self resetCopyFeedback];
     NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
     [pasteboard clearContents];
-    [pasteboard writeObjects:@[_output.string]];
+    if ([pasteboard writeObjects:@[_output.string]]) {
+        _copy.title = @"Copied";
+        _copy.image = _copiedIcon;
+    }
+}
+
+- (void)resetCopyFeedback {
+    if (_copy.image == _copyIcon) return;
+    // Keep confirmation until the content changes or the panel closes. No timer,
+    // delayed block, toast view or stored copy of the translation is necessary.
+    _copy.title = @"Copy Translation";
+    _copy.image = _copyIcon;
 }
 
 - (void)textDidChange:(NSNotification *)notification {
     _source.needsDisplay = YES;
     [self updateButtons];
 }
-- (void)windowWillClose:(NSNotification *)notification { if (self.onClose) self.onClose(); }
+- (void)windowWillClose:(NSNotification *)notification {
+    [_translate resetPressFeedback];
+    [_copy resetPressFeedback];
+    [self resetCopyFeedback];
+    if (self.onClose) self.onClose();
+}
 - (void)close { [_panel close]; }
 @end
