@@ -71,8 +71,8 @@ if(LORE_BUILD_APP)
     add_executable(Lore MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm
         src/ShortcutMonitor.mm src/ModelStore.mm
-        resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
-    set_source_files_properties(resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
+        resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
+    set_source_files_properties(resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Lore PRIVATE lore_engine lore_gesture
         "-framework AppKit" "-framework Foundation"

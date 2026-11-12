@@ -1,4 +1,5 @@
 #import "TranslationPanel.h"
+#import "LoreAppearance.h"
 
 #include <algorithm>
 
@@ -47,6 +48,11 @@ static NSScrollView *TextArea(NSTextView *__strong *textView, BOOL editable, NSS
     text.font = [NSFont systemFontOfSize:14];
     text.textColor = NSColor.textColor;
     text.backgroundColor = NSColor.textBackgroundColor;
+    text.insertionPointColor = LoreAccentColor();
+    text.selectedTextAttributes = @{
+        NSBackgroundColorAttributeName: [LoreAccentColor() colorWithAlphaComponent:0.22],
+        NSForegroundColorAttributeName: NSColor.textColor
+    };
     text.textContainerInset = NSMakeSize(10, 10);
     text.verticallyResizable = YES;
     text.horizontallyResizable = NO;
@@ -127,6 +133,7 @@ static NSScrollView *TextArea(NSTextView *__strong *textView, BOOL editable, NSS
     [stack addArrangedSubview:_status];
 
     _translate = [NSButton buttonWithTitle:@"翻訳" target:self action:@selector(translate:)];
+    _translate.bezelColor = LoreAccentFillColor();
     _translate.keyEquivalent = @"\r";
     _translate.keyEquivalentModifierMask = NSEventModifierFlagCommand;
     _cancel = [NSButton buttonWithTitle:@"中止" target:self action:@selector(cancel:)];
@@ -210,9 +217,11 @@ static NSScrollView *TextArea(NSTextView *__strong *textView, BOOL editable, NSS
 - (void)updateButtons {
     BOOL hasInput = [_source.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     _translate.enabled = _available && hasInput;
+    _translate.contentTintColor = _translate.enabled ? NSColor.whiteColor : nil;
     _translate.title = _busy ? @"再翻訳" : @"翻訳";
     _cancel.enabled = _busy;
     _copy.enabled = _output.string.length > 0;
+    _copy.contentTintColor = _copy.enabled ? LoreAccentColor() : nil;
 }
 
 - (void)translate:(id)sender {
