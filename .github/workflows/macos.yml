@@ -23,6 +23,7 @@ jobs:
           ctest --test-dir build --output-on-failure
       - name: Check pointer motion with OS Reduce Motion disabled
         run: |
+          set -euo pipefail
           lore_previous_reduce_motion=$(defaults read com.apple.universalaccess reduceMotion 2>/dev/null || true)
           restore_lore_motion_preference() {
             if [ -n "$lore_previous_reduce_motion" ]; then
