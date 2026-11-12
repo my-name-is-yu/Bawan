@@ -1,5 +1,6 @@
 #import "TranslationPanel.h"
 #import <QuartzCore/CAAnimation.h>
+#import <QuartzCore/CATransaction.h>
 #import <QuartzCore/CATransform3D.h>
 
 #include <cmath>
@@ -135,10 +136,28 @@ static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
        charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 }
 
-static void RequireNoPressMotion(NSButton *button) {
-    Require([button.layer animationForKey:@"lore.press"] == nil &&
-            CATransform3DIsIdentity(button.layer.transform),
-            @"Pointer motion must finish at identity without a retained animation");
+static void RequireNoPressMotion(NSButton *button, NSString *stage) {
+    CALayer *layer = button.layer;
+    CAAnimation *animation = [layer animationForKey:@"lore.press"];
+    CATransform3D transform = layer.transform;
+    if (animation == nil && CATransform3DIsIdentity(transform)) return;
+    CATransform3D presented = layer.presentationLayer.transform;
+    Require(NO, [NSString stringWithFormat:
+        @"Pointer motion must finish at identity without a retained animation: stage=%@ button=%@ "
+        @"layer=%@ keys=%@ animation=%@ duration=%.3f beginTime=%.6f animationSpeed=%.3f "
+        @"layerSpeed=%.3f layerBeginTime=%.6f timeOffset=%.6f visible=%@ occlusion=%lu "
+        @"presentation=%@ presentationScale=(%.6f,%.6f) presentationTranslation=(%.6f,%.6f) model=%@ "
+        @"matrix=[%.6f,%.6f,%.6f,%.6f;%.6f,%.6f,%.6f,%.6f;"
+        @"%.6f,%.6f,%.6f,%.6f;%.6f,%.6f,%.6f,%.6f]",
+        stage, button.identifier, layer, layer.animationKeys, animation, animation.duration,
+        animation.beginTime, animation.speed, layer.speed, layer.beginTime, layer.timeOffset,
+        button.window.visible ? @"yes" : @"no", static_cast<unsigned long>(button.window.occlusionState),
+        [NSValue valueWithCATransform3D:presented], presented.m11, presented.m22, presented.m41, presented.m42,
+        [NSValue valueWithCATransform3D:transform],
+        transform.m11, transform.m12, transform.m13, transform.m14,
+        transform.m21, transform.m22, transform.m23, transform.m24,
+        transform.m31, transform.m32, transform.m33, transform.m34,
+        transform.m41, transform.m42, transform.m43, transform.m44]);
 }
 
 @interface PointerActionProbe : NSObject
@@ -194,11 +213,18 @@ static void CheckPointerFeedback(NSButton *copy) {
                     !animation.autoreverses && animation.removedOnCompletion,
                     @"Pointer feedback must be a finite, automatically removed animation");
         }
+        // This executable does not enter NSApp.run. Submit the displayed layer
+        // tree explicitly, then service AppKit while waiting for CA completion.
+        [copy.window displayIfNeeded];
+        [CATransaction flush];
+        NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
         while ([copy.layer animationForKey:@"lore.press"] != nil && deadline.timeIntervalSinceNow > 0) {
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+            [NSApp updateWindows];
         }
-        RequireNoPressMotion(copy);
+        RequireNoPressMotion(copy, [NSString stringWithFormat:@"after pointer completion wait (elapsed %.3fs)",
+            NSProcessInfo.processInfo.systemUptime - waitStarted]);
     } @finally {
         copy.target = probe.originalTarget;
         copy.action = probe.originalAction;
@@ -279,7 +305,7 @@ static void RunSmoke(void) {
             @"Copy action must write the exact translated text");
     Require([copy.title isEqualToString:@"Copied"] && copy.image != nil,
             @"Successful copying must confirm without changing the translated content");
-    RequireNoPressMotion(copy);
+    RequireNoPressMotion(copy, @"programmatic copy before pointer input");
     Capture(window, @"copied");
     [panel setOutput:japanese];
     Require([copy.title isEqualToString:@"Copied"],
@@ -296,8 +322,8 @@ static void RunSmoke(void) {
     Require([copy.title isEqualToString:@"Copy Translation"] && !copy.enabled,
             @"A new selected passage must clear the previous copy confirmation");
     [panel setOutput:japanese];
-    RequireNoPressMotion(copy);
-    RequireNoPressMotion(translate);
+    RequireNoPressMotion(copy, @"new passage and output after pointer input");
+    RequireNoPressMotion(translate, @"new passage and output after pointer input");
 
     [panel setShortcutAvailable:YES];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
@@ -331,8 +357,8 @@ static void RunSmoke(void) {
             NSEventModifierFlagCommand | extra.unsignedIntegerValue, 36)];
     }
     Require(translations == beforeKey + 2, @"Modified Return must not trigger accidental retranslations");
-    RequireNoPressMotion(translate);
-    RequireNoPressMotion(copy);
+    RequireNoPressMotion(translate, @"Command-Return while busy");
+    RequireNoPressMotion(copy, @"Command-Return while busy");
     [translate performClick:nil];
     Require(cancellations == 1, @"Busy action must route cancellation");
     [panel setAvailable:YES busy:NO status:@"Translation cancelled"];
@@ -373,8 +399,10 @@ static void RunSmoke(void) {
             CollectObjects(window.contentView, views, constraints);
             Require([views isEqualToSet:baselineViews] && [constraints isEqualToSet:baselineConstraints],
                     @"App views or explicit constraints were recreated during updates");
-            RequireNoPressMotion(copy);
-            RequireNoPressMotion(translate);
+            NSString *motionStage = [NSString stringWithFormat:@"lifecycle cycle %lu after close/reopen",
+                static_cast<unsigned long>(iteration + 1)];
+            RequireNoPressMotion(copy, motionStage);
+            RequireNoPressMotion(translate, motionStage);
             CheckBounds(window);
         }
     }
@@ -384,8 +412,8 @@ static void RunSmoke(void) {
     [dismiss performClick:nil];
     Require(closes == 21, @"Dismiss button must use the close callback");
     Require([copy.title isEqualToString:@"Copy Translation"], @"Closing must clear copy confirmation");
-    RequireNoPressMotion(copy);
-    RequireNoPressMotion(translate);
+    RequireNoPressMotion(copy, @"dismiss button after lifecycle cycles");
+    RequireNoPressMotion(translate, @"dismiss button after lifecycle cycles");
     [panel showForManualInput];
     Settle(window);
     [window sendEvent:KeyEvent(window, @"\033", 0, 53)];
