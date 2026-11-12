@@ -74,6 +74,23 @@ static void CheckBounds(NSWindow *window) {
                 NSContainsRect(NSInsetRect(root.bounds, -0.5, -0.5), frame),
                 [@"Control clipped outside panel: " stringByAppendingString:identifier]);
     }
+    NSTextView *source = (NSTextView *)Control(window, @"source", NSTextView.class);
+    NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
+    NSRect sourcePane = [source.enclosingScrollView convertRect:source.enclosingScrollView.bounds toView:root];
+    NSRect outputPane = [output.enclosingScrollView convertRect:output.enclosingScrollView.bounds toView:root];
+    Require(sourcePane.size.width > 0 && sourcePane.size.height > 0 &&
+            outputPane.size.width > 0 && outputPane.size.height > 0 &&
+            !NSIntersectsRect(sourcePane, outputPane) &&
+            std::abs(sourcePane.size.width - outputPane.size.width) < 1 &&
+            std::abs(NSMinY(sourcePane) - NSMinY(outputPane)) < 1,
+            @"Text panes must remain equal-width, aligned and non-overlapping");
+    NSView *translate = FindView(root, @"translate");
+    NSView *copy = FindView(root, @"copy");
+    NSRect translateFrame = [translate convertRect:translate.bounds toView:root];
+    NSRect copyFrame = [copy convertRect:copy.bounds toView:root];
+    Require(!NSIntersectsRect(translateFrame, copyFrame) &&
+            !NSIntersectsRect(sourcePane, translateFrame) && !NSIntersectsRect(outputPane, copyFrame),
+            @"Text panes and footer actions must not overlap");
 }
 
 static void Capture(NSWindow *window, NSString *name) {
@@ -187,6 +204,15 @@ static void RunSmoke(void) {
     NSUInteger beforeKey = translations;
     [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
     Require(translations == beforeKey + 1, @"Command-Return must retranslate while busy");
+    [window performKeyEquivalent:KeyEvent(window, @"\r",
+        NSEventModifierFlagCommand | NSEventModifierFlagCapsLock, 36)];
+    Require(translations == beforeKey + 2, @"Caps Lock must not disable Command-Return");
+    for (NSNumber *extra in @[@(NSEventModifierFlagControl), @(NSEventModifierFlagOption),
+                              @(NSEventModifierFlagShift)]) {
+        [window performKeyEquivalent:KeyEvent(window, @"\r",
+            NSEventModifierFlagCommand | extra.unsignedIntegerValue, 36)];
+    }
+    Require(translations == beforeKey + 2, @"Modified Return must not trigger accidental retranslations");
     [translate performClick:nil];
     Require(cancellations == 1, @"Busy action must route cancellation");
     [panel setAvailable:YES busy:NO status:@"Translation cancelled"];

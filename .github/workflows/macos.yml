@@ -26,7 +26,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: panel-view-captures
-          path: build/panel-smoke/
+          path: |
+            build/panel-smoke/
+            build/Testing/Temporary/LastTest.log
           if-no-files-found: warn
       - name: Verify and translate with the official model
         run: |

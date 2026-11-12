@@ -72,7 +72,9 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 - (BOOL)canBecomeMainWindow { return NO; }
 - (void)cancelOperation:(id)sender { [self close]; }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
-    NSEventModifierFlags modifiers = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    NSEventModifierFlags modifiers = event.modifierFlags &
+        (NSEventModifierFlagCommand | NSEventModifierFlagShift |
+         NSEventModifierFlagControl | NSEventModifierFlagOption);
     NSString *key = event.charactersIgnoringModifiers;
     if (modifiers == NSEventModifierFlagCommand &&
         ([key isEqualToString:@"\r"] || [key isEqualToString:@"\n"])) {

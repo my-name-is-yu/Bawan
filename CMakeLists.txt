@@ -13,7 +13,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 option(LORE_BUILD_APP "Build the macOS menu bar application" ${APPLE})
-option(LORE_BUILD_TESTS "Build Lore's portable behavior tests" OFF)
+option(LORE_BUILD_TESTS "Build Lore's behavior tests and macOS panel smoke test" OFF)
 option(LORE_BUILD_SMOKE "Build the real-model inference smoke test" OFF)
 
 # Enable native languages before configuring Metal's .m sources in llama.cpp.
