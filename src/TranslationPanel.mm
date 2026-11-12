@@ -381,11 +381,6 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     LoreSurface *dividerTop = SurfaceView(content, @"pane-divider-top", Border);
     LoreSurface *dividerBottom = SurfaceView(content, @"pane-divider-bottom", Border);
 
-    NSImageView *mark = [[NSImageView alloc] initWithFrame:NSZeroRect];
-    mark.image = Symbol(@"app", @"Lore", 20);
-    mark.contentTintColor = LoreAccentColor();
-    mark.translatesAutoresizingMaskIntoConstraints = NO;
-    [header addSubview:mark];
     NSTextField *name = Label(@"Lore", 20, NSFontWeightSemibold, Color(Text));
     [header addSubview:name];
     LoreButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
@@ -451,11 +446,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [headerLine.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [headerLine.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [headerLine.heightAnchor constraintEqualToConstant:1],
-        [mark.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:24],
-        [mark.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [mark.widthAnchor constraintEqualToConstant:24],
-        [mark.heightAnchor constraintEqualToConstant:24],
-        [name.leadingAnchor constraintEqualToAnchor:mark.trailingAnchor constant:8],
+        [name.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:24],
         [name.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [dismiss.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
         [dismiss.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
