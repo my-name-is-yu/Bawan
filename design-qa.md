@@ -34,6 +34,7 @@ final result: blocked
 ## Component consistency follow-up
 
 - Primary pressed color is a fixed darker vermilion in both themes; bitmap-based tests require at least 4.5:1 text contrast.
+- Translate/Cancel, Copy and Swap share the primary action's 3pt hard shadow while enabled, using each face's own rounded or cut-corner silhouette. Disabled actions have no shadow; settings inputs and icon-only buttons remain flat. Existing light/dark captures cover the enabled actions.
 - Both mastheads share 80pt height, 64pt mascot, 48pt wordmark, 80pt leading inset and 12pt brand gap. Settings place their subtitle beside the wordmark.
 - Key recorder and press-count controls retain AppKit tracking, menus and focus while sharing a 28pt face, 13pt type, warm background and dark border. Tests read the rendered face to detect native bezel overpainting.
 - Gold headings and the swap button share clipped corners. Reset and section icons share explicit Medium symbol sizing.

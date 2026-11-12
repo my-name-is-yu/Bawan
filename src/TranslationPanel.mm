@@ -13,13 +13,18 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
     if (!enabled) fill = [fill colorWithAlphaComponent:0.4];
     else if (highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:LoreColor(LoreText)];
     NSRect face = NSInsetRect(frame, 1, 1);
-    if (primary && enabled) {
-        face.size.height -= 3;
-        [LoreColor(LoreBorder) setFill];
-        [[NSBezierPath bezierPathWithRoundedRect:NSOffsetRect(face, 0, 3) xRadius:8 yRadius:8] fill];
-    }
+    face.size.height -= 3;
     NSBezierPath *path = gold ? LoreCutCornerPath(face) :
         [NSBezierPath bezierPathWithRoundedRect:face xRadius:8 yRadius:8];
+    if (enabled) {
+        // Every framed action shares the same hard shadow, including cut corners.
+        NSBezierPath *shadow = [path copy];
+        NSAffineTransform *offset = [NSAffineTransform transform];
+        [offset translateXBy:0 yBy:3];
+        [shadow transformUsingAffineTransform:offset];
+        [LoreColor(LoreBorder) setFill];
+        [shadow fill];
+    }
     [fill setFill];
     [path fill];
     [LoreColor(LoreBorder) setStroke];
