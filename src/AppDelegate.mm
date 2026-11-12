@@ -118,7 +118,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
     NSImage *image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Lore 翻訳"];
     if (image) {
-        image.template = YES;
+        [image setTemplate:YES];
         _statusItem.button.image = image;
     } else {
         _statusItem.button.title = @"訳";

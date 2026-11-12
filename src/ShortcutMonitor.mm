@@ -44,7 +44,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     __weak ShortcutMonitor *weakSelf = self;
     [_workspaceObservers addObject:[center addObserverForName:NSWorkspaceDidActivateApplicationNotification
                                                        object:nil queue:NSOperationQueue.mainQueue
-                                                   usingBlock:^(NSNotification *)note {
+                                                   usingBlock:^(NSNotification *note) {
         ShortcutMonitor *self = weakSelf;
         if (!self) return;
         self->_gesture.reset();
@@ -52,7 +52,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     }]];
     [_workspaceObservers addObject:[center addObserverForName:NSWorkspaceWillSleepNotification
                                                        object:nil queue:NSOperationQueue.mainQueue
-                                                   usingBlock:^(NSNotification *)note {
+                                                   usingBlock:^(NSNotification *note) {
         ShortcutMonitor *self = weakSelf;
         if (!self) return;
         ++self->_readGeneration;
@@ -61,7 +61,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     }]];
     [_workspaceObservers addObject:[center addObserverForName:NSWorkspaceDidWakeNotification
                                                        object:nil queue:NSOperationQueue.mainQueue
-                                                   usingBlock:^(NSNotification *)note {
+                                                   usingBlock:^(NSNotification *note) {
         ShortcutMonitor *self = weakSelf;
         if (self && self->_enabled) {
             [self removeTap];
@@ -70,7 +70,7 @@ static CGEventRef observeKey(CGEventTapProxy, CGEventType type, CGEventRef event
     }]];
     _activationObserver = [NSNotificationCenter.defaultCenter
         addObserverForName:NSApplicationDidBecomeActiveNotification object:nil
-        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *)note {
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         ShortcutMonitor *self = weakSelf;
         if (self && self->_enabled && !self.isListening) {
             [self removeTap];
