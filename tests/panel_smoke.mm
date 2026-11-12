@@ -159,7 +159,7 @@ static void RequireNoPressMotion(NSButton *button, NSString *stage) {
     if (PressMotionIsSettled(button)) return;
     CATransform3D presented = layer.presentationLayer.transform;
     Require(NO, [NSString stringWithFormat:
-        @"Pointer motion must finish at identity without a retained animation: stage=%@ button=%@ "
+        @"Pointer motion must finish at identity without active or unbounded owned motion: stage=%@ button=%@ "
         @"layer=%@ keys=%@ animation=%@ duration=%.3f beginTime=%.6f animationSpeed=%.3f "
         @"layerSpeed=%.3f layerBeginTime=%.6f timeOffset=%.6f visible=%@ occlusion=%lu "
         @"presentation=%@ presentationScale=(%.6f,%.6f) presentationTranslation=(%.6f,%.6f) model=%@ "
