@@ -233,8 +233,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *subtitle = Label(@"Settings · Shortcuts and startup", 12, NSFontWeightRegular,
                                   LoreColor(LoreHeaderText));
     subtitle.identifier = @"settings-subtitle";
-    NSStackView *header = Stack(@[title, subtitle], NSUserInterfaceLayoutOrientationHorizontal, 20);
-    [masthead addSubview:header];
+    [masthead addSubview:title];
+    [masthead addSubview:subtitle];
 
     NSStackView *shortcutTitle = Stack(@[Icon(@"keyboard"),
         Label(@"Global shortcuts", 14, NSFontWeightSemibold, LoreColor(LoreText))],
@@ -377,9 +377,11 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [mascot.widthAnchor constraintEqualToConstant:LoreBrandMarkSize],
         [mascot.heightAnchor constraintEqualToConstant:LoreBrandMarkSize],
-        [header.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:LoreBrandGap],
-        [header.trailingAnchor constraintLessThanOrEqualToAnchor:masthead.trailingAnchor constant:-24],
-        [header.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
+        [title.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:LoreBrandGap],
+        [title.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
+        [subtitle.leadingAnchor constraintEqualToAnchor:title.trailingAnchor constant:20],
+        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:masthead.trailingAnchor constant:-24],
+        [subtitle.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [content.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:24],
         [content.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-24],
         [content.topAnchor constraintEqualToAnchor:masthead.bottomAnchor constant:24],

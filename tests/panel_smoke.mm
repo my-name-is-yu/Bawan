@@ -82,13 +82,24 @@ static void CheckBounds(NSWindow *window) {
     NSTextField *brand = (NSTextField *)Control(window, @"brand-name", NSTextField.class);
     NSRect brandFrame = [brand convertRect:brand.bounds toView:header];
     NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
+    // Anchors measure alignment rectangles; text-field frames include native ornament insets.
+    NSRect brandAlignment = [brand.superview convertRect:[brand alignmentRectForFrame:brand.frame] toView:header];
+    NSRect mascotAlignment = [mascot.superview convertRect:[mascot alignmentRectForFrame:mascot.frame] toView:header];
+    CGFloat brandGap = NSMinX(brandAlignment) - NSMaxX(mascotAlignment);
     Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
             std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
             std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
             std::abs(brand.font.pointSize - LoreBrandLogoSize) < 0.1 &&
-            std::abs(NSMinX(mascotFrame) - LoreBrandLeading) < 1 &&
-            std::abs(NSMinX(brandFrame) - NSMaxX(mascotFrame) - LoreBrandGap) < 1,
-            @"Translator branding must use the common header geometry and typography");
+            std::abs(NSMinX(mascotAlignment) - LoreBrandLeading) < 1 &&
+            std::abs(brandGap - LoreBrandGap) < 1,
+            [NSString stringWithFormat:
+        @"Translator branding must use the shared geometry and typography: "
+        @"headerHeight=%.2f expected=%.2f mascotBounds=%@ frame=%@ alignment=%@ expectedSize=%.2f "
+        @"leading=%.2f expected=%.2f brandFrame=%@ alignment=%@ font=%.2f expected=%.2f gap=%.2f expected=%.2f",
+        header.bounds.size.height, LoreHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), NSStringFromRect(mascotAlignment), LoreBrandMarkSize,
+        NSMinX(mascotAlignment), LoreBrandLeading, NSStringFromRect(brandFrame), NSStringFromRect(brandAlignment),
+        brand.font.pointSize, LoreBrandLogoSize, brandGap, LoreBrandGap]);
     Require(NSContainsRect(header.bounds, brandFrame) && !NSIntersectsRect(brandFrame, mascotFrame),
             @"The translator wordmark must fit beside its mascot");
     NSTextView *source = (NSTextView *)Control(window, @"source", NSTextView.class);
