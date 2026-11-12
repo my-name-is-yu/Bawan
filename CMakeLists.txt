@@ -13,7 +13,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 option(LORE_BUILD_APP "Build the macOS menu bar application" ${APPLE})
-option(LORE_BUILD_TESTS "Build Lore's portable behavior tests" OFF)
+option(LORE_BUILD_TESTS "Build Lore's behavior tests and macOS panel smoke test" OFF)
 option(LORE_BUILD_SMOKE "Build the real-model inference smoke test" OFF)
 
 # Enable native languages before configuring Metal's .m sources in llama.cpp.
@@ -75,7 +75,7 @@ if(LORE_BUILD_APP)
     set_source_files_properties(resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Lore PRIVATE lore_engine lore_gesture
-        "-framework AppKit" "-framework Foundation"
+        "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
         "-framework CoreGraphics" "-framework ServiceManagement")
     target_compile_options(Lore PRIVATE -fobjc-arc -Wall -Wextra)
     set_target_properties(Lore PROPERTIES
@@ -95,6 +95,15 @@ if(LORE_BUILD_TESTS)
     add_executable(gesture_tests tests/gesture_tests.cpp)
     target_link_libraries(gesture_tests PRIVATE lore_gesture)
     add_test(NAME copy_gesture COMMAND gesture_tests)
+    if(APPLE)
+        add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm)
+        target_include_directories(panel_smoke PRIVATE src)
+        target_link_libraries(panel_smoke PRIVATE "-framework AppKit" "-framework QuartzCore")
+        target_compile_options(panel_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME translation_panel COMMAND panel_smoke)
+        set_tests_properties(translation_panel PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
+    endif()
 endif()
 if(LORE_BUILD_SMOKE)
     add_executable(engine_smoke tests/engine_smoke.cpp)
