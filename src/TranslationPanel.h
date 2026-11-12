@@ -3,6 +3,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class SettingsViewController;
+
 typedef NS_ENUM(NSInteger, LoreStatusKind) {
     LoreStatusInformation, LoreStatusWarning, LoreStatusError
 };
@@ -16,6 +18,8 @@ typedef NS_ENUM(NSInteger, LoreStatusKind) {
 - (void)showForSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
+- (void)showSettings:(SettingsViewController *)settings;
+- (void)showTranslation;
 - (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;
 - (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(LoreStatusKind)kind;

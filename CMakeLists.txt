@@ -71,7 +71,7 @@ set(LORE_UI_RESOURCES resources/LoreMascot.png resources/PaperGrain.png)
 
 if(LORE_BUILD_APP)
     add_executable(Lore MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsWindow.mm
+        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm
         src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
         ${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
     set_source_files_properties(${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
@@ -121,16 +121,16 @@ if(LORE_BUILD_TESTS)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
-        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsWindow.mm
+        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsViewController.mm src/TranslationPanel.mm
             src/ShortcutPreferences.mm src/ShortcutMonitor.mm)
         target_include_directories(settings_smoke PRIVATE src)
         target_compile_definitions(settings_smoke PRIVATE
             LORE_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(settings_smoke PRIVATE lore_gesture "-framework AppKit" "-framework ServiceManagement"
+        target_link_libraries(settings_smoke PRIVATE lore_gesture "-framework AppKit" "-framework QuartzCore" "-framework ServiceManagement"
             "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon")
         target_compile_options(settings_smoke PRIVATE -fobjc-arc -Wall -Wextra)
-        add_test(NAME settings_window COMMAND settings_smoke)
-        set_tests_properties(settings_window PROPERTIES
+        add_test(NAME settings_navigation COMMAND settings_smoke)
+        set_tests_properties(settings_navigation PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
     endif()
 endif()

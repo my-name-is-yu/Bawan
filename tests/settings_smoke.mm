@@ -1,4 +1,5 @@
-#import "SettingsWindow.h"
+#import "SettingsViewController.h"
+#import "TranslationPanel.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import "LoreAppearance.h"
 
@@ -48,12 +49,12 @@
 
 // Send events through NSApplication and its real local event monitor, while
 // keeping physical release checks deterministic without injecting OS input.
-@interface SmokeSettingsWindow : SettingsWindow {
+@interface SmokeSettingsViewController : SettingsViewController {
     std::set<CGKeyCode> _testHeldKeys;
 }
 - (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down;
 @end
-@implementation SmokeSettingsWindow
+@implementation SmokeSettingsViewController
 - (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down {
     if (down) _testHeldKeys.insert(key);
     else _testHeldKeys.erase(key);
@@ -87,21 +88,27 @@ static void CheckBounds(NSWindow *window) {
     Settle(window);
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Settings layout is ambiguous");
+    NSScrollView *scroll = (NSScrollView *)FindView(root, @"settings-scroll");
+    NSView *document = FindView(root, @"settings-document");
+    Require([scroll isKindOfClass:NSScrollView.class] && document != nil && scroll.documentView == document &&
+        scroll.hasVerticalScroller && !scroll.hasHorizontalScroller && !document.hasAmbiguousLayout,
+        @"Settings must host one vertically scrollable document in the shared window");
     for (NSString *identifier in @[@"shortcut-selection-enabled", @"shortcut-selection-key", @"shortcut-selection-count",
             @"shortcut-selection-reset", @"shortcut-selection-status", @"shortcut-selection-permission",
             @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
             @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-local-keys",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
             @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
-            @"settings-brand-name", @"settings-subtitle"]) {
+            @"settings-brand-name", @"settings-subtitle", @"settings-back", @"settings-scroll"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
-        NSRect frame = FrameInRoot(view);
+        NSView *container = [view isDescendantOf:document] ? document : root;
+        NSRect frame = [view convertRect:view.bounds toView:container];
         Require(frame.size.width > 0 && frame.size.height > 0 &&
-                NSContainsRect(NSInsetRect(root.bounds, -0.5, -0.5), frame),
+                NSContainsRect(NSInsetRect(container.bounds, -0.5, -0.5), frame),
                 [NSString stringWithFormat:@"Settings view clipped: %@ %@ in %@", identifier,
-                    NSStringFromRect(frame), NSStringFromRect(root.bounds)]);
+                    NSStringFromRect(frame), NSStringFromRect(container.bounds)]);
     }
     NSView *header = FindView(root, @"settings-header");
     NSView *mascot = FindView(root, @"settings-mascot");
@@ -114,6 +121,8 @@ static void CheckBounds(NSWindow *window) {
     NSRect mascotAlignment = [mascot.superview convertRect:[mascot alignmentRectForFrame:mascot.frame] toView:header];
     CGFloat brandGap = NSMinX(brandAlignment) - NSMaxX(mascotAlignment);
     NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
+    NSView *back = FindView(root, @"settings-back");
+    NSRect backFrame = [back convertRect:back.bounds toView:header];
     Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
             std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
             std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
@@ -129,8 +138,10 @@ static void CheckBounds(NSWindow *window) {
         NSMinX(mascotAlignment), LoreBrandLeading, NSStringFromRect(brandFrame), NSStringFromRect(brandAlignment),
         brand.font.pointSize, LoreBrandLogoSize, brandGap, LoreBrandGap]);
     Require(NSContainsRect(header.bounds, brandFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
-            !NSIntersectsRect(brandFrame, subtitleFrame) && !NSIntersectsRect(brandFrame, mascotFrame),
-            @"Settings wordmark and subtitle must fit without overlapping the mascot or each other");
+            NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(brandFrame, subtitleFrame) &&
+            !NSIntersectsRect(brandFrame, mascotFrame) && !NSIntersectsRect(backFrame, brandFrame) &&
+            !NSIntersectsRect(backFrame, subtitleFrame) && !NSIntersectsRect(backFrame, mascotFrame),
+            @"Settings branding and Back must fit without overlapping each other");
     for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
                                    @"shortcut-panel-count"]) {
         NSControl *control = (NSControl *)FindView(root, identifier);
@@ -144,6 +155,14 @@ static void CheckBounds(NSWindow *window) {
     Require(!NSIntersectsRect(FrameInRoot(shortcut), FrameInRoot(login)) &&
             !NSIntersectsRect(FrameInRoot(login), FrameInRoot(privacy)),
             @"Settings groups and privacy footer must not overlap");
+}
+
+static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
+                         NSEventModifierFlags modifiers, unsigned short keyCode) {
+    return [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+        modifierFlags:modifiers timestamp:NSProcessInfo.processInfo.systemUptime
+        windowNumber:window.windowNumber context:nil characters:characters
+        charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 }
 
 // colorAtX: labels display components as Generic RGB. Retain the capture's ICC
@@ -250,12 +269,12 @@ static void CheckInputFaces(NSWindow *window) {
     window.appearance = previous;
 }
 
-static void SendKey(SmokeSettingsWindow *settings, unsigned short code,
+static void SendKey(SmokeSettingsViewController *settings, NSWindow *window, unsigned short code,
                     NSEventModifierFlags modifiers, BOOL down, NSString *characters) {
     [settings setRecordedKey:code down:down];
     NSEvent *event = [NSEvent keyEventWithType:down ? NSEventTypeKeyDown : NSEventTypeKeyUp
         location:NSZeroPoint modifierFlags:modifiers timestamp:NSProcessInfo.processInfo.systemUptime
-        windowNumber:settings.window.windowNumber context:nil characters:characters
+        windowNumber:window.windowNumber context:nil characters:characters
         charactersIgnoringModifiers:characters isARepeat:NO keyCode:code];
     [NSApp sendEvent:event];
 }
@@ -272,9 +291,77 @@ static void RunSmoke(void) {
     [defaults removePersistentDomainForName:suite];
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SmokeShortcutMonitor *monitor = [[SmokeShortcutMonitor alloc] initWithPreferences:preferences];
-    SmokeSettingsWindow *settings = [[SmokeSettingsWindow alloc] initWithPreferences:preferences monitor:monitor];
-    NSWindow *window = settings.window;
-    [settings showSettings];
+    SmokeSettingsViewController *settings = [[SmokeSettingsViewController alloc] initWithPreferences:preferences monitor:monitor];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    __block NSUInteger translations = 0, cancellations = 0, closes = 0;
+    panel.onTranslate = ^(NSString *__unused text, lore::Direction __unused direction) { ++translations; };
+    panel.onCancel = ^{ ++cancellations; };
+    panel.onClose = ^{ ++closes; };
+    __weak TranslationPanel *weakPanel = panel;
+    __weak SettingsViewController *weakSettings = settings;
+    panel.onSettings = ^{ [weakPanel showSettings:weakSettings]; };
+    [panel showForManualInput];
+    NSWindow *window = nil;
+    for (NSWindow *candidate in NSApp.windows) {
+        if ([candidate.contentView.identifier isEqualToString:@"lore-panel"]) window = candidate;
+    }
+    Require(window != nil, @"The translator must provide the only settings host window");
+    NSView *translationRoot = window.contentView;
+    NSTextView *source = (NSTextView *)FindView(translationRoot, @"source");
+    NSTextView *output = (NSTextView *)FindView(translationRoot, @"output");
+    NSButton *gear = (NSButton *)FindView(translationRoot, @"settings");
+    NSString *original = @"The meeting has been moved to next Monday.";
+    [panel showForSelection:original];
+    [panel showForManualInput];
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [source.undoManager beginUndoGrouping];
+    [source insertText:@" Please review the document." replacementRange:NSMakeRange(source.string.length, 0)];
+    [source.undoManager endUndoGrouping];
+    NSString *edited = [source.string copy];
+    Require(![edited isEqualToString:original] && source.undoManager.canUndo,
+        @"The navigation fixture must establish a real editable undo operation");
+    [source setSelectedRange:NSMakeRange(4, 7)];
+    NSRange selection = source.selectedRange;
+    [panel setOutput:@"会議は来週の月曜日に変更されました。" direction:lore::Direction::EnglishToJapanese];
+    [(NSButton *)FindView(translationRoot, @"copy") performClick:nil];
+    NSRect hostFrame = window.frame;
+    [gear performClick:nil];
+    Settle(window);
+    Require(window.contentView == settings.view && settings.view.window == window &&
+        translationRoot.window == nil && NSEqualRects(window.frame, hostFrame),
+        @"Settings must replace the existing window content without another window or resize");
+    NSUInteger ownedWindows = 0;
+    for (NSWindow *candidate in NSApp.windows) {
+        NSString *identifier = candidate.contentView.identifier;
+        if ([identifier isEqualToString:@"lore-panel"] || [identifier isEqualToString:@"lore-settings"]) ++ownedWindows;
+    }
+    Require(ownedWindows == 1, @"Settings must not create a second Lore window");
+    NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
+    [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
+    NSInteger pasteboardCount = NSPasteboard.generalPasteboard.changeCount;
+    [window performKeyEquivalent:KeyEvent(window, @"C", NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
+    Require(translations == 0 && cancellations == 0 && NSPasteboard.generalPasteboard.changeCount == pasteboardCount,
+        @"Settings must not translate or copy the hidden translator through local shortcuts");
+    [back performClick:nil];
+    Require(window.contentView == translationRoot && NSEqualRects(window.frame, hostFrame) &&
+        window.firstResponder == source && [source.string isEqualToString:edited] &&
+        NSEqualRanges(source.selectedRange, selection) &&
+        [[(NSButton *)FindView(translationRoot, @"copy") title] isEqualToString:@"Copied"] && closes == 0,
+        @"Back must preserve text, selection, focus, copy feedback and the live host window");
+    [source.undoManager undo];
+    Require([source.string isEqualToString:original], @"The source edit must remain undoable after returning from Settings");
+    [source.undoManager redo];
+    Require([source.string isEqualToString:edited], @"Navigation must preserve the redo history too");
+    [panel setAvailable:YES busy:YES status:@"Translating…" kind:LoreStatusInformation];
+    [gear performClick:nil];
+    [panel setOutput:@"Hidden streaming update" direction:lore::Direction::EnglishToJapanese];
+    [back performClick:nil];
+    Require([output.string isEqualToString:@"Hidden streaming update"] &&
+        [[(NSButton *)FindView(translationRoot, @"translate") title] isEqualToString:@"Cancel  ⌘↵"] &&
+        cancellations == 0 && closes == 0,
+        @"Settings navigation must retain streaming updates without cancelling the translation");
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [gear performClick:nil];
     CheckBounds(window);
     Require(LoreMascotImage() != nil && LorePaperImage() != nil,
             @"Settings captures must load the real mascot and paper assets");
@@ -325,7 +412,10 @@ static void RunSmoke(void) {
         @"Accessibility permission must use the same warning color");
     Capture(window, @"light");
     CheckInputFaces(window);
-    CGFloat baseHeight = root.bounds.size.height;
+    NSScrollView *scroll = (NSScrollView *)FindView(root, @"settings-scroll");
+    NSView *document = FindView(root, @"settings-document");
+    CGFloat baseHeight = document.bounds.size.height;
+    NSRect settingsFrame = window.frame;
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
     Require(login.state == NSControlStateValueOn && !hint.hidden && hint.stringValue.length > 0,
         @"Pending approval must remain on with an explanatory message");
@@ -365,14 +455,24 @@ static void RunSmoke(void) {
         @"Login failures must use the common error color");
     NSRect textBounds = [hint.attributedStringValue boundingRectWithSize:NSMakeSize(hint.bounds.size.width, CGFLOAT_MAX)
         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
-    Require(root.bounds.size.height > baseHeight && hint.bounds.size.height + 2 >= textBounds.size.height,
-        @"Long login errors must wrap and grow the window rather than clip");
+    Require(document.bounds.size.height > baseHeight &&
+        document.bounds.size.height > scroll.contentView.bounds.size.height &&
+        hint.bounds.size.height + 2 >= textBounds.size.height && NSEqualRects(window.frame, settingsFrame),
+        @"Long login errors must grow a scrollable document while preserving the shared window frame");
     Require([privacy.stringValue isEqualToString:privacyText], @"Login feedback must preserve the privacy explanation");
+    [hint scrollRectToVisible:hint.bounds];
     Capture(window, @"long-error");
+    NSRect hintInDocument = [hint convertRect:hint.bounds toView:document];
+    NSRect visibleDocument = scroll.documentVisibleRect;
+    Require(NSContainsRect(NSInsetRect(visibleDocument, -0.5, -0.5), hintInDocument),
+        [NSString stringWithFormat:@"The entire login error must actually scroll into view: hint=%@ visible=%@",
+            NSStringFromRect(hintInDocument), NSStringFromRect(visibleDocument)]);
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
     Settle(window);
-    Require(hint.hidden && root.bounds.size.height <= baseHeight + 1,
-        @"Clearing feedback must restore the compact settings height");
+    Require(hint.hidden && document.bounds.size.height <= baseHeight + 1 && NSEqualRects(window.frame, settingsFrame),
+        @"Clearing feedback must restore document height without resizing the shared window");
+    [scroll.contentView scrollToPoint:NSZeroPoint];
+    [scroll reflectScrolledClipView:scroll.contentView];
 
     selectionEnabled.state = NSControlStateValueOff;
     SendControlAction(selectionEnabled);
@@ -404,14 +504,14 @@ static void RunSmoke(void) {
     RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreSecondaryText),
         @"Paused shortcuts must use neutral feedback rather than success green");
     Capture(window, @"recording");
-    SendKey(settings, 17, NSEventModifierFlagOption, YES, @"t");
+    SendKey(settings, window, 17, NSEventModifierFlagOption, YES, @"t");
     Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 17,
         @"Recording must save the requested physical key but wait for its release");
     Require([selectionStatus.stringValue isEqualToString:@"Waiting for key release…"] &&
         [panelStatus.stringValue isEqualToString:@"Paused while recording"],
         @"Accepted held keys must show release waiting on the correct row");
     Capture(window, @"release-wait");
-    SendKey(settings, 17, NSEventModifierFlagOption, NO, @"t");
+    SendKey(settings, window, 17, NSEventModifierFlagOption, NO, @"t");
     Require(!monitor.suspended && selectionEnabled.enabled, @"Key-up must safely restore monitoring");
     Require([selectionStatus.stringValue isEqualToString:@"Off"] &&
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
@@ -424,9 +524,9 @@ static void RunSmoke(void) {
 
     [selectionKey performClick:nil];
     NSEventModifierFlags customModifiers = NSEventModifierFlagControl | NSEventModifierFlagOption;
-    SendKey(settings, 40, customModifiers, YES, @"k");
+    SendKey(settings, window, 40, customModifiers, YES, @"k");
     Require(monitor.suspended, @"An accepted key must remain suspended until release");
-    SendKey(settings, 40, customModifiers, NO, @"k");
+    SendKey(settings, window, 40, customModifiers, NO, @"k");
     selectionEnabled.state = NSControlStateValueOn;
     SendControlAction(selectionEnabled);
     lore::ShortcutBinding custom = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
@@ -440,13 +540,13 @@ static void RunSmoke(void) {
     Capture(window, @"custom-shortcut");
 
     [selectionKey performClick:nil];
-    SendKey(settings, 12, NSEventModifierFlagCommand, YES, @"q");
-    SendKey(settings, 12, NSEventModifierFlagCommand, NO, @"q");
+    SendKey(settings, window, 12, NSEventModifierFlagCommand, YES, @"q");
+    SendKey(settings, window, 12, NSEventModifierFlagCommand, NO, @"q");
     Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
         @"Reserved commands must be consumed without quitting or replacing the old key");
-    SendKey(settings, 53, 0, YES, @"\x1b");
+    SendKey(settings, window, 53, 0, YES, @"\x1b");
     Require(monitor.suspended && window.visible, @"Esc cancels recording without closing or resuming before key-up");
-    SendKey(settings, 53, 0, NO, @"\x1b");
+    SendKey(settings, window, 53, 0, NO, @"\x1b");
     Require(!monitor.suspended && window.visible &&
         [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
         @"Canceling recording must preserve the old assignment and the settings window");
@@ -458,7 +558,7 @@ static void RunSmoke(void) {
     [delegate windowDidBecomeKey:[NSNotification notificationWithName:NSWindowDidBecomeKeyNotification object:window]];
     Require(monitor.settingsActive, @"The become-key callback must mark settings active before focus-loss testing");
     [selectionKey performClick:nil];
-    SendKey(settings, 0, 0, YES, @"a");
+    SendKey(settings, window, 0, 0, YES, @"a");
     Require(monitor.suspended, @"An invalid key keeps the recorder active");
     [window orderOut:nil];
     Settle(window);
@@ -473,32 +573,65 @@ static void RunSmoke(void) {
     Require(!monitor.suspended, [NSString stringWithFormat:
         @"Physical release after focus loss must restore global monitoring (keyWindow=%@, settingsActive=%@, recorderEnabled=%@, feedback=%@)",
         @(window.keyWindow), @(monitor.settingsActive), @(selectionKey.enabled), feedback.stringValue]);
-    [settings showSettings];
+    [gear performClick:nil];
     [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
     lore::ShortcutBinding restored = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
     Require(restored.enabled && lore::isPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
         @"Reset restores the default key, press count, and enabled state");
     [settings showError:@""];
+    // Leaving the page does not resign the shared key window. It must still
+    // finish recording and wait for a swallowed key's physical release.
+    [selectionKey performClick:nil];
+    SendKey(settings, window, 0, 0, YES, @"a");
+    [back performClick:nil];
+    Require(window.contentView == translationRoot && !monitor.settingsActive && monitor.suspended && window.visible,
+        @"Back during recording must leave Settings while retaining the held-key release guard");
+    [settings setRecordedKey:0 down:NO];
+    NSDate *backReleaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (monitor.suspended && backReleaseDeadline.timeIntervalSinceNow > 0) {
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    Require(!monitor.suspended, @"Hidden Settings must finish physical-release cleanup after Back");
+    [gear performClick:nil];
+    [window setContentSize:NSMakeSize(640, 420)];
+    CheckBounds(window);
+    Capture(window, @"minimum");
+    [window setFrame:settingsFrame display:NO];
     for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
-        [settings close];
-        [settings showSettings];
-        Require(settings.window == window && window.contentView == root,
-            @"Closing and reopening must reuse the settings window and view tree");
+        [back performClick:nil];
+        Require(window.contentView == translationRoot && !monitor.settingsActive,
+            @"Returning to translation must deactivate Settings without changing windows");
+        [gear performClick:nil];
+        Require(settings.view == root && window.contentView == root && settings.view.window == window &&
+            FindView(root, @"shortcut-selection-key") == selectionKey && NSEqualRects(window.frame, settingsFrame),
+            @"Twenty navigation cycles must reuse the same host, controller view and shortcut controls");
         CheckBounds(window);
     }
-    [window makeFirstResponder:window];
-    [window cancelOperation:nil];
+    // Exercise a real settings control's responder chain, including the view
+    // controller, without depending on hosted CI granting a key window.
+    [selectionKey interpretKeyEvents:@[KeyEvent(window, @"\x1b", 0, 53)]];
     Settle(window);
-    Require(!window.visible, @"The Escape responder command must close the settings window");
-    [settings showSettings];
-    NSEvent *closeKey = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
-        modifierFlags:NSEventModifierFlagCommand timestamp:NSProcessInfo.processInfo.systemUptime
-        windowNumber:window.windowNumber context:nil characters:@"w" charactersIgnoringModifiers:@"w"
-        isARepeat:NO keyCode:13];
-    Require([window performKeyEquivalent:closeKey] && !window.visible,
-        @"Command-W must close the settings window");
+    Require(window.visible && window.contentView == translationRoot && closes == 0,
+        @"Escape outside recording must return to translation without closing the shared window");
+    [gear performClick:nil];
+    [selectionKey performClick:nil];
+    SendKey(settings, window, 0, 0, YES, @"a");
+    [[window standardWindowButton:NSWindowCloseButton] performClick:nil];
+    Require(!window.visible && closes == 1 && !monitor.settingsActive && monitor.suspended,
+        @"The shared red close button must close once and retain held-key cleanup while recording");
+    [settings setRecordedKey:0 down:NO];
+    NSDate *closeReleaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (monitor.suspended && closeReleaseDeadline.timeIntervalSinceNow > 0) {
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    Require(!monitor.suspended, @"Closing must eventually release the recorder's global suspension");
+    [panel showForManualInput];
+    [gear performClick:nil];
+    Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand, 13)] &&
+        !window.visible && closes == 2 && !monitor.settingsActive,
+        @"Command-W outside recording must close the same shared window exactly once");
     [defaults removePersistentDomainForName:suite];
-    std::cout << "settings_smoke_complete=true\nreused_window_cycles=20\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
+    std::cout << "settings_smoke_complete=true\nreused_navigation_cycles=20\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
 }
 
 int main(void) {

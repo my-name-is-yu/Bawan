@@ -2,7 +2,7 @@
 #import "ModelStore.h"
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
-#import "SettingsWindow.h"
+#import "SettingsViewController.h"
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -14,7 +14,7 @@
     NSMenuItem *_shortcutItem;
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
-    SettingsWindow *_settingsWindow;
+    SettingsViewController *_settingsViewController;
     ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
@@ -212,7 +212,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
-    [_settingsWindow refresh];
+    [_settingsViewController refresh];
 }
 
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
@@ -295,7 +295,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSString *error = nil;
     if (![_shortcutPreferences setBinding:binding forAction:action error:&error]) {
         [self openSettings:nil];
-        [_settingsWindow showError:error ?: @"Unable to enable this shortcut."];
+        [_settingsViewController showError:error ?: @"Unable to enable this shortcut."];
     }
     [self updateShortcutItem];
 }
@@ -316,33 +316,33 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSError *error = nil;
     BOOL success = enable ? [service registerAndReturnError:&error] : [service unregisterAndReturnError:&error];
     if (!success) {
-        [_settingsWindow setLoginStatus:service.status
+        [_settingsViewController setLoginStatus:service.status
             message:error.localizedDescription ?: @"Unable to change the launch-at-login setting." error:YES];
     } else {
-        [_settingsWindow setLoginStatus:service.status message:nil error:NO];
+        [_settingsViewController setLoginStatus:service.status message:nil error:NO];
     }
 }
 
 - (void)openSettings:(id)sender {
-    if (!_settingsWindow) {
-        _settingsWindow = [[SettingsWindow alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
+    if (!_settingsViewController) {
+        _settingsViewController = [[SettingsViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
         __weak AppDelegate *weakSelf = self;
-        _settingsWindow.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
-        _settingsWindow.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
+        _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
     }
     [self refreshSettings];
-    [_settingsWindow showSettings];
+    [_translationPanel showSettings:_settingsViewController];
 }
 
 - (void)refreshSettings {
     // Retry after returning from System Settings without prompting or polling.
     [_shortcut refresh];
     [self updateShortcutItem];
-    [_settingsWindow setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
+    [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
-    if (_settingsWindow.window.visible) [self refreshSettings];
+    if (_settingsViewController.view.window.visible) [self refreshSettings];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {

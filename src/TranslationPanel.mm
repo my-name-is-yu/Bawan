@@ -1,4 +1,5 @@
 #import "TranslationPanel.h"
+#import "SettingsViewController.h"
 #import "LoreAppearance.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
@@ -45,12 +46,13 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 @interface LorePanel : NSPanel
 @property(nonatomic, copy) void (^onTranslateKey)(void);
 @property(nonatomic, copy) void (^onCopyKey)(void);
+@property(nonatomic, copy) void (^onEscape)(void);
 @end
 
 @implementation LorePanel
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return NO; }
-- (void)cancelOperation:(id)sender { [self close]; }
+- (void)cancelOperation:(id)sender { if (self.onEscape) self.onEscape(); }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     NSEventModifierFlags modifiers = event.modifierFlags &
         (NSEventModifierFlagCommand | NSEventModifierFlagShift |
@@ -236,6 +238,9 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 
 @interface TranslationPanel () <NSWindowDelegate, NSTextViewDelegate> {
     LorePanel *_panel;
+    NSView *_translationContent;
+    SettingsViewController *_settings;
+    __weak NSResponder *_translationResponder;
     LoreTextView *_source;
     LoreTextView *_output;
     LoreActionButton *_swap;
@@ -395,6 +400,12 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     __weak TranslationPanel *weakSelf = self;
     _panel.onTranslateKey = ^{ [weakSelf performPrimaryAction:nil]; };
     _panel.onCopyKey = ^{ [weakSelf copyOutput:nil]; };
+    _panel.onEscape = ^{
+        TranslationPanel *owner = weakSelf;
+        if (!owner) return;
+        if ([owner isShowingSettings]) [owner showTranslation];
+        else [owner close];
+    };
 
     LoreSurfaceView *content = [[LoreSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
     content.identifier = @"lore-panel";
@@ -406,6 +417,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     content.layer.cornerRadius = 16;
     content.layer.masksToBounds = YES;
     _panel.contentView = content;
+    _translationContent = content;
 
     LoreSurfaceView *header = SurfaceView(content, @"header", LoreHeader);
     header.masthead = YES;
@@ -601,8 +613,51 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)showWithoutChangingInput {
+    [self showTranslation];
     [self positionNearPointer];
     [_panel orderFrontRegardless];
+}
+
+- (BOOL)isShowingSettings {
+    return _settings && _panel.contentView == _settings.view;
+}
+
+- (void)showSettings:(SettingsViewController *)settings {
+    if (![self isShowingSettings]) {
+        _translationResponder = _panel.firstResponder;
+        [_translate resetPressFeedback];
+        [_copy resetPressFeedback];
+        [_panel makeFirstResponder:nil];
+        _settings = settings;
+        __weak TranslationPanel *weakSelf = self;
+        settings.onBack = ^{ [weakSelf showTranslation]; };
+        NSView *view = settings.view;
+        view.frame = _panel.contentView.bounds;
+        view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        view.wantsLayer = YES;
+        view.layer.cornerRadius = 16;
+        view.layer.masksToBounds = YES;
+        _panel.contentView = view;
+        _panel.title = @"Lore Settings";
+    }
+    if (!_panel.visible) [self positionNearPointer];
+    [settings refresh];
+    [NSApp activateIgnoringOtherApps:YES];
+    [_panel makeKeyAndOrderFront:nil];
+    [settings setActive:_panel.keyWindow];
+}
+
+- (void)showTranslation {
+    if (![self isShowingSettings]) return;
+    [_settings setActive:NO];
+    [_panel makeFirstResponder:nil];
+    _translationContent.frame = _panel.contentView.bounds;
+    _panel.contentView = _translationContent;
+    _panel.title = @"Lore";
+    if (![_panel makeFirstResponder:_translationResponder ?: _source]) {
+        [_panel makeFirstResponder:_source];
+    }
+    _translationResponder = nil;
 }
 
 - (void)setShortcutAvailable:(BOOL)available {
@@ -621,6 +676,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)showForManualInput {
+    [self showTranslation];
     if (!_panel.isVisible) [self positionNearPointer];
     [NSApp activateIgnoringOtherApps:YES];
     [_panel makeKeyAndOrderFront:nil];
@@ -689,6 +745,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)performPrimaryAction:(id)sender {
+    if ([self isShowingSettings]) return;
     if (_busy) { if (self.onCancel) self.onCancel(); }
     else [self translate:sender];
 }
@@ -696,6 +753,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 - (void)openSettings:(id)sender { if (self.onSettings) self.onSettings(); }
 
 - (void)copyOutput:(id)sender {
+    if ([self isShowingSettings]) return;
     if (_output.string.length == 0) return;
     [self resetCopyFeedback];
     NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
@@ -721,10 +779,17 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [self updateButtons];
 }
 - (void)windowWillClose:(NSNotification *)notification {
+    [self showTranslation];
     [_translate resetPressFeedback];
     [_copy resetPressFeedback];
     [self resetCopyFeedback];
     if (self.onClose) self.onClose();
+}
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+    if ([self isShowingSettings]) [_settings setActive:YES];
+}
+- (void)windowDidResignKey:(NSNotification *)notification {
+    [_settings setActive:NO];
 }
 - (void)close { [_panel close]; }
 @end

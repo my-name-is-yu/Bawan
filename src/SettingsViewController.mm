@@ -1,28 +1,17 @@
-#import "SettingsWindow.h"
+#import "SettingsViewController.h"
 #import "LoreAppearance.h"
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <set>
 
-@interface LoreSettingsWindow : NSWindow
-@end
-
-@implementation LoreSettingsWindow
-- (void)cancelOperation:(id)sender { [self close]; }
-- (BOOL)performKeyEquivalent:(NSEvent *)event {
-    NSEventModifierFlags modifiers = event.modifierFlags &
-        (NSEventModifierFlagCommand | NSEventModifierFlagShift |
-         NSEventModifierFlagControl | NSEventModifierFlagOption);
-    if (modifiers == NSEventModifierFlagCommand &&
-        [event.charactersIgnoringModifiers.lowercaseString isEqualToString:@"w"]) {
-        [self performClose:nil];
-        return YES;
-    }
-    return [super performKeyEquivalent:event];
-}
-@end
-
 @interface LoreSettingsPaper : NSView
+@end
+
+@interface LoreSettingsDocument : NSView
+@end
+
+@implementation LoreSettingsDocument
+- (BOOL)isFlipped { return YES; }
 @end
 
 @implementation LoreSettingsPaper
@@ -161,7 +150,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 } // namespace
 
-@interface SettingsWindow () <NSWindowDelegate> {
+@interface SettingsViewController () {
     ShortcutPreferences *_preferences;
     ShortcutMonitor *_monitor;
     NSMutableArray<NSSwitch *> *_enabledSwitches;
@@ -181,7 +170,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     BOOL _finishingRecording;
     std::set<CGKeyCode> _heldKeys;
 }
-- (void)resizeToFit;
+- (void)updateDocumentLayout;
 - (void)setShortcutMessage:(NSString *)message error:(BOOL)error;
 - (NSEvent *)recordEvent:(NSEvent *)event;
 - (void)finishRecording;
@@ -189,13 +178,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
 - (BOOL)isRecordingKeyDown:(CGKeyCode)key;
 @end
 
-@implementation SettingsWindow
+@implementation SettingsViewController
 
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor {
-    NSWindow *window = [[LoreSettingsWindow alloc] initWithContentRect:NSMakeRect(0, 0, 700, 420)
-        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-        backing:NSBackingStoreBuffered defer:NO];
-    self = [super initWithWindow:window];
+    self = [super initWithNibName:nil bundle:nil];
     if (!self) return nil;
     _preferences = preferences;
     _monitor = monitor;
@@ -206,16 +192,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _restoreButtons = [NSMutableArray array];
     _statuses = [NSMutableArray array];
     _permissionButtons = [NSMutableArray array];
-    window.title = @"Lore Settings";
-    window.backgroundColor = LoreColor(LoreBackground);
-    window.titlebarAppearsTransparent = YES;
-    window.releasedWhenClosed = NO;
-    window.tabbingMode = NSWindowTabbingModeDisallowed;
-    window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace |
-                                NSWindowCollectionBehaviorFullScreenAuxiliary;
-    window.delegate = self;
-    NSView *root = [[LoreSettingsPaper alloc] initWithFrame:window.contentView.bounds];
-    window.contentView = root;
+    NSView *root = [[LoreSettingsPaper alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
+    self.view = root;
     root.identifier = @"lore-settings";
 
     LoreSettingsMasthead *masthead = [[LoreSettingsMasthead alloc] init];
@@ -230,11 +208,40 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *title = Label(@"Lore", LoreBrandLogoSize, NSFontWeightBold, LoreColor(LoreHeaderText));
     title.identifier = @"settings-brand-name";
     title.font = LoreLogoFont(LoreBrandLogoSize);
-    NSTextField *subtitle = Label(@"Settings · Shortcuts and startup", 12, NSFontWeightRegular,
+    NSTextField *subtitle = Label(@"Settings", 12, NSFontWeightRegular,
                                   LoreColor(LoreHeaderText));
     subtitle.identifier = @"settings-subtitle";
     [masthead addSubview:title];
     [masthead addSubview:subtitle];
+
+    NSButton *back = [NSButton buttonWithTitle:@"Translator" target:self action:@selector(goBack:)];
+    back.identifier = @"settings-back";
+    back.bordered = NO;
+    back.font = LoreLabelFont(13);
+    back.contentTintColor = LoreColor(LoreHeaderText);
+    back.image = LoreSymbol(@"chevron.left", nil, 13);
+    back.imagePosition = NSImageLeft;
+    back.imageHugsTitle = YES;
+    back.translatesAutoresizingMaskIntoConstraints = NO;
+    back.toolTip = @"Back to translator (Esc)";
+    [back setAccessibilityLabel:@"Back to translator"];
+    [masthead addSubview:back];
+
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    scroll.identifier = @"settings-scroll";
+    scroll.borderType = NSNoBorder;
+    scroll.hasVerticalScroller = YES;
+    scroll.hasHorizontalScroller = NO;
+    scroll.autohidesScrollers = YES;
+    scroll.scrollerStyle = NSScrollerStyleOverlay;
+    scroll.drawsBackground = NO;
+    scroll.contentView.drawsBackground = NO;
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:scroll];
+    NSView *document = [[LoreSettingsDocument alloc] initWithFrame:NSZeroRect];
+    document.identifier = @"settings-document";
+    document.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.documentView = document;
 
     NSStackView *shortcutTitle = Stack(@[Icon(@"keyboard"),
         Label(@"Global shortcuts", 14, NSFontWeightSemibold, LoreColor(LoreText))],
@@ -318,7 +325,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *reservation = Label(@"Except for selection translation with ⌘C twice, enabled keys are reserved for Lore—even a single press. Other apps’ shortcuts cannot be checked automatically.",
         12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     reservation.identifier = @"shortcut-reservation";
-    NSTextField *localKeys = Label(@"In Lore: ⌘Return to translate · ⌘⇧C to copy translation · Esc to close",
+    NSTextField *localKeys = Label(@"In translator: ⌘Return to translate · ⌘⇧C to copy translation · Esc to close",
         12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     localKeys.identifier = @"shortcut-local-keys";
     _shortcutHint = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
@@ -367,7 +374,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSStackView *footer = Stack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
     NSStackView *content = Stack(@[shortcutGroup, loginGroup, footer],
         NSUserInterfaceLayoutOrientationVertical, 16);
-    [root addSubview:content];
+    [document addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
         [masthead.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
@@ -380,48 +387,53 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [title.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:LoreBrandGap],
         [title.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [subtitle.leadingAnchor constraintEqualToAnchor:title.trailingAnchor constant:20],
-        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:masthead.trailingAnchor constant:-24],
+        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:back.leadingAnchor constant:-16],
         [subtitle.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [content.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:24],
-        [content.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-24],
-        [content.topAnchor constraintEqualToAnchor:masthead.bottomAnchor constant:24],
-        [content.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-24],
+        [back.trailingAnchor constraintEqualToAnchor:masthead.trailingAnchor constant:-24],
+        [back.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
+        [back.widthAnchor constraintEqualToConstant:110],
+        [back.heightAnchor constraintEqualToConstant:36],
+        [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:masthead.bottomAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:root.bottomAnchor],
+        [document.leadingAnchor constraintEqualToAnchor:scroll.contentView.leadingAnchor],
+        [document.topAnchor constraintEqualToAnchor:scroll.contentView.topAnchor],
+        [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
+        [content.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
+        [content.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
+        [content.topAnchor constraintEqualToAnchor:document.topAnchor constant:24],
+        [content.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-24],
         [shortcutGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [loginGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [footer.widthAnchor constraintEqualToAnchor:content.widthAnchor]
     ]];
-    __weak SettingsWindow *weakSelf = self;
+    __weak SettingsViewController *weakSelf = self;
     _preferencesObserver = [NSNotificationCenter.defaultCenter addObserverForName:LoreShortcutsDidChangeNotification
         object:preferences queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { [weakSelf refresh]; }];
     _activationObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidBecomeActiveNotification
         object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
-            SettingsWindow *owner = weakSelf;
+            SettingsViewController *owner = weakSelf;
             if (!owner) return;
             [owner->_monitor refresh];
             [owner refresh];
         }];
     [self refresh];
-    [window center];
     return self;
 }
 
-- (void)resizeToFit {
-    NSView *root = self.window.contentView;
-    [root layoutSubtreeIfNeeded];
-    CGFloat height = root.fittingSize.height;
-    NSRect frame = self.window.frame;
-    CGFloat previousHeight = frame.size.height;
-    frame.size.height = [self.window frameRectForContentRect:NSMakeRect(0, 0, 700, height)].size.height;
-    frame.origin.y += previousHeight - frame.size.height;
-    [self.window setFrame:frame display:YES];
+- (void)updateDocumentLayout {
+    [self.view layoutSubtreeIfNeeded];
 }
 
-- (void)showSettings {
-    [_monitor refresh];
-    [self refresh];
-    [NSApp activateIgnoringOtherApps:YES];
-    [self showWindow:nil];
-    [self.window makeKeyAndOrderFront:nil];
+- (void)setActive:(BOOL)active {
+    _monitor.settingsActive = active;
+    if (active) {
+        [_monitor refresh];
+        [self refresh];
+    } else {
+        [self finishRecording];
+    }
 }
 
 - (void)refresh {
@@ -464,20 +476,21 @@ NSString *RowID(NSUInteger index, NSString *control) {
         _permissionButtons[i].hidden = availability == ShortcutAvailabilityOff || availability == ShortcutAvailabilityAvailable;
         _permissionButtons[i].enabled = !recording;
     }
-    [self resizeToFit];
+    [self updateDocumentLayout];
 }
 
 - (void)setShortcutMessage:(NSString *)message error:(BOOL)error {
     _shortcutHint.stringValue = message;
     _shortcutHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
     _shortcutHint.hidden = message.length == 0;
-    [self resizeToFit];
+    [self updateDocumentLayout];
 }
 
 - (void)showError:(NSString *)message {
-    [self showSettings];
     [self setShortcutMessage:message error:YES];
 }
+
+- (void)goBack:(id)sender { if (self.onBack) self.onBack(); }
 
 - (void)toggleEnabled:(NSSwitch *)sender {
     lore::ShortcutAction action = static_cast<lore::ShortcutAction>(sender.tag);
@@ -522,10 +535,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _finishingRecording = NO;
     _heldKeys.clear();
     _monitor.suspended = YES;
-    __weak SettingsWindow *weakSelf = self;
+    __weak SettingsViewController *weakSelf = self;
     _eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:
         NSEventMaskKeyDown | NSEventMaskKeyUp | NSEventMaskFlagsChanged handler:^NSEvent *(NSEvent *event) {
-            SettingsWindow *owner = weakSelf;
+            SettingsViewController *owner = weakSelf;
             return owner ? [owner recordEvent:event] : event;
         }];
     [self setShortcutMessage:@"Press a key combination with ⌘, ⌃ or ⌥. Press Esc to cancel." error:NO];
@@ -568,7 +581,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     // Key-up may go to another app after focus loss; never restart a global
     // listener while one of the recorder's swallowed keys remains down.
     if (!_releaseTimer) {
-        __weak SettingsWindow *weakSelf = self;
+        __weak SettingsViewController *weakSelf = self;
         _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *timer) {
             [weakSelf finishRecordingIfReleased];
         }];
@@ -607,28 +620,12 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _loginHint.stringValue = hint;
     _loginHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
     _loginHint.hidden = hint.length == 0;
-    [self resizeToFit];
+    [self updateDocumentLayout];
 }
 
 - (void)openLoginSettings:(id)sender { if (self.onLoginSettings) self.onLoginSettings(); }
 - (void)changeLogin:(NSSwitch *)sender {
     if (self.onLoginChanged) self.onLoginChanged(sender.state == NSControlStateValueOn);
-}
-
-- (void)windowDidBecomeKey:(NSNotification *)notification {
-    _monitor.settingsActive = YES;
-    [_monitor refresh];
-    [self refresh];
-}
-
-- (void)windowDidResignKey:(NSNotification *)notification {
-    _monitor.settingsActive = NO;
-    [self finishRecording];
-}
-
-- (void)windowWillClose:(NSNotification *)notification {
-    _monitor.settingsActive = NO;
-    [self finishRecording];
 }
 
 - (void)dealloc {
