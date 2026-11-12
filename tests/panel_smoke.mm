@@ -220,7 +220,10 @@ static void CheckPointerFeedback(NSButton *copy) {
         NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
         while ([copy.layer animationForKey:@"lore.press"] != nil && deadline.timeIntervalSinceNow > 0) {
-            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+            NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
+                inMode:NSDefaultRunLoopMode dequeue:YES];
+            if (event) [NSApp sendEvent:event];
             [NSApp updateWindows];
         }
         RequireNoPressMotion(copy, [NSString stringWithFormat:@"after pointer completion wait (elapsed %.3fs)",
