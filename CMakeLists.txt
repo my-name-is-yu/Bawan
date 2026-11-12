@@ -16,6 +16,15 @@ option(LORE_BUILD_APP "Build the macOS menu bar application" ${APPLE})
 option(LORE_BUILD_TESTS "Build Lore's portable behavior tests" OFF)
 option(LORE_BUILD_SMOKE "Build the real-model inference smoke test" OFF)
 
+# Enable native languages before configuring Metal's .m sources in llama.cpp.
+# Enabling OBJCXX after add_subdirectory leaves its compile rule unavailable
+# in dependency directories when CMake generates the build system.
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 17)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+endif()
+
 if(LORE_BUILD_APP AND NOT APPLE)
     message(FATAL_ERROR "Lore.app requires macOS 14+, Apple's SDK and an Apple Silicon Mac. Use -DLORE_BUILD_APP=OFF for portable engine checks.")
 endif()
@@ -59,9 +68,6 @@ target_include_directories(lore_gesture PUBLIC src)
 target_compile_options(lore_gesture PRIVATE -Wall -Wextra -Wpedantic)
 
 if(LORE_BUILD_APP)
-    enable_language(OBJCXX)
-    set(CMAKE_OBJCXX_STANDARD 17)
-    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
     add_executable(Lore MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm
         src/ShortcutMonitor.mm src/ModelStore.mm
