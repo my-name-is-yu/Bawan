@@ -1,4 +1,5 @@
 #import "TranslationPanel.h"
+#import <QuartzCore/CALayer.h>
 
 #include <algorithm>
 
