@@ -38,7 +38,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStatus = @"Checking the model…";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
-    _translationPanel.onTranslate = ^(NSString *text, NSInteger direction) {
+    _translationPanel.onTranslate = ^(NSString *text, lore::Direction direction) {
         [weakSelf translateText:text direction:direction];
     };
     _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
@@ -82,7 +82,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (!owner || owner->_terminating) return;
         [owner->_translationPanel showForSelection:text];
         if (owner->_modelReady) {
-            [owner translateText:text direction:owner->_translationPanel.directionIndex];
+            [owner translateText:text direction:lore::Direction::Automatic];
         } else {
             [owner updateStatus];
         }
@@ -182,15 +182,13 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)menuWillOpen:(NSMenu *)menu { [self updateShortcutItem]; }
 
-- (void)translateText:(NSString *)text direction:(NSInteger)direction {
+- (void)translateText:(NSString *)text direction:(lore::Direction)direction {
     if (!_modelReady || !_engine || _terminating) return;
     const char *utf8 = text.UTF8String;
     if (!utf8) return;
-    lore::Direction target = direction == 1 ? lore::Direction::EnglishToJapanese :
-        direction == 2 ? lore::Direction::JapaneseToEnglish : lore::Direction::Automatic;
-    _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), target);
+    _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
-    [_translationPanel setOutput:@""];
+    [_translationPanel setOutput:@"" direction:lore::Direction::Automatic];
     [_translationPanel setAvailable:YES busy:YES status:@""];
 }
 
@@ -216,12 +214,12 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (event.requestId != _activeRequestId) return;
     switch (event.kind) {
         case Kind::Text:
-            [_translationPanel setOutput:StringFromUTF8(event.text)];
+            [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             break;
         case Kind::Complete:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setOutput:StringFromUTF8(event.text)];
+            [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             [_translationPanel setAvailable:_modelReady busy:NO status:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""];
             break;

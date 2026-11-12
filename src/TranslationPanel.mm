@@ -131,10 +131,14 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 }
 @property(nonatomic) BOOL primary;
 @property(nonatomic) BOOL plain;
+@property(nonatomic) BOOL pressFeedback;
 - (void)resetPressFeedback;
 @end
 
 @implementation LoreButton
+// Our bezel fills the bounds; native button ornament insets must not enlarge it.
+- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
+- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (void)resetPressFeedback {
     _trackingPointer = NO;
     [self.layer removeAnimationForKey:@"lore.press"];
@@ -170,7 +174,7 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     [CATransaction commit];
 }
 - (void)mouseDown:(NSEvent *)event {
-    if (self.plain || !self.enabled) {
+    if (!self.pressFeedback || !self.enabled) {
         [super mouseDown:event];
         return;
     }
@@ -205,44 +209,6 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
 }
 @end
 
-@interface LoreDirectionCell : NSPopUpButtonCell {
-    NSAttributedString *_automaticTitle;
-    NSImage *_chevron;
-}
-@end
-
-@implementation LoreDirectionCell
-- (instancetype)initTextCell:(NSString *)string pullsDown:(BOOL)pullDown {
-    self = [super initTextCell:string pullsDown:pullDown];
-    if (self) {
-        NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:@"Auto  |  "
-            attributes:@{NSFontAttributeName:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium],
-                         NSForegroundColorAttributeName:Color(SecondaryText)}];
-        [title appendAttributedString:[[NSAttributedString alloc] initWithString:@"EN ↔ JP"
-            attributes:@{NSFontAttributeName:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium],
-                         NSForegroundColorAttributeName:Color(Text)}]];
-        _automaticTitle = [title copy];
-        _chevron = [Symbol(@"chevron.down", @"", 10) imageWithSymbolConfiguration:
-            [NSImageSymbolConfiguration configurationWithHierarchicalColor:Color(SecondaryText)]];
-    }
-    return self;
-}
-- (void)drawBezelWithFrame:(NSRect)frame inView:(NSView *)view {
-    DrawButton(frame, NO, self.highlighted, self.enabled);
-}
-- (void)drawInteriorWithFrame:(NSRect)frame inView:(NSView *)view {
-    NSRect titleRect = NSMakeRect(frame.origin.x + 14, NSMidY(frame) - 8,
-                                  frame.size.width - 42, 18);
-    if (self.indexOfSelectedItem == 0) [_automaticTitle drawInRect:titleRect];
-    else [self.selectedItem.title drawInRect:titleRect withAttributes:
-        @{NSFontAttributeName:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium],
-          NSForegroundColorAttributeName:Color(Text)}];
-    [_chevron drawInRect:NSMakeRect(NSMaxX(frame) - 26, NSMidY(frame) - 5, 12, 10)
-               fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1
-         respectFlipped:YES hints:nil];
-}
-@end
-
 @interface LoreTextView : NSTextView
 @property(nonatomic, copy) NSString *placeholder;
 @end
@@ -265,7 +231,9 @@ NSImage *Symbol(NSString *name, NSString *description, CGFloat size) {
     LorePanel *_panel;
     LoreTextView *_source;
     LoreTextView *_output;
-    NSPopUpButton *_direction;
+    LoreButton *_swap;
+    lore::Direction _inputDirection;
+    lore::Direction _outputDirection;
     NSTextField *_status;
     NSTextField *_instructions;
     NSLayoutConstraint *_messageSpacing;
@@ -305,8 +273,6 @@ static LoreButton *ButtonView(NSView *parent, NSString *identifier, NSString *ti
     button.contentTintColor = primary ? NSColor.whiteColor : Color(Text);
     button.primary = primary;
     button.plain = plain;
-    // Only the two footer actions need their own composited press feedback.
-    button.wantsLayer = !plain;
     button.target = target;
     button.action = action;
     button.translatesAutoresizingMaskIntoConstraints = NO;
@@ -407,7 +373,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     LoreSurface *headerLine = SurfaceView(content, @"header-divider", Border);
     LoreSurface *footer = SurfaceView(content, @"footer", Surface);
     LoreSurface *footerLine = SurfaceView(content, @"footer-divider", Border);
-    LoreSurface *divider = SurfaceView(content, @"pane-divider", Border);
+    LoreSurface *dividerTop = SurfaceView(content, @"pane-divider-top", Border);
+    LoreSurface *dividerBottom = SurfaceView(content, @"pane-divider-bottom", Border);
 
     NSImageView *mark = [[NSImageView alloc] initWithFrame:NSZeroRect];
     mark.image = Symbol(@"app", @"Lore", 20);
@@ -426,14 +393,11 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     dismiss.toolTip = @"Close (Esc)";
     [dismiss setAccessibilityLabel:@"Close translator"];
 
-    _direction = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    _direction.cell = [[LoreDirectionCell alloc] initTextCell:@"" pullsDown:NO];
-    [_direction addItemsWithTitles:@[@"Auto (EN ↔ JP)", @"English → Japanese", @"Japanese → English"]];
-    _direction.identifier = @"direction";
-    _direction.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
-    _direction.translatesAutoresizingMaskIntoConstraints = NO;
-    [_direction setAccessibilityLabel:@"Translation direction"];
-    [content addSubview:_direction];
+    _swap = ButtonView(content, @"swap", @"", self, @selector(swapText:), NO, NO);
+    _swap.image = Symbol(@"arrow.right.arrow.left", @"", 16);
+    _swap.imagePosition = NSImageOnly;
+    _swap.toolTip = @"Swap text and translate back";
+    [_swap setAccessibilityLabel:@"Swap text and translate back"];
 
     NSScrollView *sourceScroll = TextArea(content, &_source, YES, @"source", @"Source text",
                                          @"Type or paste text");
@@ -467,6 +431,11 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _copy.image = _copyIcon;
     _copy.imagePosition = NSImageLeft;
     _copy.imageHugsTitle = YES;
+    // Only the two footer actions need their own composited press feedback.
+    for (LoreButton *button in @[_translate, _copy]) {
+        button.wantsLayer = YES;
+        button.pressFeedback = YES;
+    }
 
     AddConstraints(@[
         [header.topAnchor constraintEqualToAnchor:content.topAnchor],
@@ -491,19 +460,23 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [settings.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [settings.widthAnchor constraintEqualToConstant:32],
         [settings.heightAnchor constraintEqualToConstant:32],
-        [_direction.topAnchor constraintEqualToAnchor:headerLine.bottomAnchor constant:24],
-        [_direction.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
-        [_direction.widthAnchor constraintEqualToConstant:232],
-        [_direction.heightAnchor constraintEqualToConstant:32],
-        [divider.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
-        [divider.topAnchor constraintEqualToAnchor:sourceScroll.topAnchor],
-        [divider.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
-        [divider.widthAnchor constraintEqualToConstant:1],
+        [_swap.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
+        [_swap.centerYAnchor constraintEqualToAnchor:sourceScroll.centerYAnchor],
+        [_swap.widthAnchor constraintEqualToConstant:32],
+        [_swap.heightAnchor constraintEqualToConstant:32],
+        [dividerTop.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
+        [dividerTop.topAnchor constraintEqualToAnchor:sourceScroll.topAnchor],
+        [dividerTop.bottomAnchor constraintEqualToAnchor:_swap.topAnchor constant:-8],
+        [dividerTop.widthAnchor constraintEqualToConstant:1],
+        [dividerBottom.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
+        [dividerBottom.topAnchor constraintEqualToAnchor:_swap.bottomAnchor constant:8],
+        [dividerBottom.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
+        [dividerBottom.widthAnchor constraintEqualToConstant:1],
         [sourceScroll.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
-        [sourceScroll.trailingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:-24],
-        [sourceScroll.topAnchor constraintEqualToAnchor:_direction.bottomAnchor constant:24],
+        [sourceScroll.trailingAnchor constraintEqualToAnchor:content.centerXAnchor constant:-24],
+        [sourceScroll.topAnchor constraintEqualToAnchor:headerLine.bottomAnchor constant:24],
         _messageSpacing,
-        [outputScroll.leadingAnchor constraintEqualToAnchor:divider.centerXAnchor constant:24],
+        [outputScroll.leadingAnchor constraintEqualToAnchor:content.centerXAnchor constant:24],
         [outputScroll.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-24],
         [outputScroll.topAnchor constraintEqualToAnchor:sourceScroll.topAnchor],
         [outputScroll.bottomAnchor constraintEqualToAnchor:sourceScroll.bottomAnchor],
@@ -552,11 +525,12 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)showForSelection:(NSString *)text {
+    _inputDirection = lore::Direction::Automatic;
     _source.string = text;
     // A newly selected passage starts a new editing session, not an undo history
     // of every passage translated since the resident panel was first created.
     [_source.undoManager removeAllActions];
-    [self setOutput:@""];
+    [self setOutput:@"" direction:lore::Direction::Automatic];
     [self showWithoutChangingInput];
 }
 
@@ -592,7 +566,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [self updateButtons];
 }
 
-- (void)setOutput:(NSString *)output {
+- (void)setOutput:(NSString *)output direction:(lore::Direction)direction {
+    _outputDirection = direction;
     if (![_output.string isEqualToString:output]) {
         [self resetCopyFeedback];
         _output.string = output;
@@ -601,19 +576,29 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [self updateButtons];
 }
 
-- (NSInteger)directionIndex { return _direction.indexOfSelectedItem; }
-
 - (void)updateButtons {
     BOOL hasInput = [_source.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     BOOL hasOutput = _output.string.length > 0;
     _translate.enabled = _busy || (_available && hasInput);
     _translate.title = _busy ? @"Cancel" : (hasOutput ? @"Retranslate  ⌘↵" : @"Translate  ⌘↵");
     _copy.enabled = hasOutput;
+    _swap.enabled = _available && !_busy && hasOutput && _outputDirection != lore::Direction::Automatic;
 }
 
 - (void)translate:(id)sender {
     BOOL hasInput = [_source.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
-    if (_available && hasInput && self.onTranslate) self.onTranslate(_source.string, _direction.indexOfSelectedItem);
+    if (_available && hasInput && self.onTranslate) self.onTranslate(_source.string, _inputDirection);
+}
+
+- (void)swapText:(id)sender {
+    if (!_swap.enabled) return;
+    _inputDirection = _outputDirection == lore::Direction::EnglishToJapanese ?
+        lore::Direction::JapaneseToEnglish : lore::Direction::EnglishToJapanese;
+    _source.string = _output.string;
+    [_source.undoManager removeAllActions];
+    [_source scrollRangeToVisible:NSMakeRange(0, 0)];
+    [self setOutput:@"" direction:lore::Direction::Automatic];
+    [self translate:nil];
 }
 
 - (void)performPrimaryAction:(id)sender {
@@ -644,6 +629,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)textDidChange:(NSNotification *)notification {
+    _inputDirection = lore::Direction::Automatic;
     _source.needsDisplay = YES;
     [self updateButtons];
 }

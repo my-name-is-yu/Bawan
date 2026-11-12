@@ -16,6 +16,8 @@ struct EngineEvent {
     // Text events contain the complete, valid UTF-8 translation so far.
     std::string text;
     bool truncated = false;
+    // Text and Complete carry the concrete direction used for this output.
+    Direction direction = Direction::Automatic;
 };
 
 // Own one instance for the application. Callbacks run on the inference worker;

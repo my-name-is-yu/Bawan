@@ -165,9 +165,10 @@ private:
     }
 
     void emit(EngineEvent::Kind kind, std::uint64_t id = 0,
-              std::string text = {}, bool truncated = false) noexcept {
+              std::string text = {}, bool truncated = false,
+              Direction direction = Direction::Automatic) noexcept {
         if (stopping_) { return; }
-        try { callback_(EngineEvent{kind, id, std::move(text), truncated}); }
+        try { callback_(EngineEvent{kind, id, std::move(text), truncated, direction}); }
         catch (...) { /* Never unwind across the inference thread boundary. */ }
     }
 
@@ -218,7 +219,7 @@ private:
         emit(EngineEvent::Kind::Ready, 0, "Ready to translate");
     }
 
-    std::vector<llama_token> prompt(const Request & request) {
+    std::vector<llama_token> prompt(Request & request) {
         bool japanese = false;
         if (utf8Prefix(request.text, &japanese) != request.text.size()) {
             throw std::runtime_error("The text is not valid UTF-8.");
@@ -228,6 +229,7 @@ private:
         }
         const bool toEnglish = request.direction == Direction::JapaneseToEnglish ||
             (request.direction == Direction::Automatic && japanese);
+        request.direction = toEnglish ? Direction::JapaneseToEnglish : Direction::EnglishToJapanese;
         const auto * vocab = llama_model_get_vocab(model_.get());
         const auto bos = llama_vocab_bos(vocab);
         if (bos == LLAMA_TOKEN_NULL) { throw std::runtime_error("This PLaMo model is not supported."); }
@@ -265,7 +267,7 @@ private:
         }
     }
 
-    void translate(const Request & request) {
+    void translate(Request & request) {
         if (!context_) { throw std::runtime_error("The model is not ready."); }
         const auto tokens = prompt(request);
         llama_memory_clear(llama_get_memory(context_.get()), false);
@@ -289,7 +291,7 @@ private:
             const auto token = llama_sampler_sample(sampler_.get(), context_.get(), -1);
             if (llama_vocab_is_eog(vocab, token) || token == stopTags.front() || token == stopBos) {
                 if (validBytes != output.size()) { throw std::runtime_error("Unable to read the end of the translation."); }
-                emit(EngineEvent::Kind::Complete, request.id, output);
+                emit(EngineEvent::Kind::Complete, request.id, output, false, request.direction);
                 return;
             }
             output += tokenPiece(vocab, token);
@@ -297,7 +299,7 @@ private:
             const auto now = std::chrono::steady_clock::now();
             if (validBytes != emittedBytes && (emittedBytes == 0 ||
                 now - lastEmission >= std::chrono::milliseconds(33))) {
-                emit(EngineEvent::Kind::Text, request.id, output.substr(0, validBytes));
+                emit(EngineEvent::Kind::Text, request.id, output.substr(0, validBytes), false, request.direction);
                 emittedBytes = validBytes;
                 lastEmission = now;
             }
@@ -305,7 +307,7 @@ private:
                 decode(&token, 1, tokens.size() + generated, true);
             }
         }
-        emit(EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true);
+        emit(EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction);
     }
 
     void run() {

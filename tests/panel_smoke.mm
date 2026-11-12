@@ -65,7 +65,7 @@ static void CollectObjects(NSView *view, NSMutableSet<NSValue *> *views,
 static void CheckBounds(NSWindow *window) {
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
-    for (NSString *identifier in @[@"direction", @"translate", @"copy", @"settings", @"dismiss",
+    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"dismiss",
                                    @"status", @"instructions"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing view: " stringByAppendingString:identifier]);
@@ -79,6 +79,12 @@ static void CheckBounds(NSWindow *window) {
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
     NSRect sourcePane = [source.enclosingScrollView convertRect:source.enclosingScrollView.bounds toView:root];
     NSRect outputPane = [output.enclosingScrollView convertRect:output.enclosingScrollView.bounds toView:root];
+    NSView *swap = FindView(root, @"swap");
+    NSRect swapFrame = [swap convertRect:swap.bounds toView:root];
+    Require(std::abs(swapFrame.size.width - swapFrame.size.height) < 1,
+            [NSString stringWithFormat:@"Swap must remain square: %@", NSStringFromRect(swapFrame)]);
+    Require(!NSIntersectsRect(sourcePane, swapFrame) && !NSIntersectsRect(outputPane, swapFrame),
+            @"Swap must stay in the gutter without covering either text pane");
     CGFloat widthDifference = std::abs(sourcePane.size.width - outputPane.size.width);
     CGFloat topDifference = std::abs(NSMinY(sourcePane) - NSMinY(outputPane));
     Require(sourcePane.size.width > 0 && sourcePane.size.height > 0 &&
@@ -282,9 +288,9 @@ static void RunSmoke(void) {
     NSString *japanese = @"会議は来週の月曜日に変更されました。更新された資料を確認し、金曜日までにフィードバックをお送りください。";
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0, settings = 0;
-    __block NSInteger lastDirection = -1;
+    __block lore::Direction lastDirection = lore::Direction::Automatic;
     __block NSString *lastInput = nil;
-    panel.onTranslate = ^(NSString *text, NSInteger direction) {
+    panel.onTranslate = ^(NSString *text, lore::Direction direction) {
         ++translations;
         lastInput = text;
         lastDirection = direction;
@@ -302,7 +308,7 @@ static void RunSmoke(void) {
             std::abs(window.minSize.height - 420) < 1, @"Unexpected minimum panel size");
     NSTextView *source = (NSTextView *)Control(window, @"source", NSTextView.class);
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
-    NSPopUpButton *direction = (NSPopUpButton *)Control(window, @"direction", NSPopUpButton.class);
+    NSButton *swap = (NSButton *)Control(window, @"swap", NSButton.class);
     NSButton *translate = (NSButton *)Control(window, @"translate", NSButton.class);
     NSButton *copy = (NSButton *)Control(window, @"copy", NSButton.class);
     NSButton *settingsButton = (NSButton *)Control(window, @"settings", NSButton.class);
@@ -315,20 +321,57 @@ static void RunSmoke(void) {
 
     [panel setAvailable:YES busy:NO status:@""];
     [panel showForSelection:@" \n"];
-    Require(!translate.enabled && !copy.enabled, @"Empty source/output must disable their actions");
+    Require(!translate.enabled && !copy.enabled && !swap.enabled,
+            @"Empty source/output must disable their actions");
     [panel showForSelection:english];
-    Require(translate.enabled && !copy.enabled, @"Nonempty source must enable translation only");
-    Require(direction.numberOfItems == 3, @"Only automatic, English/Japanese directions are supported");
-    for (NSInteger index = 0; index < 3; ++index) {
-        [direction selectItemAtIndex:index];
-        [translate performClick:nil];
-        Require(panel.directionIndex == index && lastDirection == index && [lastInput isEqualToString:english],
-                @"Translation callback must retain the direction index and source content");
-    }
-    [direction selectItemAtIndex:0];
+    Require(translate.enabled && !copy.enabled && !swap.enabled,
+            @"Nonempty source must enable translation only");
+    [translate performClick:nil];
+    Require(lastDirection == lore::Direction::Automatic && [lastInput isEqualToString:english],
+            @"Fresh input must translate automatically");
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    NSUInteger beforeSwap = translations;
+    [swap performClick:nil];
+    Require(translations == beforeSwap + 1 && [source.string isEqualToString:japanese] &&
+            output.string.length == 0 && !swap.enabled && !copy.enabled &&
+            [lastInput isEqualToString:japanese] && lastDirection == lore::Direction::JapaneseToEnglish,
+            @"Swap must move the translation into source, clear output and translate back once");
+    [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
+    [translate performClick:nil];
+    Require(lastDirection == lore::Direction::JapaneseToEnglish,
+            @"Retranslation must retain the swapped direction");
+    [swap performClick:nil];
+    Require([lastInput isEqualToString:english] && lastDirection == lore::Direction::EnglishToJapanese,
+            @"A second swap must reverse the direction again");
+    [panel showForSelection:japanese];
+    [panel setOutput:@"Visit 東京 tomorrow." direction:lore::Direction::JapaneseToEnglish];
+    [swap performClick:nil];
+    Require([lastInput isEqualToString:@"Visit 東京 tomorrow."] &&
+            lastDirection == lore::Direction::EnglishToJapanese,
+            @"Mixed-script output must reverse its actual direction instead of being detected again");
+    source.string = japanese;
+    [source didChangeText];
+    [translate performClick:nil];
+    Require(lastDirection == lore::Direction::Automatic,
+            @"Editing swapped input must restore automatic direction");
+    [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
+    [panel setAvailable:YES busy:YES status:@""];
+    NSUInteger beforeDisabledSwap = translations;
+    [swap performClick:nil];
+    Require(!swap.enabled && translations == beforeDisabledSwap && [source.string isEqualToString:japanese],
+            @"Swap must not move partial text while translation is running");
+    [panel setAvailable:NO busy:NO status:@"Loading the model…"];
+    [swap performClick:nil];
+    Require(!swap.enabled && translations == beforeDisabledSwap,
+            @"Swap must remain disabled while the model is unavailable");
+    [panel setAvailable:YES busy:NO status:@""];
+    [panel showForSelection:english];
+    [translate performClick:nil];
+    Require(lastDirection == lore::Direction::Automatic && !swap.enabled,
+            @"New selected text must reset automatic direction and clear the previous swap result");
     [settingsButton performClick:nil];
     Require(settings == 1, @"Settings callback was not routed");
-    [panel setOutput:japanese];
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     Require([source.string isEqualToString:english] && [output.string isEqualToString:japanese],
             @"Source and translation text must remain unmodified");
     [copy performClick:nil];
@@ -338,13 +381,13 @@ static void RunSmoke(void) {
             @"Successful copying must confirm without changing the translated content");
     RequireNoPressMotion(copy, @"programmatic copy before pointer input");
     Capture(window, @"copied");
-    [panel setOutput:japanese];
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     Require([copy.title isEqualToString:@"Copied"],
             @"Identical final output must preserve the copy confirmation");
-    [panel setOutput:[japanese stringByAppendingString:@"\n"]];
+    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:lore::Direction::EnglishToJapanese];
     Require([copy.title isEqualToString:@"Copy Translation"],
             @"New translation output must reset stale copy confirmation");
-    [panel setOutput:japanese];
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     CheckPointerFeedback(copy);
     Require([copy.title isEqualToString:@"Copied"] &&
             [[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:japanese],
@@ -352,11 +395,13 @@ static void RunSmoke(void) {
     [panel showForSelection:english];
     Require([copy.title isEqualToString:@"Copy Translation"] && !copy.enabled,
             @"A new selected passage must clear the previous copy confirmation");
-    [panel setOutput:japanese];
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     RequireNoPressMotion(copy, @"new passage and output after pointer input");
     RequireNoPressMotion(translate, @"new passage and output after pointer input");
 
     [panel setShortcutAvailable:YES];
+    [panel showForSelection:japanese];
+    [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
@@ -370,10 +415,10 @@ static void RunSmoke(void) {
     [window setContentSize:NSMakeSize(720, 500)];
     [panel setShortcutAvailable:YES];
     [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%"];
-    Require(!translate.enabled, @"Translation must be disabled before model readiness");
+    Require(!translate.enabled && !swap.enabled, @"Translation and swap must wait for model readiness");
     Capture(window, @"model-setup");
     [panel setAvailable:YES busy:YES status:@""];
-    [panel setOutput:@"会議は来週"];
+    [panel setOutput:@"会議は来週" direction:lore::Direction::EnglishToJapanese];
     Require([translate.title isEqualToString:@"Cancel"] && translate.enabled && copy.enabled,
             @"Busy state must offer cancellation and partial-output copying");
     NSUInteger beforeKey = translations;
@@ -397,7 +442,7 @@ static void RunSmoke(void) {
 
     // Warm both native text/theme states before establishing object identity baselines.
     [panel showForSelection:english];
-    [panel setOutput:japanese];
+    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     [panel setAvailable:YES busy:NO status:@""];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Settle(window);
@@ -411,12 +456,12 @@ static void RunSmoke(void) {
             [panel setAvailable:YES busy:NO status:@""];
             [translate performClick:nil];
             [panel setAvailable:YES busy:YES status:@""];
-            [panel setOutput:@"会議"];
-            [panel setOutput:japanese];
+            [panel setOutput:@"会議" direction:lore::Direction::EnglishToJapanese];
+            [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
             [panel setAvailable:YES busy:NO status:@""];
             [translate performClick:nil];
             [panel setAvailable:YES busy:YES status:@""];
-            [panel setOutput:@"会議は"];
+            [panel setOutput:@"会議は" direction:lore::Direction::EnglishToJapanese];
             [translate performClick:nil];
             [panel setAvailable:YES busy:NO status:@"Translation cancelled"];
             window.appearance = [NSAppearance appearanceNamed:iteration % 2
