@@ -337,6 +337,12 @@ static void RunSmoke(void) {
     }
     Require(ownedWindows == 1, @"Settings must not create a second Lore window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
+    Require(window.undoManager == nil, @"Settings must not expose the hidden translator's undo manager");
+    [window makeFirstResponder:window];
+    [NSApp sendAction:@selector(undo:) to:nil from:window];
+    Require([source.string isEqualToString:edited], @"Edit Undo in Settings must not change the hidden source");
+    [NSApp sendAction:@selector(redo:) to:nil from:window];
+    Require([source.string isEqualToString:edited], @"Edit Redo in Settings must not change the hidden source");
     [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
     NSInteger pasteboardCount = NSPasteboard.generalPasteboard.changeCount;
     [window performKeyEquivalent:KeyEvent(window, @"C", NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
@@ -607,6 +613,14 @@ static void RunSmoke(void) {
             @"Twenty navigation cycles must reuse the same host, controller view and shortcut controls");
         CheckBounds(window);
     }
+    [back performClick:nil];
+    Require(source.undoManager.canUndo, @"The prior passage must still have undo history before the selection boundary check");
+    [gear performClick:nil];
+    [panel showForSelection:@"A newly selected passage"];
+    Require(window.contentView == translationRoot && [source.string isEqualToString:@"A newly selected passage"] &&
+        !source.undoManager.canUndo && !monitor.settingsActive,
+        @"A new selection from Settings must return to translation and clear the previous passage's undo history");
+    [gear performClick:nil];
     // Exercise a real settings control's responder chain, including the view
     // controller, without depending on hosted CI granting a key window.
     [selectionKey interpretKeyEvents:@[KeyEvent(window, @"\x1b", 0, 53)]];

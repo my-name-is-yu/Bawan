@@ -42,7 +42,7 @@ final result: blocked
 - Command-Return invokes the same primary action as clicking: translate while idle and cancel while busy. Tests require cancellation without starting a new translation.
 - Input faces and primary-button contrast are sampled using the capture's own ICC color space before converting to sRGB. AppKit's generic color wrapper must not reinterpret the raw display samples.
 - Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
-- Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
+- Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Settings cannot undo hidden translator edits; a newly selected passage returns to the translator before clearing the previous editing session. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
 - The latest follow-up macOS results and native captures are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
 
 ## Blocking verification

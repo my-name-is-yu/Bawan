@@ -52,6 +52,11 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 @implementation LorePanel
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return NO; }
+- (NSUndoManager *)undoManager {
+    // Keep the translator's history while Settings owns the responder chain.
+    if ([self.contentView.identifier isEqualToString:@"lore-settings"]) return nil;
+    return [super undoManager];
+}
 - (void)cancelOperation:(id)sender { if (self.onEscape) self.onEscape(); }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     NSEventModifierFlags modifiers = event.modifierFlags &
@@ -603,6 +608,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)showForSelection:(NSString *)text {
+    [self showTranslation];
     _inputDirection = lore::Direction::Automatic;
     _source.string = text;
     // A newly selected passage starts a new editing session, not an undo history
