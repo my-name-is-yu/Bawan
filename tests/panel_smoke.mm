@@ -299,11 +299,8 @@ static void RunSmoke(void) {
     Capture(window, @"dark");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     Capture(window, @"light");
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAccessibilityHighContrastAqua];
-    Capture(window, @"high-contrast-light");
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAccessibilityHighContrastDarkAqua];
-    Capture(window, @"high-contrast-dark");
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    // AppKit selects accessibility appearances from the OS preference. Assigning
+    // high-contrast appearance names directly does not exercise Increase Contrast.
     [window setContentSize:NSMakeSize(640, 420)];
     [panel setShortcutAvailable:NO];
     [panel setAvailable:YES busy:NO status:@"The input exceeds the 4,096-token limit. Select a shorter passage and translate again."];
@@ -392,6 +389,8 @@ static void RunSmoke(void) {
     std::cout << "panel_smoke_complete=true\nreused_panel_cycles=20\n"
               << "app_view_count=" << baselineViews.count << '\n'
               << "app_constraint_count=" << baselineConstraints.count << '\n'
+              << "reduce_motion_enabled=" << static_cast<bool>(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) << '\n'
+              << "increase_contrast_enabled=" << static_cast<bool>(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast) << '\n'
               << "captures=panel-smoke (AppKit views; not full UI/resource validation)\n";
 }
 
