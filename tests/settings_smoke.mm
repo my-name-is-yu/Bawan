@@ -196,7 +196,10 @@ static void RequireTint(NSWindow *window, NSColor *actual, NSColor *expected, NS
         NSColor *b = [expected colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
         Require(a != nil && b != nil && std::abs(a.redComponent - b.redComponent) < 0.01 &&
                 std::abs(a.greenComponent - b.greenComponent) < 0.01 &&
-                std::abs(a.blueComponent - b.blueComponent) < 0.01, message);
+                std::abs(a.blueComponent - b.blueComponent) < 0.01,
+                [NSString stringWithFormat:
+                    @"%@; appearance=%@ actual-sRGB=%@ expected-sRGB=%@ original-actual=%@ original-expected=%@",
+                    message, window.effectiveAppearance.name, a, b, actual, expected]);
     }];
 }
 
@@ -222,6 +225,10 @@ static void CheckInputFaces(NSWindow *window) {
             [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
                 [control cacheDisplayInRect:control.bounds toBitmapImageRep:bitmap];
             }];
+            NSData *png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+            NSString *path = [@"settings-smoke" stringByAppendingPathComponent:
+                [NSString stringWithFormat:@"input-%@-%@.png", identifier, appearance]];
+            Require([png writeToFile:path atomically:YES], @"Could not save the shortcut input diagnostic");
             // Read empty vertical padding, clear of title glyphs, popup arrows and the border.
             NSInteger y = static_cast<NSInteger>(4 * bitmap.pixelsHigh / control.bounds.size.height);
             RequireTint(window, [bitmap colorAtX:bitmap.pixelsWide / 2 y:y], LoreColor(LoreBackground),
@@ -304,8 +311,8 @@ static void RunSmoke(void) {
         @"Input Monitoring permission must use the shared warning color");
     RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreWarning),
         @"Accessibility permission must use the same warning color");
-    CheckInputFaces(window);
     Capture(window, @"light");
+    CheckInputFaces(window);
     CGFloat baseHeight = root.bounds.size.height;
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
     Require(login.state == NSControlStateValueOn && !hint.hidden && hint.stringValue.length > 0,
