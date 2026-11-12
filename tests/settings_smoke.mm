@@ -297,16 +297,28 @@ static void RunSmoke(void) {
         [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
         @"Canceling recording must preserve the old assignment and the settings window");
 
+    // Hosted runners can dispatch programmatic control actions without ever
+    // granting this accessory app a key window. Exercise the real delegate's
+    // focus lifecycle explicitly so orderOut is not an implicit prerequisite.
+    id<NSWindowDelegate> delegate = window.delegate;
+    [delegate windowDidBecomeKey:[NSNotification notificationWithName:NSWindowDidBecomeKeyNotification object:window]];
+    Require(monitor.settingsActive, @"The become-key callback must mark settings active before focus-loss testing");
     [selectionKey performClick:nil];
     SendKey(settings, 0, 0, YES, @"a");
     Require(monitor.suspended, @"An invalid key keeps the recorder active");
     [window orderOut:nil];
     Settle(window);
+    [delegate windowDidResignKey:[NSNotification notificationWithName:NSWindowDidResignKeyNotification object:window]];
     Require(monitor.suspended && !monitor.settingsActive,
         @"Focus loss must cancel recording but keep a swallowed held key suspended");
     [settings setRecordedKey:0 down:NO];
-    [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.08]];
-    Require(!monitor.suspended, @"Physical release after focus loss must restore global monitoring");
+    NSDate *releaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (monitor.suspended && releaseDeadline.timeIntervalSinceNow > 0) {
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    Require(!monitor.suspended, [NSString stringWithFormat:
+        @"Physical release after focus loss must restore global monitoring (keyWindow=%@, settingsActive=%@, recorderEnabled=%@, feedback=%@)",
+        @(window.keyWindow), @(monitor.settingsActive), @(selectionKey.enabled), feedback.stringValue]);
     [settings showSettings];
     [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
     lore::ShortcutBinding restored = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];

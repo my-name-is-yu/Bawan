@@ -144,7 +144,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     for (NSUInteger i = 0; i < 2; ++i) {
         lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
         NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, NSColor.labelColor);
-        [name setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [name.widthAnchor constraintEqualToConstant:128].active = YES;
         NSSwitch *enabled = [[NSSwitch alloc] init];
         enabled.target = self;
         enabled.action = @selector(toggleEnabled:);
