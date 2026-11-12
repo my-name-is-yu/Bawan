@@ -1,0 +1,33 @@
+name: macOS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-translate:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native arm64 app and checks
+        run: |
+          test "$(uname -m)" = arm64
+          ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
+          cmake --build build --target gesture_tests engine_smoke engine_profile --parallel 3
+          codesign --verify --strict build/Lore.app
+          ctest --test-dir build --output-on-failure
+      - name: Verify and translate with the official model
+        run: |
+          mkdir -p build/models
+          model_path=build/models/plamo-3-translate-0.8b-Q4_K_M.gguf
+          curl -fL --retry 3 --connect-timeout 20 --max-time 600 \
+            https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/1cf96ae02133958a20074bfdfab76517bb737d00/plamo-3-translate-0.8b-Q4_K_M.gguf \
+            -o "$model_path"
+          echo "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6  $model_path" | shasum -a 256 -c -
+          ./build/engine_smoke "$model_path"
+          ./build/engine_profile "$model_path"
