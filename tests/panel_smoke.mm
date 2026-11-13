@@ -241,19 +241,31 @@ static void CheckLongTranslationScrolling(TranslationPanel *panel, NSWindow *win
         RequireLastCharacterVisible(output, @"The first long streaming update must follow the new request");
         for (NSUInteger dark = 0; dark < 2; ++dark) {
             window.appearance = [NSAppearance appearanceNamed:dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
-            NSClipView *clip = output.enclosingScrollView.contentView;
-            [clip scrollToPoint:NSMakePoint(0, 48)];
-            [output.enclosingScrollView reflectScrolledClipView:clip];
+            NSScrollView *scroll = output.enclosingScrollView;
+            NSClipView *clip = scroll.contentView;
+            [output scrollRectToVisible:NSMakeRect(0, 48, 1, scroll.documentVisibleRect.size.height)];
             Settle(window);
-            NSPoint readingPosition = clip.bounds.origin;
+            NSRect readingRect = scroll.documentVisibleRect;
+            NSRect previousClipBounds = clip.bounds;
+            NSRect previousOutputFrame = output.frame;
+            BOOL previousClipFlipped = clip.isFlipped, previousOutputFlipped = output.isFlipped;
+            Require(readingRect.origin.y > 0 && NSMaxY(readingRect) < NSMaxY(output.bounds) - 1,
+                [NSString stringWithFormat:@"The reading fixture must be away from either document edge: visible=%@ bounds=%@",
+                    NSStringFromRect(readingRect), NSStringFromRect(output.bounds)]);
             NSString *expanded = [result stringByAppendingString:language == 0 ?
                 @"追記：次回の会議では、保存された記録をもう一度確認します。" :
                 @"Additional note: We will review the preserved records again at the next meeting."];
             [panel setOutput:expanded direction:direction];
             Settle(window);
-            Require(std::abs(clip.bounds.origin.y - readingPosition.y) <= 1,
-                [NSString stringWithFormat:@"A streaming update must preserve the reader's earlier position: before=%@ after=%@",
-                    NSStringFromPoint(readingPosition), NSStringFromPoint(clip.bounds.origin)]);
+            NSRect visibleAfterUpdate = scroll.documentVisibleRect;
+            Require(std::abs(visibleAfterUpdate.origin.x - readingRect.origin.x) <= 1 &&
+                    std::abs(visibleAfterUpdate.origin.y - readingRect.origin.y) <= 1,
+                [NSString stringWithFormat:@"A streaming update must preserve the visible document position: "
+                    @"before docVisible=%@ clipBounds=%@ outputFrame=%@ clipFlipped=%@ outputFlipped=%@; "
+                    @"after docVisible=%@ clipBounds=%@ outputFrame=%@ clipFlipped=%@ outputFlipped=%@",
+                    NSStringFromRect(readingRect), NSStringFromRect(previousClipBounds), NSStringFromRect(previousOutputFrame),
+                    @(previousClipFlipped), @(previousOutputFlipped), NSStringFromRect(visibleAfterUpdate),
+                    NSStringFromRect(clip.bounds), NSStringFromRect(output.frame), @(clip.isFlipped), @(output.isFlipped)]);
             Capture(window, [NSString stringWithFormat:@"long-%@-%@", language == 0 ? @"japanese" : @"english",
                 dark ? @"dark" : @"light"]);
             [output scrollRangeToVisible:NSMakeRange(output.string.length, 0)];
@@ -263,8 +275,7 @@ static void CheckLongTranslationScrolling(TranslationPanel *panel, NSWindow *win
             Settle(window);
             RequireLastCharacterVisible(output, @"A reader at the end must keep following streaming output");
             // A new request must forget a prior request's manually scrolled position.
-            [clip scrollToPoint:NSMakePoint(0, 48)];
-            [output.enclosingScrollView reflectScrolledClipView:clip];
+            [output scrollRectToVisible:NSMakeRect(0, 48, 1, scroll.documentVisibleRect.size.height)];
             [panel showForSelection:input];
             [panel setOutput:result direction:direction];
             Settle(window);

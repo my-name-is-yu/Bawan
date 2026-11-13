@@ -33,6 +33,26 @@
 }
 @end
 
+@interface LoreSettingsScroller : NSScroller
+@end
+
+@implementation LoreSettingsScroller
++ (BOOL)isCompatibleWithOverlayScrollers { return self == LoreSettingsScroller.class; }
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
+}
+- (void)drawKnobSlotInRect:(NSRect)slotRect highlight:(BOOL)highlight {
+    if (self.scrollerStyle == NSScrollerStyleOverlay) {
+        [super drawKnobSlotInRect:slotRect highlight:highlight];
+    } else {
+        // Paint the full legacy gutter; AppKit still draws and tracks its knob.
+        [LoreColor(LoreBackground) setFill];
+        NSRectFill(self.bounds);
+    }
+}
+@end
+
 @implementation LoreSettingsPaper
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
@@ -255,6 +275,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     scroll.identifier = @"settings-scroll";
     scroll.borderType = NSNoBorder;
     scroll.hasVerticalScroller = YES;
+    scroll.verticalScroller = [[LoreSettingsScroller alloc] initWithFrame:NSMakeRect(0, 0, 16, 100)];
     scroll.hasHorizontalScroller = NO;
     scroll.autohidesScrollers = YES;
     scroll.scrollerStyle = NSScrollerStyleOverlay;

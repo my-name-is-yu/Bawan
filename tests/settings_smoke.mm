@@ -310,6 +310,46 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
                 [NSString stringWithFormat:@"The rendered clip margin must stay paper-colored: actual=%@ expected=%@ profile=%@",
                     actual, expected, bitmap.colorSpace]);
         }];
+        NSScroller *scroller = scroll.verticalScroller;
+        NSBitmapImageRep *scrollerBitmap = [scroller bitmapImageRepForCachingDisplayInRect:scroller.bounds];
+        Require(scrollerBitmap != nil, @"Could not capture the native legacy scroller");
+        [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+            [scroller cacheDisplayInRect:scroller.bounds toBitmapImageRep:scrollerBitmap];
+        }];
+        NSData *slotPNG = [scrollerBitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        NSString *slotPath = [NSString stringWithFormat:@"settings-smoke/legacy-slot-%@.png", dark ? @"dark" : @"light"];
+        Require([slotPNG writeToFile:slotPath atomically:YES], @"Could not save the actual legacy scroller capture");
+        NSRect slot = NSInsetRect(NSIntersectionRect(scroller.bounds, [scroller rectForPart:NSScrollerKnobSlot]), 1, 1);
+        NSRect knob = [scroller rectForPart:NSScrollerKnob];
+        NSRect blank = slot;
+        if (!NSIsEmptyRect(knob)) {
+            NSRect blocked = NSIntersectionRect(slot, NSInsetRect(knob, -1, -1));
+            NSRect candidates[] = {
+                NSMakeRect(NSMinX(slot), NSMinY(slot), slot.size.width, NSMinY(blocked) - NSMinY(slot)),
+                NSMakeRect(NSMinX(slot), NSMaxY(blocked), slot.size.width, NSMaxY(slot) - NSMaxY(blocked)),
+                NSMakeRect(NSMinX(slot), NSMinY(slot), NSMinX(blocked) - NSMinX(slot), slot.size.height),
+                NSMakeRect(NSMaxX(blocked), NSMinY(slot), NSMaxX(slot) - NSMaxX(blocked), slot.size.height)
+            };
+            blank = NSZeroRect;
+            for (NSRect candidate : candidates) {
+                if (candidate.size.width >= 2 && candidate.size.height >= 2 &&
+                    candidate.size.width * candidate.size.height > blank.size.width * blank.size.height) blank = candidate;
+            }
+        }
+        Require(blank.size.width >= 2 && blank.size.height >= 2,
+            [NSString stringWithFormat:@"The scroller fixture must expose a blank slot away from its knob: slot=%@ knob=%@ bounds=%@",
+                NSStringFromRect(slot), NSStringFromRect(knob), NSStringFromRect(scroller.bounds)]);
+        NSRect sampleRect = NSMakeRect(NSMidX(blank) - 1, NSMidY(blank) - 1, 2, 2);
+        // Crop in view coordinates so bitmap row orientation cannot select the knob instead.
+        NSBitmapImageRep *sample = [scroller bitmapImageRepForCachingDisplayInRect:sampleRect];
+        Require(sample != nil, @"Could not capture the empty legacy slot sample");
+        [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+            [scroller cacheDisplayInRect:sampleRect toBitmapImageRep:sample];
+            // The slot is a flat fill; only the separate clip sample includes paper grain.
+            RequireTint(window, BitmapColor(sample, sample.pixelsWide / 2, sample.pixelsHigh / 2), LoreColor(LoreBackground),
+                [NSString stringWithFormat:@"The actual native scroller slot must be paper-colored: slot=%@ knob=%@ sample=%@ profile=%@",
+                    NSStringFromRect(slot), NSStringFromRect(knob), NSStringFromRect(sampleRect), sample.colorSpace]);
+        }];
         Capture(window, dark ? @"legacy-scroller-dark" : @"legacy-scroller-light");
     }
     scroll.scrollerStyle = previousStyle;
@@ -475,13 +515,15 @@ static void RunSmoke(void) {
     }];
     NSData *helpPNG = [helpBitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
     Require([helpPNG writeToFile:@"settings-smoke/shortcut-help.png" atomically:YES], @"Could not save optional help capture");
-    [window endSheet:helpSheet returnCode:NSModalResponseOK];
+    [panel showForManualInput];
     NSDate *helpDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
     while (window.attachedSheet && helpDeadline.timeIntervalSinceNow > 0) {
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     }
-    Require(window.attachedSheet == nil && window.contentView == root,
-        @"Dismissing optional help must return to the existing Settings screen");
+    Require(window.attachedSheet == nil && window.contentView == translationRoot,
+        @"Opening the translator must dismiss Settings help without leaving an attached sheet");
+    [gear performClick:nil];
+    Require(window.contentView == root, @"Returning to Settings must reuse the screen after Help");
     __block NSUInteger loginSettings = 0, loginChanges = 0;
     __block BOOL requestedLogin = NO;
     settings.onLoginSettings = ^{ ++loginSettings; };

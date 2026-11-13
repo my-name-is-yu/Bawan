@@ -657,6 +657,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
 - (void)showTranslation {
     if (![self isShowingSettings]) return;
+    if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
     [_settings setActive:NO];
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
@@ -708,12 +709,12 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     if (![_output.string isEqualToString:output]) {
         NSScrollView *scroll = _output.enclosingScrollView;
         NSClipView *clip = scroll.contentView;
-        NSPoint readingPosition = clip.bounds.origin;
+        NSRect readingRect = scroll.documentVisibleRect;
         NSUInteger previousLength = _output.string.length;
         // Follow a new result or a reader already within one line of the end.
         // Read geometry on this output event; do not retain another text buffer.
         BOOL followEnd = previousLength == 0 ||
-            NSMaxY(scroll.documentVisibleRect) >= NSMaxY(_output.bounds) - 24;
+            NSMaxY(readingRect) >= NSMaxY(_output.bounds) - 24;
         [self resetCopyFeedback];
         if (previousLength && output.length > previousLength && [output hasPrefix:_output.string]) {
             // Streaming growth only edits the new tail. Keep earlier glyphs and
@@ -730,7 +731,9 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
             [_output sizeToFit];
             [_output scrollRangeToVisible:NSMakeRange(output.length, 0)];
         } else {
-            [clip scrollToPoint:output.length ? readingPosition : NSZeroPoint];
+            // Document coordinates stay meaningful when the clip view adjusts
+            // its origin as the text document grows.
+            [_output scrollRectToVisible:output.length ? readingRect : NSMakeRect(0, 0, 1, 1)];
             [scroll reflectScrolledClipView:clip];
         }
     }
