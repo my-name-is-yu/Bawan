@@ -136,8 +136,12 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)buildMenus {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
-    NSImage *image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Lore Translator"];
+    NSURL *iconURL = [NSBundle.mainBundle URLForResource:@"StatusItemTemplate" withExtension:@"pdf"];
+    NSImage *image = iconURL ? [[NSImage alloc] initWithContentsOfURL:iconURL] : nil;
+    if (!image) image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Lore Translator"];
     if (image) {
+        image.size = NSMakeSize(20, 20);
+        image.accessibilityDescription = @"Lore Translator";
         [image setTemplate:YES];
         _statusItem.button.image = image;
     } else {

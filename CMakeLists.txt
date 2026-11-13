@@ -74,8 +74,10 @@ if(LORE_BUILD_APP)
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm src/LoreAppearance.mm
         src/LoreMascotView.mm
         src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
-        ${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
-    set_source_files_properties(${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
+        ${LORE_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
+        resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
+    set_source_files_properties(${LORE_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
+        resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Lore PRIVATE lore_engine lore_gesture
         "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
