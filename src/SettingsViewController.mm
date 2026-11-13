@@ -160,8 +160,6 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSSwitch *_loginSwitch;
     NSButton *_back;
     LoreMascotView *_mascot;
-    id _preferencesObserver;
-    id _activationObserver;
     id _eventMonitor;
     NSTimer *_releaseTimer;
     NSInteger _recordingAction;
@@ -441,16 +439,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [loginGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [footer.widthAnchor constraintEqualToAnchor:content.widthAnchor]
     ]];
-    __weak SettingsViewController *weakSelf = self;
-    _preferencesObserver = [NSNotificationCenter.defaultCenter addObserverForName:LoreShortcutsDidChangeNotification
-        object:preferences queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { [weakSelf refresh]; }];
-    _activationObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidBecomeActiveNotification
-        object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
-            SettingsViewController *owner = weakSelf;
-            if (!owner) return;
-            [owner->_monitor refresh];
-            [owner refresh];
-        }];
+    // AppDelegate owns external preference/activation updates. Local actions
+    // refresh directly; setActive: refreshes when this screen is shown again.
     [self refresh];
     return self;
 }
@@ -713,7 +703,5 @@ NSString *RowID(NSUInteger index, NSString *control) {
         _monitor.suspended = NO;
     }
     _monitor.settingsActive = NO;
-    if (_preferencesObserver) [NSNotificationCenter.defaultCenter removeObserver:_preferencesObserver];
-    if (_activationObserver) [NSNotificationCenter.defaultCenter removeObserver:_activationObserver];
 }
 @end

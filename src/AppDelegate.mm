@@ -407,7 +407,9 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
+    // One activation owner retries permissions even when Settings is closed.
     if (_settingsViewController.view.window.visible) [self refreshSettings];
+    else [_shortcut refresh];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
@@ -429,4 +431,3 @@ static NSString *StringFromUTF8(const std::string &text) {
     [NSStatusBar.systemStatusBar removeStatusItem:_statusItem];
 }
 @end
-

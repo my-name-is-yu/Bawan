@@ -180,9 +180,62 @@ static void testSingleAndPassive() {
             "other keys cancel passive copy pairs too");
 }
 
+// Preserve the legacy copy cases against the state machine the app actually uses.
+static void testPassiveCopyRegressions() {
+    ShortcutGesture gesture;
+    const auto copy = [](Kind kind, std::uint64_t milliseconds,
+                         std::uint8_t modifiers = Command, std::int64_t app = 10,
+                         bool repeat = false) {
+        return event(kind, milliseconds, 8, modifiers, app, repeat);
+    };
+    const auto arm = [&] {
+        gesture.configure(defaultShortcuts()[0], false);
+        require(gesture.handle(copy(Kind::KeyDown, 100)).firstPress, "copy arms");
+        require(!gesture.handle(copy(Kind::KeyUp, 150)).triggered, "copy release does not trigger");
+    };
+    arm();
+    require(gesture.handle(copy(Kind::KeyDown, 500)).triggered, "passive copy includes 400ms boundary");
+    require(!gesture.handle(copy(Kind::KeyDown, 501, Command, 10, true)).triggered,
+            "passive repeat cannot retrigger");
+    gesture.handle(copy(Kind::KeyUp, 510));
+    require(gesture.handle(copy(Kind::KeyDown, 600)).firstPress, "third copy starts a new pair");
+
+    gesture.configure(defaultShortcuts()[0], false);
+    gesture.handle(copy(Kind::KeyDown, 100));
+    require(!gesture.handle(copy(Kind::KeyDown, 200)).triggered, "passive copy requires release");
+    gesture.handle(copy(Kind::KeyDown, 250, Command, 10, true));
+    gesture.handle(copy(Kind::KeyUp, 300));
+    require(gesture.handle(copy(Kind::KeyDown, 350)).firstPress, "passive long hold disarms");
+
+    arm();
+    require(gesture.handle(copy(Kind::KeyDown, 501)).firstPress, "expired passive copy starts new interval");
+    gesture.handle(copy(Kind::KeyUp, 510));
+    require(gesture.handle(copy(Kind::KeyDown, 550)).triggered, "new passive interval remains usable");
+    for (auto modifiers : {std::uint8_t(0), std::uint8_t(Shift), std::uint8_t(Command | Shift)}) {
+        arm();
+        require(!gesture.handle(copy(Kind::KeyDown, 200, modifiers)).triggered,
+                "ordinary or modified C cannot trigger passive copy");
+        gesture.handle(copy(Kind::KeyUp, 220, modifiers));
+        require(gesture.handle(copy(Kind::KeyDown, 250)).firstPress,
+                "ordinary or modified C disarms passive copy");
+    }
+    arm();
+    require(gesture.handle(copy(Kind::KeyDown, 250, Command, 20)).firstPress,
+            "application change disarms passive copy");
+    gesture.handle(copy(Kind::KeyUp, 270, Command, 20));
+    require(gesture.handle(copy(Kind::KeyDown, 300, Command, 20)).triggered,
+            "new application can form passive copy pair");
+    arm();
+    gesture.reset();
+    require(gesture.handle(copy(Kind::KeyDown, 200)).firstPress, "explicit reset disarms passive copy");
+    arm();
+    require(gesture.handle(copy(Kind::KeyDown, 90)).firstPress, "backwards timestamps cannot trigger passive copy");
+}
+
 int main() {
     testBindings();
     testDoublePress();
     testSingleAndPassive();
+    testPassiveCopyRegressions();
     std::cout << "Shortcut binding and gesture tests passed\n";
 }

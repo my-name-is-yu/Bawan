@@ -66,7 +66,7 @@ On an Apple Silicon Mac:
 
 ```sh
 ./scripts/build.sh -DLORE_BUILD_TESTS=ON
-cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke --parallel 3
+cmake --build build --target shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke --parallel 3
 codesign --verify --strict build/Lore.app
 ctest --test-dir build --output-on-failure
 ```
