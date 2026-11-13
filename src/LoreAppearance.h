@@ -4,7 +4,7 @@
 void LoreConfigurePaperScrollView(NSScrollView *scroll);
 
 static constexpr CGFloat LoreHeaderHeight = 80;
-static constexpr CGFloat LoreBrandMarkSize = 64;
+static constexpr CGFloat LoreBrandMarkSize = 72;
 static constexpr CGFloat LoreInputHeight = 28;
 static constexpr CGFloat LoreInputFontSize = 13;
 
