@@ -1,9 +1,9 @@
 # Implemented UI captures
 
 These unmodified PNGs are AppKit content-view captures from the macOS CI run for
-implementation commit `00da97ae1f1e3e916dcafc49ed8ebfab519af031`:
-[run 43358055863](https://github.com/my-name-is-yu/Lore/actions/runs/43358055863),
-artifact `panel-view-captures` (ID `14006458888`).
+implementation commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c`:
+[run 43360514233](https://github.com/my-name-is-yu/Lore/actions/runs/43360514233),
+artifact `panel-view-captures` (ID `14006949909`).
 
 | File | Artifact source |
 | --- | --- |
@@ -24,3 +24,7 @@ The captures include the compact shortcut headings and setup guidance, shared
 paper scrolling, and the footer hint hidden after input. Long English/Japanese
 scrolling, error reveal, keyboard focus and native help are exercised by the
 same run; their additional PNGs remain in the linked CI artifact.
+
+The pane heading bands, language badges and horizontal rules have been removed.
+Both translation text panes now start 24pt below the masthead and gain 55.5pt
+of reading height at the same window size.

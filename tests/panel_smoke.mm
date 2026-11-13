@@ -67,7 +67,6 @@ static void CheckBounds(NSWindow *window) {
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
     for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot", @"brand-name",
-                                   @"source-heading", @"output-heading", @"source-language", @"output-language",
                                    @"status", @"instructions", @"shortcut-hint"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing view: " stringByAppendingString:identifier]);
@@ -106,6 +105,16 @@ static void CheckBounds(NSWindow *window) {
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
     NSRect sourcePane = [source.enclosingScrollView convertRect:source.enclosingScrollView.bounds toView:root];
     NSRect outputPane = [output.enclosingScrollView convertRect:output.enclosingScrollView.bounds toView:root];
+    NSRect headerFrame = [header convertRect:header.bounds toView:root];
+    CGFloat sourceTopGap = root.isFlipped ? NSMinY(sourcePane) - NSMaxY(headerFrame) :
+        NSMinY(headerFrame) - NSMaxY(sourcePane);
+    CGFloat outputTopGap = root.isFlipped ? NSMinY(outputPane) - NSMaxY(headerFrame) :
+        NSMinY(headerFrame) - NSMaxY(outputPane);
+    Require(std::abs(sourceTopGap - 24) < 1 && std::abs(outputTopGap - 24) < 1,
+        [NSString stringWithFormat:@"Text panes must begin 24pt below the header without space for removed headings and rules: "
+            @"source_gap=%.2f translation_gap=%.2f header=%@ source=%@ translation=%@ flipped=%@",
+            sourceTopGap, outputTopGap, NSStringFromRect(headerFrame), NSStringFromRect(sourcePane),
+            NSStringFromRect(outputPane), @(root.isFlipped)]);
     NSView *swap = FindView(root, @"swap");
     NSRect swapFrame = [swap convertRect:swap.bounds toView:root];
     Require(std::abs(swapFrame.size.width - swapFrame.size.height) < 1,
@@ -143,20 +152,6 @@ static void CheckBounds(NSWindow *window) {
     Require(!NSIntersectsRect(translateFrame, copyFrame) &&
             !NSIntersectsRect(sourcePane, translateFrame) && !NSIntersectsRect(outputPane, copyFrame),
             @"Text panes and footer actions must not overlap");
-    for (NSString *identifier in @[@"source-heading", @"output-heading", @"source-language", @"output-language"]) {
-        NSView *heading = FindView(root, identifier);
-        NSRect frame = [heading convertRect:heading.bounds toView:root];
-        Require(!NSIntersectsRect(frame, sourcePane) && !NSIntersectsRect(frame, outputPane),
-                @"Pane headings must not cover editable or translated text");
-    }
-}
-
-static void RequireLanguages(NSWindow *window, NSString *source, NSString *output) {
-    NSTextField *sourceLabel = (NSTextField *)Control(window, @"source-language", NSTextField.class);
-    NSTextField *outputLabel = (NSTextField *)Control(window, @"output-language", NSTextField.class);
-    Require([sourceLabel.stringValue isEqualToString:source] && [outputLabel.stringValue isEqualToString:output],
-            [NSString stringWithFormat:@"Inaccurate language labels: %@ / %@; expected %@ / %@",
-                sourceLabel.stringValue, outputLabel.stringValue, source, output]);
 }
 
 // colorAtX: labels display components as Generic RGB. Retain the capture's ICC
@@ -539,11 +534,12 @@ static void RunSmoke(void) {
     NSImageView *mascot = (NSImageView *)Control(window, @"mascot", NSImageView.class);
     Require(mascot.image != nil && LoreMascotImage() != nil && LorePaperImage() != nil,
             @"Native captures must load the real mascot and paper assets");
-    RequireLanguages(window, @"AUTO", @"—");
     NSTextField *status = (NSTextField *)Control(window, @"status", NSTextField.class);
     NSTextField *footerHint = (NSTextField *)Control(window, @"shortcut-hint", NSTextField.class);
-    Require(source.editable && source.selectable && !output.editable && output.selectable,
-            @"Source/output editing contract changed");
+    Require(source.editable && source.selectable && !output.editable && output.selectable &&
+            [source.accessibilityLabel isEqualToString:@"Source text"] &&
+            [output.accessibilityLabel isEqualToString:@"Translation"],
+            @"Source/output editing and accessibility labels must remain intact");
     Require(source.enclosingScrollView != output.enclosingScrollView &&
             source.enclosingScrollView.hasVerticalScroller && output.enclosingScrollView.hasVerticalScroller,
             @"Text panes must scroll independently");
@@ -572,21 +568,12 @@ static void RunSmoke(void) {
     Require(NSPasteboard.generalPasteboard.changeCount == emptyCopyCount,
             @"Command-Shift-C must leave the clipboard unchanged when output is empty");
     [panel showForSelection:english];
-    RequireLanguages(window, @"AUTO", @"—");
     Require(translate.enabled && !copy.enabled && !swap.enabled && footerHint.hidden,
             @"Nonempty source must enable translation only");
     CheckPressedPrimaryContrast(window, translate);
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::Automatic && [lastInput isEqualToString:english],
             @"Fresh input must translate automatically");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
-    RequireLanguages(window, @"EN", @"JA");
-    source.string = japanese;
-    [source didChangeText];
-    RequireLanguages(window, @"AUTO", @"JA");
-    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:lore::Direction::EnglishToJapanese];
-    RequireLanguages(window, @"AUTO", @"JA");
-    [panel showForSelection:english];
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     NSUInteger beforeSwap = translations;
     [swap performClick:nil];
@@ -595,7 +582,6 @@ static void RunSmoke(void) {
             [lastInput isEqualToString:japanese] && lastDirection == lore::Direction::JapaneseToEnglish,
             @"Swap must move the translation into source, clear output and translate back once");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
-    RequireLanguages(window, @"JA", @"EN");
     [panel setAvailable:YES busy:YES status:@"Translating…" kind:LoreStatusInformation];
     NSRect recallFrame = window.frame;
     recallFrame.origin.x += 17;
@@ -629,16 +615,12 @@ static void RunSmoke(void) {
             @"Mixed-script output must reverse its actual direction instead of being detected again");
     source.string = japanese;
     [source didChangeText];
-    RequireLanguages(window, @"AUTO", @"—");
     [panel setOutput:@"Output from the previous request" direction:lore::Direction::EnglishToJapanese];
-    RequireLanguages(window, @"AUTO", @"JA");
     [translate performClick:nil];
     Require(lastDirection == lore::Direction::Automatic,
             @"Editing swapped input must restore automatic direction");
     [panel setOutput:@"" direction:lore::Direction::Automatic];
-    RequireLanguages(window, @"AUTO", @"—");
     [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
-    RequireLanguages(window, @"JA", @"EN");
     [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
     NSUInteger beforeDisabledSwap = translations;
     [swap performClick:nil];
