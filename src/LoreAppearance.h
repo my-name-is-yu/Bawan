@@ -173,10 +173,3 @@ static inline void LoreDrawMedallionBase(NSRect rect) {
     [path stroke];
 }
 
-static inline void LoreDrawMedallion(NSRect rect) {
-    LoreDrawMedallionBase(rect);
-    NSRect circle = NSInsetRect(rect, 1, 1);
-    [LoreMascotImage() drawInRect:NSInsetRect(circle, 3, 3) fromRect:NSZeroRect
-                       operation:NSCompositingOperationSourceOver fraction:1
-                  respectFlipped:YES hints:nil];
-}
