@@ -44,7 +44,7 @@ final result: blocked
 - Input faces and primary-button contrast are sampled using the capture's own ICC color space before converting to sRGB. AppKit's generic color wrapper must not reinterpret the raw display samples.
 - Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
 - Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Settings cannot undo hidden translator edits; a newly selected passage returns to the translator before clearing the previous editing session. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
-- The latest follow-up macOS results and native captures are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
+- The original vintage implementation and earlier consistency results are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
 
 ## Lightweight usability follow-up
 
@@ -72,3 +72,9 @@ ctest --test-dir build --output-on-failure
 Compare native captures in `build/panel-smoke/` and `build/settings-smoke/` with the selected reference using the same sample text and viewport. Content-view captures omit OS titlebar overlays: inspect a real window screenshot for the traffic lights, their spacing from the medallion, and native focus/drag/close behavior. Check the actual OS Reduce Motion and Increase Contrast settings, selection translation without taking focus, and both language directions in the running app.
 
 Do not change this report to passed until the native build, tests, full-window review and reference comparison pass. Whole-app resource measurements remain separately documented in README.
+
+## Expanded text-area verification
+
+- [Native CI run 43360514233](https://github.com/my-name-is-yu/Lore/actions/runs/43360514233) for implementation commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c` passed arm64 build/signature checks, all five CTests, pointer feedback and official-model translation.
+- Inspected the new light and minimum-size dark captures. Both pane tops are 24pt below the masthead, and native smoke tests retain direction, reverse-translation, long-text scrolling and accessible source/translation roles.
+- The deleted bands and rules, their constraints and display-only language state are removed rather than hidden.
