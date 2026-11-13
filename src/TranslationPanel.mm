@@ -716,6 +716,10 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [self resetCopyFeedback];
         _output.string = output;
         if (output.length && followEnd) {
+            // Resolve the end before scrolling: deferred layout can otherwise
+            // grow the document after AppKit has chosen a stale scroll offset.
+            [_output.layoutManager ensureLayoutForCharacterRange:NSMakeRange(output.length - 1, 1)];
+            [_output sizeToFit];
             [_output scrollRangeToVisible:NSMakeRange(output.length, 0)];
         } else {
             [clip scrollToPoint:output.length ? readingPosition : NSZeroPoint];

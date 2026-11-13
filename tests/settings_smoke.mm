@@ -299,8 +299,16 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
             [clip cacheDisplayInRect:clip.bounds toBitmapImageRep:bitmap];
             // The document's outer margin contains no text, card border or scroller glyph.
             NSInteger x = static_cast<NSInteger>(4 * bitmap.pixelsWide / clip.bounds.size.width);
-            RequireTint(window, BitmapColor(bitmap, x, bitmap.pixelsHigh / 2), LoreColor(LoreBackground),
-                [NSString stringWithFormat:@"The rendered clip margin must stay paper-colored; profile=%@", bitmap.colorSpace]);
+            NSColor *actual = [BitmapColor(bitmap, x, bitmap.pixelsHigh / 2) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+            NSColor *expected = [LoreColor(LoreBackground) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+            // LoreDrawPaper composites grain at 0.035 opacity. This rendered sample
+            // includes that texture; the flat color tokens above retain 0.01 checks.
+            Require(actual != nil && expected != nil &&
+                std::abs(actual.redComponent - expected.redComponent) < 0.04 &&
+                std::abs(actual.greenComponent - expected.greenComponent) < 0.04 &&
+                std::abs(actual.blueComponent - expected.blueComponent) < 0.04,
+                [NSString stringWithFormat:@"The rendered clip margin must stay paper-colored: actual=%@ expected=%@ profile=%@",
+                    actual, expected, bitmap.colorSpace]);
         }];
         Capture(window, dark ? @"legacy-scroller-dark" : @"legacy-scroller-light");
     }
@@ -377,8 +385,10 @@ static void RunSmoke(void) {
     }
     Require(ownedWindows == 1, @"Settings must not create a second Lore window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
+    Capture(window, @"entry");
     Require(window.firstResponder == back,
-        @"Entering Settings must focus its Back control rather than the detached translation editor");
+        [NSString stringWithFormat:@"Entering Settings must focus Back rather than the detached translation editor: %@",
+            window.firstResponder]);
     for (NSUInteger step = 0; step < 12; ++step) {
         [window selectNextKeyView:nil];
         NSResponder *responder = window.firstResponder;
@@ -455,7 +465,8 @@ static void RunSmoke(void) {
     Require(helpSheet != nil && [helpText containsString:@"Shortcut help"] &&
         [helpText containsString:@"400 ms"] && [helpText containsString:@"reserve their keys"] &&
         [helpText containsString:@"⌘Return"],
-        @"Optional native help must reveal recording, reservation and translator-key details on demand");
+        [NSString stringWithFormat:@"Optional native help must reveal recording, reservation and translator-key details: sheet=%@ text=%@",
+            helpSheet, helpText]);
     NSView *helpContent = helpSheet.contentView;
     NSBitmapImageRep *helpBitmap = [helpContent bitmapImageRepForCachingDisplayInRect:helpContent.bounds];
     Require(helpBitmap != nil, @"Could not capture optional shortcut help");
