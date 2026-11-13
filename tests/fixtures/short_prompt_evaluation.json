@@ -1,0 +1,4893 @@
+{
+  "date": "2026-11-13",
+  "purpose": "Select a small prompt change for short English-to-Japanese inputs without another model, dictionary, or resident process.",
+  "setup": {
+    "model": "pfnet/plamo-3-translate-0.8b-GGUF Q4_K_M",
+    "model_sha256": "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6",
+    "model_card": "https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF",
+    "llama_cpp_tag": "b12307",
+    "source_base_commit": "5cedca3859270946ffe743834de26686a7d60fed",
+    "sampler": "greedy",
+    "context_tokens": 8192,
+    "max_short_words": 5,
+    "request_isolation": "Clear KV and reset sampler before every request; one resident model; variants interleaved per case."
+  },
+  "design": {
+    "development_cases": 42,
+    "heldout_cases": 24,
+    "controls": 12,
+    "round1": {
+      "cases": 36,
+      "variants": 10
+    },
+    "round2": {
+      "cases": 42,
+      "variants": 9
+    },
+    "unique_variants": 16,
+    "selection": "Fixed using development output only, before inspecting heldout output. No prompt tuning after heldout review.",
+    "review": "One delegated evaluator graded deduplicated outputs with variant identities hidden. Parent inspected outputs and selected implementation. These are AI semantic assessments, not human annotations or a standardized benchmark.",
+    "additional_selection_constraint": "Avoid replacing the original reported opaque transliteration of serendipitous with an unrelated confident meaning."
+  },
+  "rubric": {
+    "2": "Meaning preserved and natural enough to use; style and punctuation differences ignored.",
+    "1": "Partly useful but meaning incomplete or an opaque borrowed term obscures the ordinary meaning. Established loanwords and names are allowed.",
+    "0": "Wrong meaning, literal idiom translation, or untranslated input."
+  },
+  "candidates": [
+    {
+      "id": "baseline",
+      "context": "",
+      "source_lang": false,
+      "prefix": ""
+    },
+    {
+      "id": "source_en",
+      "context": "",
+      "source_lang": true,
+      "prefix": ""
+    },
+    {
+      "id": "everyday",
+      "context": "Everyday English, translated into natural Japanese.",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>Everyday English, translated into natural Japanese."
+    },
+    {
+      "id": "phrasebook_en",
+      "context": "A bilingual English-Japanese vocabulary and phrasebook. Each entry is a word, an expression, or a short sentence.",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>A bilingual English-Japanese vocabulary and phrasebook. Each entry is a word, an expression, or a short sentence."
+    },
+    {
+      "id": "phrasebook_ja",
+      "context": "英語学習用の対訳集です。各項目は、一般的な単語、慣用表現、または短い文です。",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>英語学習用の対訳集です。各項目は、一般的な単語、慣用表現、または短い文です。"
+    },
+    {
+      "id": "dictionary_meaning",
+      "context": "An English-Japanese dictionary entry. The Japanese text gives the meaning of the English text.",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>An English-Japanese dictionary entry. The Japanese text gives the meaning of the English text."
+    },
+    {
+      "id": "meaning_instruction",
+      "context": "Translate the meaning into Japanese. Use natural Japanese words and expressions.",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>Translate the meaning into Japanese. Use natural Japanese words and expressions."
+    },
+    {
+      "id": "minimal_ja",
+      "context": "英語から日本語への翻訳です。",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
+    },
+    {
+      "id": "fewshot",
+      "context": "",
+      "source_lang": true,
+      "examples": [
+        [
+          "perplexed",
+          "困惑した"
+        ],
+        [
+          "under the weather",
+          "体調が悪い"
+        ],
+        [
+          "I'll be right back.",
+          "すぐに戻ります。"
+        ]
+      ],
+      "prefix": "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>perplexed<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>困惑した<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>under the weather<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>体調が悪い<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>I'll be right back.<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>すぐに戻ります。"
+    },
+    {
+      "id": "fewshot_everyday",
+      "context": "Everyday English, translated into natural Japanese.",
+      "source_lang": true,
+      "examples": [
+        [
+          "perplexed",
+          "困惑した"
+        ],
+        [
+          "under the weather",
+          "体調が悪い"
+        ],
+        [
+          "I'll be right back.",
+          "すぐに戻ります。"
+        ]
+      ],
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>Everyday English, translated into natural Japanese.<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>perplexed<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>困惑した<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>under the weather<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>体調が悪い<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>I'll be right back.<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>すぐに戻ります。"
+    },
+    {
+      "id": "minimal_ja_en",
+      "context": "英語から日本語への翻訳です。",
+      "source_lang": true,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
+    },
+    {
+      "id": "minimal_en",
+      "context": "English to Japanese translation.",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>English to Japanese translation."
+    },
+    {
+      "id": "minimal_en_en",
+      "context": "English to Japanese translation.",
+      "source_lang": true,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>English to Japanese translation."
+    },
+    {
+      "id": "ordinary_ja",
+      "context": "一般的な英語表現の意味を日本語で表します。",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>一般的な英語表現の意味を日本語で表します。"
+    },
+    {
+      "id": "single_en_multi_minimal_ja",
+      "context": "英語から日本語への翻訳です。",
+      "source_lang": false,
+      "prefix": "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。",
+      "rule": "single_en"
+    },
+    {
+      "id": "fewshot_no_en",
+      "context": "",
+      "source_lang": false,
+      "examples": [
+        [
+          "perplexed",
+          "困惑した"
+        ],
+        [
+          "under the weather",
+          "体調が悪い"
+        ],
+        [
+          "I'll be right back.",
+          "すぐに戻ります。"
+        ]
+      ],
+      "prefix": "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>perplexed<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>困惑した<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>under the weather<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>体調が悪い<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>I'll be right back.<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:msg|>すぐに戻ります。"
+    }
+  ],
+  "selection": {
+    "id": "single_en_multi_minimal_ja",
+    "routes": {
+      "1 English word": "Explicit input lang=en; no context.",
+      "2 to 5 English words": "PFML3 context: 英語から日本語への翻訳です。",
+      "other": "Original prompt."
+    },
+    "development_finalists": {
+      "source_en": {
+        "score": 78,
+        "correct": 39,
+        "wrong": 3,
+        "word": 34,
+        "idiom": 20,
+        "sentence": 24
+      },
+      "single_en_multi_minimal_ja": {
+        "score": 80,
+        "correct": 40,
+        "wrong": 2,
+        "word": 34,
+        "idiom": 22,
+        "sentence": 24
+      },
+      "baseline": {
+        "score": 75,
+        "correct": 36,
+        "wrong": 3,
+        "word": 31,
+        "idiom": 20,
+        "sentence": 24
+      },
+      "fewshot_no_en": {
+        "score": 75,
+        "correct": 37,
+        "wrong": 4,
+        "word": 31,
+        "idiom": 20,
+        "sentence": 24
+      },
+      "minimal_en": {
+        "score": 78,
+        "correct": 38,
+        "wrong": 2,
+        "word": 32,
+        "idiom": 22,
+        "sentence": 24
+      },
+      "minimal_ja": {
+        "score": 78,
+        "correct": 38,
+        "wrong": 2,
+        "word": 32,
+        "idiom": 22,
+        "sentence": 24
+      },
+      "minimal_ja_en": {
+        "score": 78,
+        "correct": 38,
+        "wrong": 2,
+        "word": 32,
+        "idiom": 22,
+        "sentence": 24
+      },
+      "minimal_en_en": {
+        "score": 80,
+        "correct": 40,
+        "wrong": 2,
+        "word": 34,
+        "idiom": 22,
+        "sentence": 24
+      },
+      "ordinary_ja": {
+        "score": 78,
+        "correct": 38,
+        "wrong": 2,
+        "word": 32,
+        "idiom": 22,
+        "sentence": 24
+      }
+    }
+  },
+  "summary": {
+    "dev": {
+      "baseline": {
+        "cases": 42,
+        "correct": 36,
+        "partial": 3,
+        "wrong": 3,
+        "score": 75
+      },
+      "single_en_multi_minimal_ja": {
+        "cases": 42,
+        "correct": 40,
+        "partial": 0,
+        "wrong": 2,
+        "score": 80
+      }
+    },
+    "heldout": {
+      "baseline": {
+        "cases": 24,
+        "correct": 21,
+        "partial": 2,
+        "wrong": 1,
+        "score": 44
+      },
+      "single_en_multi_minimal_ja": {
+        "cases": 24,
+        "correct": 23,
+        "partial": 0,
+        "wrong": 1,
+        "score": 46
+      }
+    },
+    "control": {
+      "baseline": {
+        "cases": 12,
+        "correct": 12,
+        "partial": 0,
+        "wrong": 0,
+        "score": 24
+      },
+      "single_en_multi_minimal_ja": {
+        "cases": 12,
+        "correct": 12,
+        "partial": 0,
+        "wrong": 0,
+        "score": 24
+      }
+    }
+  },
+  "category_summary_dev_plus_heldout": {
+    "word": {
+      "baseline": {
+        "cases": 26,
+        "correct": 21,
+        "partial": 4,
+        "wrong": 1
+      },
+      "single_en_multi_minimal_ja": {
+        "cases": 26,
+        "correct": 25,
+        "partial": 0,
+        "wrong": 1
+      }
+    },
+    "idiom": {
+      "baseline": {
+        "cases": 20,
+        "correct": 16,
+        "partial": 1,
+        "wrong": 3
+      },
+      "single_en_multi_minimal_ja": {
+        "cases": 20,
+        "correct": 18,
+        "partial": 0,
+        "wrong": 2
+      }
+    },
+    "sentence": {
+      "baseline": {
+        "cases": 20,
+        "correct": 20,
+        "partial": 0,
+        "wrong": 0
+      },
+      "single_en_multi_minimal_ja": {
+        "cases": 20,
+        "correct": 20,
+        "partial": 0,
+        "wrong": 0
+      }
+    }
+  },
+  "known_limitations": [
+    "serendipitous remains a transliteration; all tested prompts failed to recover the intended meaning.",
+    "in hot water remains literal in this sample.",
+    "the last straw regressed from a partial meaning to 最後の一滴 on heldout data. Do not interpret aggregate improvement as reliable correctness for every short expression.",
+    "Conservatively bypass short guidance for unsupported non-ASCII letters or mixed scripts; contracted words and hyphen compounds count as one."
+  ],
+  "production_verification": {
+    "cases": 78,
+    "complete": true,
+    "candidate_parity_differences": [],
+    "native_app_build": "passed",
+    "codesign_verify": "passed",
+    "ctest": [
+      "copy_gesture",
+      "short_english_input"
+    ],
+    "engine_smoke": "passed: translation, direction, KV reset, input boundaries, streaming and cancellation",
+    "installed_app_replaced": false
+  },
+  "evaluations": [
+    {
+      "case_id": "dev_word_01",
+      "split": "dev",
+      "category": "word",
+      "source": "serendipitous",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "思いがけない幸運をもたらす",
+        "偶然の幸運による"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "セレンジピトース",
+          "score": 0,
+          "reason": "一般的な日本語の語義を伝えない非定着の音写。"
+        },
+        "source_en": {
+          "text": "セランディピトゥス",
+          "score": 0,
+          "reason": "一般的な日本語の語義を伝えない非定着の音写。"
+        },
+        "everyday": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "phrasebook_en": {
+          "text": "セレンディピトゥス",
+          "score": 0,
+          "reason": "一般的な日本語の語義を伝えない非定着の音写。"
+        },
+        "phrasebook_ja": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "dictionary_meaning": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "meaning_instruction": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "minimal_ja": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "fewshot": {
+          "text": "不時着",
+          "score": 0,
+          "reason": "不時着は語義が異なる。"
+        },
+        "fewshot_everyday": {
+          "text": "不時着",
+          "score": 0,
+          "reason": "不時着は語義が異なる。"
+        },
+        "minimal_ja_en": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "minimal_en": {
+          "text": "横向き",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "minimal_en_en": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "ordinary_ja": {
+          "text": "横向きの",
+          "score": 0,
+          "reason": "横向きという意味ではない。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "セランディピトゥス",
+          "score": 0,
+          "reason": "一般的な日本語の語義を伝えない非定着の音写。"
+        },
+        "fewshot_no_en": {
+          "text": "不機嫌な",
+          "score": 0,
+          "reason": "不機嫌という意味ではない。"
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_02",
+      "split": "dev",
+      "category": "word",
+      "source": "ephemeral",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "はかない",
+        "短命な",
+        "一時的な"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "エフェメラル",
+          "score": 1,
+          "reason": "技術分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        },
+        "source_en": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "一時的",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "一時的",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "一時的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "一時的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "一時的",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "一時的な",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "儚い",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "一時的な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_03",
+      "split": "dev",
+      "category": "word",
+      "source": "ubiquitous",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "至る所にある",
+        "どこにでも存在する"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "遍在する",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "遍在する",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "どこにでもいる",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "どこにでもいる",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "至る所にある",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "どこにでもある",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "遍在する",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "どこにでもいる",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_04",
+      "split": "dev",
+      "category": "word",
+      "source": "elusive",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "捉えどころのない",
+        "捕まえにくい"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "捉えどころがない",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "捉えどころがない",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "捉えどころのない",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "捉えどころがない",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_05",
+      "split": "dev",
+      "category": "word",
+      "source": "conscientious",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "良心的な",
+        "誠実で責任感のある"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "良心的な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_06",
+      "split": "dev",
+      "category": "word",
+      "source": "pragmatic",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "実用的な",
+        "現実的な"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "実用的",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "実用的",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "実用的",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "現実的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "現実的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "語用論的",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "実用的",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "現実的な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_07",
+      "split": "dev",
+      "category": "word",
+      "source": "resilient",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "回復力のある",
+        "しなやかで立ち直りが早い"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "source_en": {
+          "text": "強靭な",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "phrasebook_en": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "phrasebook_ja": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "dictionary_meaning": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "meaning_instruction": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "minimal_ja": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "fewshot": {
+          "text": "打たれ強い",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "打たれ強い",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "minimal_en": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "minimal_en_en": {
+          "text": "強靭な",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "レジリエントな",
+          "score": 1,
+          "reason": "借用語としては成立するが、回復力・弾力性という意味が分かりにくい。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "強靭な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "回復力のある",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_08",
+      "split": "dev",
+      "category": "word",
+      "source": "plausible",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "もっともらしい",
+        "十分ありそうな"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "ありそうな",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_09",
+      "split": "dev",
+      "category": "word",
+      "source": "candid",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "率直な",
+        "包み隠さない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "率直な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_10",
+      "split": "dev",
+      "category": "word",
+      "source": "redundant",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "余分な",
+        "冗長な",
+        "重複して不要な"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "冗長な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_11",
+      "split": "dev",
+      "category": "word",
+      "source": "obsolete",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "時代遅れの",
+        "廃れた",
+        "もはや使われていない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "廃れた",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_12",
+      "split": "dev",
+      "category": "word",
+      "source": "mundane",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "平凡な",
+        "ありふれた",
+        "日常的で面白みに欠ける"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "平凡な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "平凡な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "ありふれた",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "ありふれた",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "ありふれた",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "日常的な",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "平凡な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_13",
+      "split": "dev",
+      "category": "word",
+      "source": "insight",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "洞察",
+        "本質を見抜く理解",
+        "物事への深い理解"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "インサイト",
+          "score": 1,
+          "reason": "業務分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        },
+        "source_en": {
+          "text": "洞察",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "インサイト",
+          "score": 1,
+          "reason": "業務分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        },
+        "minimal_ja_en": {
+          "text": "インサイト",
+          "score": 1,
+          "reason": "業務分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        },
+        "minimal_en": {
+          "text": "インサイト",
+          "score": 1,
+          "reason": "業務分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        },
+        "minimal_en_en": {
+          "text": "知見",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "インサイト",
+          "score": 1,
+          "reason": "業務分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "洞察",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "インサイト",
+          "score": 1,
+          "reason": "業務分野の借用語としては成立するが、単独の一般語の意味が分かりにくい。"
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_14",
+      "split": "dev",
+      "category": "word",
+      "source": "drawback",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "欠点",
+        "不利な点",
+        "難点"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "欠点",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "欠点",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "デメリット",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "デメリット",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "デメリット",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "欠点",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "デメリット",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "欠点",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "後退",
+          "score": 0,
+          "reason": "欠点・不利な点という名詞の意味を伝えていない。"
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_15",
+      "split": "dev",
+      "category": "word",
+      "source": "alleviate",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "和らげる",
+        "軽減する"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "緩和する",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "緩和する",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "軽減する",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "軽減する",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "軽減する",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "緩和する",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "軽減する",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "緩和する",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "緩和する",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_16",
+      "split": "dev",
+      "category": "word",
+      "source": "withstand",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "耐える",
+        "持ちこたえる"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "耐える",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_17",
+      "split": "dev",
+      "category": "word",
+      "source": "barely",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "かろうじて",
+        "やっとのことで",
+        "ほとんど〜ない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "かろうじて",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_word_18",
+      "split": "dev",
+      "category": "word",
+      "source": "nevertheless",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "それにもかかわらず",
+        "それでもなお"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "それでも",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_01",
+      "split": "dev",
+      "category": "idiom",
+      "source": "on the fence",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "どっちつかずで",
+        "態度を決めかねている",
+        "中立の立場で"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "source_en": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "everyday": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "phrasebook_en": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "phrasebook_ja": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "dictionary_meaning": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "meaning_instruction": {
+          "text": "どっちつかず",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "どっちつかず",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "fewshot_everyday": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        },
+        "minimal_ja_en": {
+          "text": "どっちつかず",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "迷っている",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "迷っている",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "迷っている",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "どっちつかず",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "フェンスの上",
+          "score": 0,
+          "reason": "熟語の態度を決めかねるという意味を失った逐語訳。"
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_02",
+      "split": "dev",
+      "category": "idiom",
+      "source": "kick the bucket",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "死ぬ",
+        "くたばる"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "バケツを蹴る",
+          "score": 0,
+          "reason": "熟語の死ぬという意味を失った逐語訳。"
+        },
+        "phrasebook_en": {
+          "text": "バケツを蹴る",
+          "score": 0,
+          "reason": "熟語の死ぬという意味を失った逐語訳。"
+        },
+        "phrasebook_ja": {
+          "text": "バケツを蹴る",
+          "score": 0,
+          "reason": "熟語の死ぬという意味を失った逐語訳。"
+        },
+        "dictionary_meaning": {
+          "text": "バケツを蹴る",
+          "score": 0,
+          "reason": "熟語の死ぬという意味を失った逐語訳。"
+        },
+        "meaning_instruction": {
+          "text": "バケツを蹴る",
+          "score": 0,
+          "reason": "熟語の死ぬという意味を失った逐語訳。"
+        },
+        "minimal_ja": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "くたばる",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_03",
+      "split": "dev",
+      "category": "idiom",
+      "source": "spill the beans",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "秘密を漏らす",
+        "うっかり秘密を話す"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "秘密を漏らす",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "秘密を漏らす",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "秘密を漏らす",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "秘密を明かす",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_04",
+      "split": "dev",
+      "category": "idiom",
+      "source": "break a leg",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "頑張って",
+        "成功を祈る",
+        "うまくいきますように"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "幸運を祈る",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "頑張って",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "頑張って",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "頑張って",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "頑張ってね。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "頑張ってね。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "幸運を祈る",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "頑張ってね",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "頑張ってね。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_05",
+      "split": "dev",
+      "category": "idiom",
+      "source": "once in a blue moon",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "ごくまれに",
+        "めったにない頻度で"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "ごくまれに",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "ごくまれに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "ごくまれに",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "ごくたまに",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_06",
+      "split": "dev",
+      "category": "idiom",
+      "source": "piece of cake",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "朝飯前",
+        "とても簡単なこと"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "朝飯前",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_07",
+      "split": "dev",
+      "category": "idiom",
+      "source": "in a nutshell",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "要するに",
+        "手短に言えば"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "端的に言うと",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "端的に言うと",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "端的に言うと",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "端的に言うと",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "端的に言うと",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "端的に言うと",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "要するに",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_08",
+      "split": "dev",
+      "category": "idiom",
+      "source": "take for granted",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "当然だと思う",
+        "当たり前のことと見なす"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "当然視する",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "当然だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "当然視する",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "当然視する",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "当然だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "当然だと思う",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "当たり前だと思う",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_09",
+      "split": "dev",
+      "category": "idiom",
+      "source": "out of the blue",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "突然に",
+        "思いがけなく",
+        "だしぬけに"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "いきなり",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "突然",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "いきなり",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "突然",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "突然",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "いきなり",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "唐突に",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "突然",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_10",
+      "split": "dev",
+      "category": "idiom",
+      "source": "by and large",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "概して",
+        "全体としては",
+        "おおむね"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "概して",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "概ね",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_11",
+      "split": "dev",
+      "category": "idiom",
+      "source": "in hot water",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "厄介な状況にある",
+        "困った立場にある"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "熱湯に",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "source_en": {
+          "text": "熱湯に",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "everyday": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "phrasebook_en": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "phrasebook_ja": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "dictionary_meaning": {
+          "text": "熱湯に",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "meaning_instruction": {
+          "text": "熱湯に",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "minimal_ja": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "fewshot": {
+          "text": "お湯に浸かっている",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "fewshot_everyday": {
+          "text": "お湯に浸かっている",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "minimal_ja_en": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "minimal_en": {
+          "text": "熱湯に",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "minimal_en_en": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "ordinary_ja": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "お湯の中で",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        },
+        "fewshot_no_en": {
+          "text": "お湯の中",
+          "score": 0,
+          "reason": "熟語の困った状況にあるという意味を失った逐語訳。"
+        }
+      }
+    },
+    {
+      "case_id": "dev_idiom_12",
+      "split": "dev",
+      "category": "idiom",
+      "source": "call it a day",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "今日はここまでにする",
+        "今日の仕事を切り上げる"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "一日一杯飲む",
+          "score": 0,
+          "reason": "仕事などを切り上げるという意味と無関係な飲酒を追加している。"
+        },
+        "dictionary_meaning": {
+          "text": "切り上げよう",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "切り上げる",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "切り上げよう",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "今日はこの辺で。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "今日はこの辺で。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "今日はここまでにしよう",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "切り上げる",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "切り上げよう",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "今日はここまで。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_01",
+      "split": "dev",
+      "category": "sentence",
+      "source": "The bucket is empty.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "バケツは空だ",
+        "バケツの中に何も入っていない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "バケツは空だ。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "バケツは空です。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_02",
+      "split": "dev",
+      "category": "sentence",
+      "source": "I don't agree.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "私は賛成しない",
+        "同意できない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "賛成できません。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "賛成できません。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "同意できません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "同意できません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "同意できません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "同意しません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "同意できません。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_03",
+      "split": "dev",
+      "category": "sentence",
+      "source": "Did you call her?",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "彼女に電話したのですか",
+        "彼女に連絡しましたか"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "彼女に電話した？",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "彼女に電話した？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "彼女に電話したの？",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "彼女に電話した？",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_04",
+      "split": "dev",
+      "category": "sentence",
+      "source": "Please close the door.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "ドアを閉めてください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "ドアを閉めてください。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_05",
+      "split": "dev",
+      "category": "sentence",
+      "source": "She was late again.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "彼女はまた遅刻した",
+        "彼女は再び遅れた"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "彼女はまた遅刻した。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "彼女はまた遅刻した。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "彼女はまた遅刻した。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "彼女はまた遅刻した。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "彼女はまた遅れた。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_06",
+      "split": "dev",
+      "category": "sentence",
+      "source": "Don't open that file.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "そのファイルを開かないでください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "そのファイルは開けないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "そのファイルは開けないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "そのファイルは開けないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "そのファイルは開けないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "そのファイルは開かないで。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "そのファイルは開けないで。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_07",
+      "split": "dev",
+      "category": "sentence",
+      "source": "It might rain tomorrow.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "明日は雨が降るかもしれない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "明日は雨が降るかもしれない。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_08",
+      "split": "dev",
+      "category": "sentence",
+      "source": "You must not enter.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "入ってはいけません",
+        "立ち入りは禁止されています"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "入場してはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "入場してはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "入ってはいけません。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_09",
+      "split": "dev",
+      "category": "sentence",
+      "source": "Where did he go?",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "彼はどこへ行ったのですか"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "彼はどこへ行ったのですか。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "彼はどこへ行ったの？",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_10",
+      "split": "dev",
+      "category": "sentence",
+      "source": "I haven't finished it yet.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "まだ終わっていません",
+        "私はまだそれを終えていない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "まだ終わってないんだ。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "まだ終わってないんだ。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "まだ終わっていません。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_11",
+      "split": "dev",
+      "category": "sentence",
+      "source": "This is not my bag.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "これは私のかばんではない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "これは私のバッグじゃない。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "これは私のバッグではありません。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "dev_sentence_12",
+      "split": "dev",
+      "category": "sentence",
+      "source": "Send me the revised version.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "修正版を私に送ってください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "改訂版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "source_en": {
+          "text": "改訂版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "everyday": {
+          "text": "改訂版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_en": {
+          "text": "改訂版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "phrasebook_ja": {
+          "text": "改訂版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "dictionary_meaning": {
+          "text": "改訂版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "meaning_instruction": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_everyday": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_ja_en": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "minimal_en_en": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "ordinary_ja": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        },
+        "fewshot_no_en": {
+          "text": "修正版を送ってください。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_01",
+      "split": "heldout",
+      "category": "word",
+      "source": "meticulous",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "細部まで注意深い",
+        "几帳面な",
+        "念入りな"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "細心の",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "細心の",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_02",
+      "split": "heldout",
+      "category": "word",
+      "source": "threshold",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "敷居",
+        "しきい値",
+        "境目"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "閾値",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "閾値",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_03",
+      "split": "heldout",
+      "category": "word",
+      "source": "cumbersome",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "扱いにくい",
+        "かさばって不便な",
+        "煩雑な"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "煩雑な",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "煩雑な",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_04",
+      "split": "heldout",
+      "category": "word",
+      "source": "aftermath",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "余波",
+        "事後の状況",
+        "悪い出来事の後に残る影響"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "余波",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "余波",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_05",
+      "split": "heldout",
+      "category": "word",
+      "source": "postpone",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "延期する",
+        "先延ばしにする"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "延期する",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "延期する",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_06",
+      "split": "heldout",
+      "category": "word",
+      "source": "overlook",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "見落とす",
+        "見逃す",
+        "見渡す"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "俯瞰",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "俯瞰",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_07",
+      "split": "heldout",
+      "category": "word",
+      "source": "seldom",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "めったに〜ない",
+        "まれにしか〜ない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "めったに",
+          "score": 1,
+          "reason": "低頻度を示す意図は分かるが、日本語の「めったに」は通常否定を伴い、単独では意味が不完全。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "めったにない",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_word_08",
+      "split": "heldout",
+      "category": "word",
+      "source": "eventually",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "最終的には",
+        "結局",
+        "やがて"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "やがて",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "やがて",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_01",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "hit the sack",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "寝る",
+        "床に就く"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "仕事に行く",
+          "score": 0,
+          "reason": "寝るという熟語の意味を、逆方向の活動である仕事に行くへ変えている。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "寝る",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_02",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "bite the bullet",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "覚悟を決めて困難に立ち向かう",
+        "つらいことを我慢してやる"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "腹をくくれ",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "腹をくくる",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_03",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "a blessing in disguise",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "一見不幸に見えて実は幸運なこと",
+        "災いに見えて後で役立つもの"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "災い転じて福となす",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "災い転じて福となす",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_04",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "burn the midnight oil",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "夜遅くまで勉強や仕事をする",
+        "夜なべする"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "夜遅くまで作業する",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "夜遅くまで作業する",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_05",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "get cold feet",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "怖じ気づく",
+        "直前に不安になってためらう"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "怖気づく",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "怖気づく",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_06",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "the last straw",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "我慢の限界を超えさせた最後の出来事",
+        "堪忍袋の緒が切れるきっかけ"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "最後の一押し",
+          "score": 1,
+          "reason": "最後の引き金という含意は一部伝わるが、我慢の限界・許容できないという中心的な意味を欠く。"
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "最後の一滴",
+          "score": 0,
+          "reason": "一滴という物理的なものだけを示し、我慢の限界を超えるきっかけという熟語の意味を伝えていない。"
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_07",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "cut corners",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "手間や費用を省くために手抜きをする",
+        "必要な手順を省略する"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "手抜きをする",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "手を抜く",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_idiom_08",
+      "split": "heldout",
+      "category": "idiom",
+      "source": "beat around the bush",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "遠回しに言う",
+        "核心を避けて話す"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "遠回しに言う",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "遠回しに言う",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_01",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "We used to live here.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "私たちは以前ここに住んでいた"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "以前はここに住んでいた。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "以前はここに住んでいました。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_02",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "Could you speak more slowly?",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "もう少しゆっくり話していただけますか"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "もう少しゆっくり話していただけますか？",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "もっとゆっくり話していただけますか？",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_03",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "Nobody told me about it.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "誰もそのことを私に教えてくれなかった"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "誰も教えてくれなかった。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "誰からも聞いてないよ。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_04",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "We will arrive after lunch.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "私たちは昼食後に到着する予定です"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "昼食後に到着します。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "昼食後に到着します。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_05",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "She has already left.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "彼女はもう出発した",
+        "彼女はすでに帰った"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "彼女はもう出発した。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "彼女はもう出発した。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_06",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "Do not touch the switch.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "そのスイッチに触れないでください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "スイッチに触れないでください。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "スイッチに触れないでください。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_07",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "If necessary, try again.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "必要ならもう一度試してください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "必要なら、もう一度やってみて。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "必要であれば、もう一度お試しください。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "heldout_sentence_08",
+      "split": "heldout",
+      "category": "sentence",
+      "source": "He doesn't work on Sundays.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "彼は日曜日には働かない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "彼は日曜日は仕事をしない。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "彼は日曜日は仕事をしない。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_long_01",
+      "split": "control",
+      "category": "long",
+      "source": "Please review this document before tomorrow.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "明日までにこの文書を確認してください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "明日までにこの書類を確認してください。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "明日までにこの書類を確認してください。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_long_02",
+      "split": "control",
+      "category": "long",
+      "source": "She has never visited Japan before.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "彼女はこれまで一度も日本を訪れたことがない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "彼女は今まで一度も日本を訪れたことがない。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "彼女は今まで一度も日本を訪れたことがない。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_long_03",
+      "split": "control",
+      "category": "long",
+      "source": "I thought the meeting was canceled.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "会議は中止になったと思っていた"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "会議は中止になったと思っていた。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "会議は中止になったと思っていた。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_ja_to_en_01",
+      "split": "control",
+      "category": "ja_to_en",
+      "source": "今日は行けません。",
+      "direction": "ja_to_en",
+      "acceptable_meanings": [
+        "今日行くことができないという意味の自然な英語"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "I can't go today.",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "I can't go today.",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_ja_to_en_02",
+      "split": "control",
+      "category": "ja_to_en",
+      "source": "もう一度説明してもらえますか。",
+      "direction": "automatic",
+      "acceptable_meanings": [
+        "もう一度説明してほしいという丁寧な依頼を表す英語"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "Could you explain it again?",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "Could you explain it again?",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_ja_to_en_03",
+      "split": "control",
+      "category": "ja_to_en",
+      "source": "このファイルを削除しないでください。",
+      "direction": "ja_to_en",
+      "acceptable_meanings": [
+        "このファイルの削除を禁止する自然な英語"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "Please do not delete this file.",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "Please do not delete this file.",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_name_01",
+      "split": "control",
+      "category": "name",
+      "source": "OpenAI",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "OpenAIという組織名",
+        "オープンAIという固有名詞表記"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "OpenAI",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "OpenAI",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_name_02",
+      "split": "control",
+      "category": "name",
+      "source": "New York",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "ニューヨークという地名"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "ニューヨーク",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "ニューヨーク",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_name_03",
+      "split": "control",
+      "category": "name",
+      "source": "software",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "ソフトウェア",
+        "コンピュータを動作させるプログラム類"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "ソフトウェア",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "ソフトウェア",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_sentence_01",
+      "split": "control",
+      "category": "sentence",
+      "source": " \tPlease keep this file safe.\n",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "このファイルを安全に保管してください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": " \tこのファイルは大切に保管してください。\n",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": " \tこのファイルは大切に保管してください。\n",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_sentence_02",
+      "split": "control",
+      "category": "sentence",
+      "source": "Please check the latest version.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "最新版を確認してください"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "最新バージョンをご確認ください。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "最新バージョンをご確認ください。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    },
+    {
+      "case_id": "control_sentence_03",
+      "split": "control",
+      "category": "sentence",
+      "source": "I can’t find my keys.",
+      "direction": "en_to_ja",
+      "acceptable_meanings": [
+        "鍵が見つからない"
+      ],
+      "outputs": {
+        "baseline": {
+          "text": "鍵が見つからない。",
+          "score": 2,
+          "reason": ""
+        },
+        "single_en_multi_minimal_ja": {
+          "text": "鍵が見当たらない。",
+          "score": 2,
+          "reason": ""
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,992 @@
+[
+  {
+    "id": "dev_word_01",
+    "split": "dev",
+    "category": "word",
+    "source": "serendipitous",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "思いがけない幸運をもたらす",
+      "偶然の幸運による"
+    ],
+    "notes": "形容詞。単なる発音表記や名詞のセレンディピティだけでは語義を伝えきれない。"
+  },
+  {
+    "id": "dev_word_02",
+    "split": "dev",
+    "category": "word",
+    "source": "ephemeral",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "はかない",
+      "短命な",
+      "一時的な"
+    ],
+    "notes": "形容詞。エフェメラルだけでは意味の説明にならない。"
+  },
+  {
+    "id": "dev_word_03",
+    "split": "dev",
+    "category": "word",
+    "source": "ubiquitous",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "至る所にある",
+      "どこにでも存在する"
+    ],
+    "notes": "ユビキタスは定着した専門用語だが、この一般語の単独入力では意味が分かる訳を優先する。"
+  },
+  {
+    "id": "dev_word_04",
+    "split": "dev",
+    "category": "word",
+    "source": "elusive",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "捉えどころのない",
+      "捕まえにくい"
+    ],
+    "notes": "人・対象が不明なので、いずれの主要な意味も許容する。"
+  },
+  {
+    "id": "dev_word_05",
+    "split": "dev",
+    "category": "word",
+    "source": "conscientious",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "良心的な",
+      "誠実で責任感のある"
+    ],
+    "notes": "形容詞。"
+  },
+  {
+    "id": "dev_word_06",
+    "split": "dev",
+    "category": "word",
+    "source": "pragmatic",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "実用的な",
+      "現実的な"
+    ],
+    "notes": "形容詞。"
+  },
+  {
+    "id": "dev_word_07",
+    "split": "dev",
+    "category": "word",
+    "source": "resilient",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "回復力のある",
+      "しなやかで立ち直りが早い"
+    ],
+    "notes": "物理的な弾力性と精神的な回復力の両方を許容する。"
+  },
+  {
+    "id": "dev_word_08",
+    "split": "dev",
+    "category": "word",
+    "source": "plausible",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "もっともらしい",
+      "十分ありそうな"
+    ],
+    "notes": "確実であるという断定にはしない。"
+  },
+  {
+    "id": "dev_word_09",
+    "split": "dev",
+    "category": "word",
+    "source": "candid",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "率直な",
+      "包み隠さない"
+    ],
+    "notes": "形容詞。写真の文脈がないので、率直さの意味を想定する。"
+  },
+  {
+    "id": "dev_word_10",
+    "split": "dev",
+    "category": "word",
+    "source": "redundant",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "余分な",
+      "冗長な",
+      "重複して不要な"
+    ],
+    "notes": "冗長化されたという技術用法もあるが、単独入力では一般的な語義を許容する。"
+  },
+  {
+    "id": "dev_word_11",
+    "split": "dev",
+    "category": "word",
+    "source": "obsolete",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "時代遅れの",
+      "廃れた",
+      "もはや使われていない"
+    ],
+    "notes": "単に古いだけより、用いられなくなった含意が望ましい。"
+  },
+  {
+    "id": "dev_word_12",
+    "split": "dev",
+    "category": "word",
+    "source": "mundane",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "平凡な",
+      "ありふれた",
+      "日常的で面白みに欠ける"
+    ],
+    "notes": "形容詞。"
+  },
+  {
+    "id": "dev_word_13",
+    "split": "dev",
+    "category": "word",
+    "source": "insight",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "洞察",
+      "本質を見抜く理解",
+      "物事への深い理解"
+    ],
+    "notes": "名詞。単なる視力や視界という意味にはしない。"
+  },
+  {
+    "id": "dev_word_14",
+    "split": "dev",
+    "category": "word",
+    "source": "drawback",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "欠点",
+      "不利な点",
+      "難点"
+    ],
+    "notes": "名詞。後ろに引くという動作に訳さない。"
+  },
+  {
+    "id": "dev_word_15",
+    "split": "dev",
+    "category": "word",
+    "source": "alleviate",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "和らげる",
+      "軽減する"
+    ],
+    "notes": "動詞。痛み・負担・問題を軽くする意味。"
+  },
+  {
+    "id": "dev_word_16",
+    "split": "dev",
+    "category": "word",
+    "source": "withstand",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "耐える",
+      "持ちこたえる"
+    ],
+    "notes": "動詞。困難や力に負けずに耐える意味。"
+  },
+  {
+    "id": "dev_word_17",
+    "split": "dev",
+    "category": "word",
+    "source": "barely",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "かろうじて",
+      "やっとのことで",
+      "ほとんど〜ない"
+    ],
+    "notes": "副詞。文脈なしなので「かろうじて」と「ほとんどない」の主要用法を両方許容する。"
+  },
+  {
+    "id": "dev_word_18",
+    "split": "dev",
+    "category": "word",
+    "source": "nevertheless",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "それにもかかわらず",
+      "それでもなお"
+    ],
+    "notes": "副詞。前の内容に反する事柄を導く接続的な意味を保つ。"
+  },
+  {
+    "id": "dev_idiom_01",
+    "split": "dev",
+    "category": "idiom",
+    "source": "on the fence",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "どっちつかずで",
+      "態度を決めかねている",
+      "中立の立場で"
+    ],
+    "failure_examples": [
+      "フェンスの上"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_02",
+    "split": "dev",
+    "category": "idiom",
+    "source": "kick the bucket",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "死ぬ",
+      "くたばる"
+    ],
+    "failure_examples": [
+      "バケツを蹴る"
+    ],
+    "notes": "くだけた慣用表現。"
+  },
+  {
+    "id": "dev_idiom_03",
+    "split": "dev",
+    "category": "idiom",
+    "source": "spill the beans",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "秘密を漏らす",
+      "うっかり秘密を話す"
+    ],
+    "failure_examples": [
+      "豆をこぼす"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_04",
+    "split": "dev",
+    "category": "idiom",
+    "source": "break a leg",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "頑張って",
+      "成功を祈る",
+      "うまくいきますように"
+    ],
+    "failure_examples": [
+      "脚を折る"
+    ],
+    "notes": "舞台などに臨む人への激励。"
+  },
+  {
+    "id": "dev_idiom_05",
+    "split": "dev",
+    "category": "idiom",
+    "source": "once in a blue moon",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ごくまれに",
+      "めったにない頻度で"
+    ],
+    "failure_examples": [
+      "青い月に一度"
+    ],
+    "notes": "5語。語数上限の近くにある熟語。"
+  },
+  {
+    "id": "dev_idiom_06",
+    "split": "dev",
+    "category": "idiom",
+    "source": "piece of cake",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "朝飯前",
+      "とても簡単なこと"
+    ],
+    "failure_examples": [
+      "ケーキの一切れ"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_07",
+    "split": "dev",
+    "category": "idiom",
+    "source": "in a nutshell",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "要するに",
+      "手短に言えば"
+    ],
+    "failure_examples": [
+      "木の実の殻の中で"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_08",
+    "split": "dev",
+    "category": "idiom",
+    "source": "take for granted",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "当然だと思う",
+      "当たり前のことと見なす"
+    ],
+    "failure_examples": [
+      "当然の権利を取る"
+    ],
+    "notes": "目的語のない見出し表現。「ありがたみを忘れる」も文脈によって成立する。"
+  },
+  {
+    "id": "dev_idiom_09",
+    "split": "dev",
+    "category": "idiom",
+    "source": "out of the blue",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "突然に",
+      "思いがけなく",
+      "だしぬけに"
+    ],
+    "failure_examples": [
+      "青いものの外へ"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_10",
+    "split": "dev",
+    "category": "idiom",
+    "source": "by and large",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "概して",
+      "全体としては",
+      "おおむね"
+    ],
+    "failure_examples": [
+      "によって、そして大きい"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_11",
+    "split": "dev",
+    "category": "idiom",
+    "source": "in hot water",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "厄介な状況にある",
+      "困った立場にある"
+    ],
+    "failure_examples": [
+      "熱湯の中にいる"
+    ],
+    "notes": "独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_idiom_12",
+    "split": "dev",
+    "category": "idiom",
+    "source": "call it a day",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "今日はここまでにする",
+      "今日の仕事を切り上げる"
+    ],
+    "failure_examples": [
+      "それを一日と呼ぶ"
+    ],
+    "notes": "4語。独立した熟語としての意味を想定する。"
+  },
+  {
+    "id": "dev_sentence_01",
+    "split": "dev",
+    "category": "sentence",
+    "source": "The bucket is empty.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "バケツは空だ",
+      "バケツの中に何も入っていない"
+    ],
+    "notes": "bucketを含むが慣用句ではない。文全体の普通の意味を保つ。"
+  },
+  {
+    "id": "dev_sentence_02",
+    "split": "dev",
+    "category": "sentence",
+    "source": "I don't agree.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私は賛成しない",
+      "同意できない"
+    ],
+    "notes": "否定を落とさない。"
+  },
+  {
+    "id": "dev_sentence_03",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Did you call her?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女に電話したのですか",
+      "彼女に連絡しましたか"
+    ],
+    "notes": "過去の疑問。callは呼ぶ意味も文脈次第で許容する。"
+  },
+  {
+    "id": "dev_sentence_04",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Please close the door.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ドアを閉めてください"
+    ],
+    "notes": "依頼文。ドアという適切な外来語は許容する。"
+  },
+  {
+    "id": "dev_sentence_05",
+    "split": "dev",
+    "category": "sentence",
+    "source": "She was late again.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女はまた遅刻した",
+      "彼女は再び遅れた"
+    ],
+    "notes": "過去時制とagainを保つ。"
+  },
+  {
+    "id": "dev_sentence_06",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Don't open that file.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "そのファイルを開かないでください"
+    ],
+    "notes": "否定の指示。fileは外来語でよい。"
+  },
+  {
+    "id": "dev_sentence_07",
+    "split": "dev",
+    "category": "sentence",
+    "source": "It might rain tomorrow.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "明日は雨が降るかもしれない"
+    ],
+    "notes": "可能性を確定に変えない。"
+  },
+  {
+    "id": "dev_sentence_08",
+    "split": "dev",
+    "category": "sentence",
+    "source": "You must not enter.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "入ってはいけません",
+      "立ち入りは禁止されています"
+    ],
+    "notes": "must notは不要ではなく禁止。"
+  },
+  {
+    "id": "dev_sentence_09",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Where did he go?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼はどこへ行ったのですか"
+    ],
+    "notes": "行き先を尋ねる過去の疑問。"
+  },
+  {
+    "id": "dev_sentence_10",
+    "split": "dev",
+    "category": "sentence",
+    "source": "I haven't finished it yet.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "まだ終わっていません",
+      "私はまだそれを終えていない"
+    ],
+    "notes": "5語。否定と未完了を保つ。"
+  },
+  {
+    "id": "dev_sentence_11",
+    "split": "dev",
+    "category": "sentence",
+    "source": "This is not my bag.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "これは私のかばんではない"
+    ],
+    "notes": "5語。明示された普通の文として扱う。my bagの趣味・得意という俗語解釈はこの評価では想定しない。"
+  },
+  {
+    "id": "dev_sentence_12",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Send me the revised version.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "修正版を私に送ってください"
+    ],
+    "notes": "5語。修正済みという情報を落とさない。"
+  },
+  {
+    "id": "heldout_word_01",
+    "split": "heldout",
+    "category": "word",
+    "source": "meticulous",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "細部まで注意深い",
+      "几帳面な",
+      "念入りな"
+    ],
+    "notes": "形容詞。"
+  },
+  {
+    "id": "heldout_word_02",
+    "split": "heldout",
+    "category": "word",
+    "source": "threshold",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "敷居",
+      "しきい値",
+      "境目"
+    ],
+    "notes": "名詞。建物の敷居と、ある変化が起こる境界の両方を許容する。"
+  },
+  {
+    "id": "heldout_word_03",
+    "split": "heldout",
+    "category": "word",
+    "source": "cumbersome",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "扱いにくい",
+      "かさばって不便な",
+      "煩雑な"
+    ],
+    "notes": "物理的な扱いにくさと手続きの煩雑さを許容する。"
+  },
+  {
+    "id": "heldout_word_04",
+    "split": "heldout",
+    "category": "word",
+    "source": "aftermath",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "余波",
+      "事後の状況",
+      "悪い出来事の後に残る影響"
+    ],
+    "notes": "名詞。災害・事件などの後に続く影響や状況。"
+  },
+  {
+    "id": "heldout_word_05",
+    "split": "heldout",
+    "category": "word",
+    "source": "postpone",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "延期する",
+      "先延ばしにする"
+    ],
+    "notes": "動詞。予定を後にずらす意味。"
+  },
+  {
+    "id": "heldout_word_06",
+    "split": "heldout",
+    "category": "word",
+    "source": "overlook",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "見落とす",
+      "見逃す",
+      "見渡す"
+    ],
+    "notes": "動詞。見落とす用法と、高い所から見渡す用法をいずれも許容する。"
+  },
+  {
+    "id": "heldout_word_07",
+    "split": "heldout",
+    "category": "word",
+    "source": "seldom",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "めったに〜ない",
+      "まれにしか〜ない"
+    ],
+    "notes": "副詞。低い頻度を示す意味。"
+  },
+  {
+    "id": "heldout_word_08",
+    "split": "heldout",
+    "category": "word",
+    "source": "eventually",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "最終的には",
+      "結局",
+      "やがて"
+    ],
+    "notes": "副詞。時間や過程の後に至る結果を表す。"
+  },
+  {
+    "id": "heldout_idiom_01",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "hit the sack",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "寝る",
+      "床に就く"
+    ],
+    "failure_examples": [
+      "袋をたたく"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_02",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "bite the bullet",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "覚悟を決めて困難に立ち向かう",
+      "つらいことを我慢してやる"
+    ],
+    "failure_examples": [
+      "弾丸をかむ"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_03",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "a blessing in disguise",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "一見不幸に見えて実は幸運なこと",
+      "災いに見えて後で役立つもの"
+    ],
+    "failure_examples": [
+      "変装した祝福"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_04",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "burn the midnight oil",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "夜遅くまで勉強や仕事をする",
+      "夜なべする"
+    ],
+    "failure_examples": [
+      "真夜中の油を燃やす"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_05",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "get cold feet",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "怖じ気づく",
+      "直前に不安になってためらう"
+    ],
+    "failure_examples": [
+      "足が冷える"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_06",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "the last straw",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "我慢の限界を超えさせた最後の出来事",
+      "堪忍袋の緒が切れるきっかけ"
+    ],
+    "failure_examples": [
+      "最後のわら"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_07",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "cut corners",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "手間や費用を省くために手抜きをする",
+      "必要な手順を省略する"
+    ],
+    "failure_examples": [
+      "角を切る"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_idiom_08",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "beat around the bush",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "遠回しに言う",
+      "核心を避けて話す"
+    ],
+    "failure_examples": [
+      "茂みの周りをたたく"
+    ],
+    "notes": "独立した熟語としての意味を想定する。文脈を与えた literal 用法の判定を試す項目ではない。"
+  },
+  {
+    "id": "heldout_sentence_01",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "We used to live here.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私たちは以前ここに住んでいた"
+    ],
+    "notes": "5語。過去の習慣・状態を保つ。"
+  },
+  {
+    "id": "heldout_sentence_02",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Could you speak more slowly?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "もう少しゆっくり話していただけますか"
+    ],
+    "notes": "5語。丁寧な依頼。能力の過去という解釈にしない。"
+  },
+  {
+    "id": "heldout_sentence_03",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Nobody told me about it.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "誰もそのことを私に教えてくれなかった"
+    ],
+    "notes": "5語。否定の範囲を保つ。"
+  },
+  {
+    "id": "heldout_sentence_04",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "We will arrive after lunch.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私たちは昼食後に到着する予定です"
+    ],
+    "notes": "5語。到着予定と昼食後という時刻の関係を保つ。"
+  },
+  {
+    "id": "heldout_sentence_05",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "She has already left.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女はもう出発した",
+      "彼女はすでに帰った"
+    ],
+    "notes": "すでに立ち去っている状態。"
+  },
+  {
+    "id": "heldout_sentence_06",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Do not touch the switch.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "そのスイッチに触れないでください"
+    ],
+    "notes": "5語。禁止を保ち、スイッチという外来語は許容する。"
+  },
+  {
+    "id": "heldout_sentence_07",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "If necessary, try again.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "必要ならもう一度試してください"
+    ],
+    "notes": "条件を落とさない。"
+  },
+  {
+    "id": "heldout_sentence_08",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "He doesn't work on Sundays.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼は日曜日には働かない"
+    ],
+    "notes": "5語。現在の習慣的な否定。"
+  },
+  {
+    "id": "control_long_01",
+    "split": "control",
+    "category": "long",
+    "source": "Please review this document before tomorrow.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "明日までにこの文書を確認してください"
+    ],
+    "notes": "ちょうど6語。短い入力用の分岐の外側。before tomorrowは明日になる前。"
+  },
+  {
+    "id": "control_long_02",
+    "split": "control",
+    "category": "long",
+    "source": "She has never visited Japan before.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女はこれまで一度も日本を訪れたことがない"
+    ],
+    "notes": "ちょうど6語。neverによる経験の否定を保つ。"
+  },
+  {
+    "id": "control_long_03",
+    "split": "control",
+    "category": "long",
+    "source": "I thought the meeting was canceled.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "会議は中止になったと思っていた"
+    ],
+    "notes": "ちょうど6語。過去の認識を保つ。"
+  },
+  {
+    "id": "control_ja_to_en_01",
+    "split": "control",
+    "category": "ja_to_en",
+    "source": "今日は行けません。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "今日行くことができないという意味の自然な英語"
+    ],
+    "notes": "日本語を英語に訳す方向を保つ。acceptable_meaningsは出力言語を強制する一致文字列ではなく、内容の評価基準。"
+  },
+  {
+    "id": "control_ja_to_en_02",
+    "split": "control",
+    "category": "ja_to_en",
+    "source": "もう一度説明してもらえますか。",
+    "direction": "automatic",
+    "acceptable_meanings": [
+      "もう一度説明してほしいという丁寧な依頼を表す英語"
+    ],
+    "notes": "日本語を英語に訳す方向を保つ。acceptable_meaningsは出力言語を強制する一致文字列ではなく、内容の評価基準。"
+  },
+  {
+    "id": "control_ja_to_en_03",
+    "split": "control",
+    "category": "ja_to_en",
+    "source": "このファイルを削除しないでください。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "このファイルの削除を禁止する自然な英語"
+    ],
+    "notes": "日本語を英語に訳す方向を保つ。acceptable_meaningsは出力言語を強制する一致文字列ではなく、内容の評価基準。"
+  },
+  {
+    "id": "control_name_01",
+    "split": "control",
+    "category": "name",
+    "source": "OpenAI",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "OpenAIという組織名",
+      "オープンAIという固有名詞表記"
+    ],
+    "notes": "固有名詞は原綴りや妥当なカタカナ表記を許容する。一般語の意味に置き換えない。"
+  },
+  {
+    "id": "control_name_02",
+    "split": "control",
+    "category": "name",
+    "source": "New York",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ニューヨークという地名"
+    ],
+    "notes": "2語の固有名詞。新しいヨークという逐語訳にしない。"
+  },
+  {
+    "id": "control_name_03",
+    "split": "control",
+    "category": "name",
+    "source": "software",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ソフトウェア",
+      "コンピュータを動作させるプログラム類"
+    ],
+    "notes": "定着した外来語のカタカナ訳は正しい。カタカナを一律に失敗とみなさない。"
+  },
+  {
+    "id": "control_sentence_01",
+    "split": "control",
+    "category": "sentence",
+    "source": " \tPlease keep this file safe.\n",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "このファイルを安全に保管してください"
+    ],
+    "notes": "英語5語。先頭末尾の空白・タブ・改行を語数に含めない。"
+  },
+  {
+    "id": "control_sentence_02",
+    "split": "control",
+    "category": "sentence",
+    "source": "Please check the latest version.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "最新版を確認してください"
+    ],
+    "notes": "英語5語。語間は通常のASCII空白ではなくNO-BREAK SPACE。"
+  },
+  {
+    "id": "control_sentence_03",
+    "split": "control",
+    "category": "sentence",
+    "source": "I can’t find my keys.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "鍵が見つからない"
+    ],
+    "notes": "英語5語。can’tのアポストロフィはU+2019で、否定を保つ。"
+  }
+]

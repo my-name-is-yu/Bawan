@@ -1,4 +1,5 @@
 #include "TranslationEngine.h"
+#include "ShortInput.h"
 
 #include "llama.h"
 
@@ -234,9 +235,23 @@ private:
         const auto bos = llama_vocab_bos(vocab);
         if (bos == LLAMA_TOKEN_NULL) { throw std::runtime_error("This PLaMo model is not supported."); }
         std::vector<llama_token> result{bos};
-        const auto prefix = tokenize(vocab,
+        const auto shortWords = toEnglish ? 0 : shortEnglishWordCount(request.text);
+        const char * promptPrefix =
             "<|plamo:tag|>dataset<|plamo:msg|>translation"
-            "<|plamo:tag|>input<|plamo:msg|>", true);
+            "<|plamo:tag|>input<|plamo:msg|>";
+        if (shortWords == 1) {
+            promptPrefix =
+                "<|plamo:tag|>dataset<|plamo:msg|>translation"
+                "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>";
+        } else if (shortWords > 1) {
+            // A minimal PFML3 context outperformed longer instructions and
+            // translation examples on short expressions and sentences.
+            promptPrefix =
+                "<|plamo:tag|>dataset<|plamo:msg|>translation"
+                "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
+                "<|plamo:tag|>input<|plamo:msg|>";
+        }
+        const auto prefix = tokenize(vocab, promptPrefix, true);
         // Parse only the application's PFML3 delimiters as special tokens.
         const auto source = tokenize(vocab, request.text, false);
         const auto suffix = tokenize(vocab, std::string("<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>") +
