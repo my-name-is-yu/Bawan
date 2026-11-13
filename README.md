@@ -1,4 +1,39 @@
-# Bawan
+<p align="center">
+  <img src="resources/AppIcon.png" width="144" height="144" alt="Bawan dog app icon">
+</p>
+
+<h1 align="center">Bawan</h1>
+
+<p align="center">
+  <strong>A little companion for English ↔ Japanese translation.</strong><br>
+  Native to your Mac. Local by design. Just a double copy away.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-14%2B-443024?style=flat-square&amp;logo=apple&amp;logoColor=F7E7BB" alt="macOS 14 or later">
+  <img src="https://img.shields.io/badge/Apple_Silicon-Metal-D99E3D?style=flat-square" alt="Apple Silicon with Metal">
+  <img src="https://img.shields.io/badge/Translation-Local-B53B28?style=flat-square" alt="Local translation">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/App_code-MIT-443024?style=flat-square" alt="App code: MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="#building--installing">Build & Install</a> ·
+  <a href="#setup--usage">Usage & Shortcuts</a> ·
+  <a href="#model--licenses">Model & Licenses</a>
+</p>
+
+<p align="center">
+  <img src="design/screenshots/translation-demo.gif" width="900" alt="Actual English-to-Japanese translation in Bawan, with the Japanese output appearing incrementally">
+</p>
+
+<p align="center">
+  <sub>English → Japanese · Real on-device translation, streamed into the app window.<br>
+  <a href="design/screenshots/README.md">Recording details & UI stills</a></sub>
+</p>
+
+---
+
+## ✨ Meet Bawan
 
 Bawan is a resident English ↔ Japanese translation app for Apple Silicon Macs running macOS 14 or later.
 
@@ -6,15 +41,17 @@ Select text in any app and press `⌘C` twice within 400 ms to display the sourc
 
 Bawan stays resident in the Dock and `⌘Tab` switcher after you close the translation panel. The panel comes to the front when invoked and behaves like a standard window afterward, moving behind other apps when unfocused.
 
-## Features & Design
+### Made for the little moments between languages
 
-- **Native single-process architecture:** Built with AppKit, Objective-C++, and C++17, statically linking `llama.cpp` for local Metal inference. No Electron, Rust, Python, or external inference server is used.
-- **Offline translation:** Works completely offline once the model is downloaded.
-- **Side-by-side UI:** Displays source and translated text side by side, follows macOS Light/Dark appearance, and supports macOS **Reduce Motion** and **Increase Contrast** accessibility settings.
-- **Streaming & controls:** Streams translation output incrementally without losing your scroll position when reading earlier text, and includes a swap (`⇄`) button to reverse translation direction.
-- **Privacy & memory efficiency:** Writes no translation history files or logs. The model loads lazily on first use and unloads automatically after 60 seconds of inactivity.
+| Everyday translation | At home on macOS |
+| --- | --- |
+| **⌘C ×2 · Translate where you are**<br>Select text in any app and double-copy to bring Bawan near your cursor. | **🔒 Local & private**<br>Translate offline after model setup. No translation history files or logs. |
+| **⇄ · Two languages, side by side**<br>Read the original and translation together, stream results, and swap direction in one click. | **🐾 A Mac companion**<br>Paper textures, a dog mascot, Light/Dark appearance, and support for Reduce Motion and Increase Contrast. |
+| **⚡ Native all the way down**<br>AppKit + Objective-C++ + C++17, with statically linked `llama.cpp` and local Metal inference. No Electron, Rust, Python, or external inference server. | **💤 Ready when you need it**<br>The model loads on first use and unloads after 60 seconds of inactivity. Streaming keeps your place when you scroll back. |
 
-## Building & Installing
+<a id="building--installing"></a>
+
+## 📦 Building & Installing
 
 ### Prerequisites
 
@@ -49,7 +86,9 @@ Builds use ad-hoc signing by default. To sign with your own identity:
 
 To clean build artifacts, quit Bawan and delete `build/`. The downloaded model in Application Support and your macOS permissions are stored separately.
 
-## Setup & Usage
+<a id="setup--usage"></a>
+
+## ⌨️ Setup & Usage
 
 1. **Model download:** Before the first model setup, Bawan shows a summary of the model license with links to the official terms and commercial registration. After you continue, Bawan downloads the official PLaMo model (~573 MB) and verifies its file size and SHA256 checksum. Progress appears in the window and menu bar. If setup fails, choose **Retry Model Setup** from the menu.
 2. **Permissions:** Open **Settings…** from the menu bar (or the gear icon) and grant the permissions shown for your shortcuts:
@@ -99,7 +138,7 @@ In **Settings…**, click **Shortcut (click)** to record a new key combination a
 
 Bawan uses its own bundle ID and storage directory and does not migrate models or settings from other apps.
 
-## Testing & Verification
+## 🧪 Testing & Verification
 
 Tests, smoke checks, and profiling tools are excluded from standard release builds. To build and run them locally on Apple Silicon:
 
@@ -128,7 +167,9 @@ ctest --test-dir build --output-on-failure
 
 GitHub Actions CI is not used; run builds, signature checks, and real-model tests locally. Live shortcut permissions and key interception checks, full-window UI acceptance, and whole-app resource measurements remain unrecorded. See the [UI QA record](design-qa.md) for evidence and outstanding checks. Engine profiling excludes AppKit and does not establish whole-app memory use or Metal performance from Linux RSS.
 
-## Model & Licenses
+<a id="model--licenses"></a>
+
+## 📜 Model & Licenses
 
 Bawan's original code and project-owned artwork are released under the
 [MIT License](LICENSE). The dog artwork is a composite based on the author's own
