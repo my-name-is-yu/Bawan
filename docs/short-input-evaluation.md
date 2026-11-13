@@ -82,6 +82,12 @@ CTest 7/7、本番ビルド・署名、実モデルの短語・熟語・語数�
 実アプリの入力欄から`ephemeral → 儚い`、`on the fence → どっちつかず`、⇄による逆方向の翻訳を確認した。
 インストール済みアプリは差し替えていない。
 
+GitHubのmacOS 15仮想GPU（Apple Paravirtual device）では、同じモデル・設定でも
+`on the fence`が「フェンスの上」となる出力を確認した。
+上の品質改善件数と性能値はM4実機での結果であり、すべての推論バックエンドで同じ訳になることを保証しない。
+CIでは語数・言語指定・文脈を含むPFML3形式を単体テストで固定し、実モデルの熟語要求は完了・日本語出力・方向を確認する。
+意味評価は保存した比較データに分離しており、このCI差分を見てプロンプトや採用基準を調整していない。
+
 入力は[評価ケース](../tests/fixtures/short_translation_cases.json)、条件は[評価プロトコル](../tests/fixtures/short_translation_protocol.json)、
 実行方法は[評価ツール](../tools/translation-eval/README.md)、
 全出力・採点・選定・性能・検証記録は[保存結果](evaluations/short-input-2026-11-13/README.md)を参照。

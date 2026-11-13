@@ -49,5 +49,15 @@ int main() {
         std::cerr << "The frozen short-input policy changed\n";
         return EXIT_FAILURE;
     }
+    if (lore::detail::promptPrefix(single) !=
+            "<|plamo:tag|>dataset<|plamo:msg|>translation"
+            "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>" ||
+        lore::detail::promptPrefix(phrase) !=
+            "<|plamo:tag|>dataset<|plamo:msg|>translation"
+            "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
+            "<|plamo:tag|>input<|plamo:msg|>") {
+        std::cerr << "The selected PFML3 language/context fields were not serialized\n";
+        return EXIT_FAILURE;
+    }
     std::cout << "PASS: " << std::size(cases) << " word boundaries and ordinary-prompt preservation\n";
 }

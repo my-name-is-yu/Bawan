@@ -32,5 +32,15 @@
     "codesign --verify --strict build/Lore.app",
     "./build/engine_smoke MODEL_PATH",
     "./build/engine_profile MODEL_PATH"
-  ]
+  ],
+  "ci_paravirtual_gpu_observation": {
+    "run_url": "https://github.com/my-name-is-yu/Lore/actions/runs/43383074017",
+    "device": "Apple Paravirtual device",
+    "simdgroup_reduction": false,
+    "simdgroup_matrix_multiply": false,
+    "source": "on the fence",
+    "output": "フェンスの上",
+    "initial_result": "The semantic idiom assertion failed despite successful native build, unit tests, signature and word-semantic smoke assertion.",
+    "followup": "Keep the frozen production policy and acceptance gates. Assert exact selected PFML3 fields in unit tests; idiom smoke checks completion, Japanese output and direction. Semantic assessment remains specific to the recorded M4 experiment."
+  }
 }
