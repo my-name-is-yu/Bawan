@@ -91,7 +91,8 @@ UIは1つのパネルとそのビュー・制約を再利用し、追加の全�
 自動方向は、かな・漢字を含む文章を日本語→英語、それ以外を英語→日本語として扱います。
 ⇄では訳文に含まれる文字から再判定せず、直前の翻訳方向を反転します。
 入れ替えた文章の再翻訳ではその方向を維持し、新しい選択文や手入力での編集は自動判定に戻ります。
-対象は数文〜数段落です。入力上限はPFML3を含め4,096トークン、生成上限は4,096トークンです。
+対象は単語・熟語から数段落です。英語→日本語の1〜5語には短い入力向けのプロンプトを使います。音写や熟語の直訳が残る場合もあります。[比較結果と既知の制限](docs/short-input-evaluation.md)を参照してください。
+入力上限はPFML3を含め4,096トークン、生成上限は4,096トークンです。
 入力超過は案内を表示し、生成上限まで達した訳文は未完と表示します。
 
 コピー結果を取得できない場合は、以前のクリップボードを翻訳しません。
@@ -110,7 +111,7 @@ OSによってクリップボード読み取りの許可が表示される場合
 
 ```sh
 ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke engine_smoke engine_profile --parallel 3
+cmake --build build --target gesture_tests shortcut_tests short_input_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke engine_smoke engine_profile --parallel 3
 ctest --test-dir build --output-on-failure
 ./build/engine_smoke "$HOME/Library/Application Support/local.lore.Lore/plamo-3-translate-0.8b-Q4_K_M.gguf"
 ```

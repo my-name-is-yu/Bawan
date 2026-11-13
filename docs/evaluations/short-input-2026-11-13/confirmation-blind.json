@@ -1,0 +1,1444 @@
+[
+  {
+    "id": "heldout-word-01",
+    "split": "heldout",
+    "category": "word",
+    "source": "invoice",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "請求書。動詞として請求書を送る、請求するも許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-01-o1",
+        "text": "請求書"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-02",
+    "split": "heldout",
+    "category": "word",
+    "source": "threshold",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "敷居、入り口、境目、基準値や閾値。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-02-o1",
+        "text": "閾値"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-03",
+    "split": "heldout",
+    "category": "word",
+    "source": "footprint",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "足跡、占有面積、活動が残す影響や環境負荷。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-03-o1",
+        "text": "足跡"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-04",
+    "split": "heldout",
+    "category": "word",
+    "source": "receipt",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "領収書、受領・受け取り。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-04-o1",
+        "text": "領収書"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-05",
+    "split": "heldout",
+    "category": "word",
+    "source": "postpone",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "延期する、後日に延ばす。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-05-o1",
+        "text": "延期する"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-06",
+    "split": "heldout",
+    "category": "word",
+    "source": "whisper",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ささやく、小声で話す。名詞のささやきも許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-06-o1",
+        "text": "ささやく"
+      },
+      {
+        "output_id": "heldout-word-06-o2",
+        "text": "ささやき"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-07",
+    "split": "heldout",
+    "category": "word",
+    "source": "squeeze",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "絞る、押しつぶす、狭い所に押し込む。名詞の圧迫や締め付けも許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-07-o1",
+        "text": "絞り込む"
+      },
+      {
+        "output_id": "heldout-word-07-o2",
+        "text": "絞る"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-08",
+    "split": "heldout",
+    "category": "word",
+    "source": "deserve",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "〜に値する、〜を受けるにふさわしい。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-08-o1",
+        "text": "値する"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-09",
+    "split": "heldout",
+    "category": "word",
+    "source": "hesitate",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ためらう、躊躇する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-09-o1",
+        "text": "ためらう"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-10",
+    "split": "heldout",
+    "category": "word",
+    "source": "unwind",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "くつろぐ、緊張を解く。巻かれたものをほどくという意味も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-10-o1",
+        "text": "リラックスする"
+      },
+      {
+        "output_id": "heldout-word-10-o2",
+        "text": "くつろぐ"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-11",
+    "split": "heldout",
+    "category": "word",
+    "source": "brittle",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "もろい、壊れやすい、硬いが割れやすい。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-11-o1",
+        "text": "脆い"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-12",
+    "split": "heldout",
+    "category": "word",
+    "source": "damp",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "湿った、じめじめした。湿気や湿らせるという用法も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-12-o1",
+        "text": "湿った"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-13",
+    "split": "heldout",
+    "category": "word",
+    "source": "sturdy",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "頑丈な、丈夫な、しっかりした。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-13-o1",
+        "text": "頑丈な"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-14",
+    "split": "heldout",
+    "category": "word",
+    "source": "abrupt",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "突然の、急な、ぶっきらぼうな。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-14-o1",
+        "text": "唐突な"
+      },
+      {
+        "output_id": "heldout-word-14-o2",
+        "text": "唐突に"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-15",
+    "split": "heldout",
+    "category": "word",
+    "source": "weary",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "疲れた、うんざりした。疲れさせるという動詞も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-15-o1",
+        "text": "疲れ切った"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-16",
+    "split": "heldout",
+    "category": "word",
+    "source": "affordable",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "手頃な価格の、無理なく買える。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-16-o1",
+        "text": "手頃な"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-17",
+    "split": "heldout",
+    "category": "word",
+    "source": "barely",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "かろうじて、ほとんど〜ない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-17-o1",
+        "text": "かろうじて"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-18",
+    "split": "heldout",
+    "category": "word",
+    "source": "seldom",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "めったに〜ない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-18-o1",
+        "text": "めったに"
+      },
+      {
+        "output_id": "heldout-word-18-o2",
+        "text": "めったにない"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-19",
+    "split": "heldout",
+    "category": "word",
+    "source": "promptly",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "すぐに、速やかに、時間どおりに。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-19-o1",
+        "text": "速やかに"
+      }
+    ]
+  },
+  {
+    "id": "heldout-word-20",
+    "split": "heldout",
+    "category": "word",
+    "source": "elsewhere",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ほかの場所で、別の所に。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-word-20-o1",
+        "text": "別の場所"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-01",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "read between the lines",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "行間を読む、明示されていない意図や意味をくみ取る。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-01-o1",
+        "text": "行間を読む"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-02",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "bite the bullet",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "覚悟を決めてつらいことをする、腹をくくる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-02-o1",
+        "text": "腹をくくる"
+      },
+      {
+        "output_id": "heldout-idiom-02-o2",
+        "text": "腹をくくれ"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-03",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "cut corners",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "手を抜く、必要な手順や費用を省いて済ませる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-03-o1",
+        "text": "手を抜く"
+      },
+      {
+        "output_id": "heldout-idiom-03-o2",
+        "text": "手抜きをする"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-04",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "lose track",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "見失う、把握できなくなる、分からなくなる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-04-o1",
+        "text": "道に迷う"
+      },
+      {
+        "output_id": "heldout-idiom-04-o2",
+        "text": "見失う"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-05",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "touch base",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "連絡を取る、簡単に打ち合わせて状況を確認する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-05-o1",
+        "text": "連絡を取る"
+      },
+      {
+        "output_id": "heldout-idiom-05-o2",
+        "text": "連絡"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-06",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "pull it off",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "難しいことをうまくやり遂げる、成功させる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-06-o1",
+        "text": "やり遂げる"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-07",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "turn down",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "断る、却下する。または音量・温度を下げる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-07-o1",
+        "text": "下げる"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-08",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "come across",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "偶然見つける・出会う。またはある印象を与える、伝わる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-08-o1",
+        "text": "偶然出会う"
+      },
+      {
+        "output_id": "heldout-idiom-08-o2",
+        "text": "出くわす"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-09",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "run into",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "偶然出会う、問題などにぶつかる、衝突する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-09-o1",
+        "text": "ぶつかる"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-10",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "bring up",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "話題に出す、育てる。文脈に応じて吐くという意味も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-10-o1",
+        "text": "引き上げる"
+      },
+      {
+        "output_id": "heldout-idiom-10-o2",
+        "text": "取り上げる"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-11",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "iron out",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "問題や相違点を解消する、細かな点を調整する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-11-o1",
+        "text": "鉄のアウト"
+      },
+      {
+        "output_id": "heldout-idiom-11-o2",
+        "text": "鉄くず"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-12",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "sleep on it",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "一晩考えてから決める、判断を翌日まで待つ。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-12-o1",
+        "text": "それに乗って寝る"
+      },
+      {
+        "output_id": "heldout-idiom-12-o2",
+        "text": "それについて寝ておく"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-13",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "go the extra mile",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "期待以上の努力をする、さらに一歩踏み込んで尽力する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-13-o1",
+        "text": "期待以上の努力をする"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-14",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "back to square one",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "振り出しに戻る、最初からやり直す状態。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-14-o1",
+        "text": "振り出しに戻る"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-15",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "a close call",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "危機一髪、間一髪の出来事。または僅差で判断の難しい状況。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-15-o1",
+        "text": "危ういところだった"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-16",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "a long shot",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "成功の可能性が低い試み、見込み薄の候補。遠距離からの一撃という正当な意味も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-16-o1",
+        "text": "ロングショット"
+      },
+      {
+        "output_id": "heldout-idiom-16-o2",
+        "text": "大穴"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-17",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "keep an eye out",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "注意して見ておく、気を配る、見張る。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-17-o1",
+        "text": "注意して見ておいて"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-18",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "off the hook",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "責任や困難から解放されて、窮地を脱して。電話が受話器の外れた状態という意味も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-18-o1",
+        "text": "オフ・ザ・フック"
+      },
+      {
+        "output_id": "heldout-idiom-18-o2",
+        "text": " off the hook"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-19",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "get cold feet",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "怖気づく、直前になって尻込みする。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-19-o1",
+        "text": "怖気づく"
+      }
+    ]
+  },
+  {
+    "id": "heldout-idiom-20",
+    "split": "heldout",
+    "category": "idiom",
+    "source": "draw the line",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "限度を設ける、一線を引く、境界を定める。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-idiom-20-o1",
+        "text": "線を引く"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-01",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "I could be wrong.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私が間違っているかもしれない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-01-o1",
+        "text": "間違っているかもしれません。"
+      },
+      {
+        "output_id": "heldout-sentence-01-o2",
+        "text": "間違っているかもしれない。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-02",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Who else knows?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ほかに誰が知っているのかを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-02-o1",
+        "text": "他に誰がわかる？"
+      },
+      {
+        "output_id": "heldout-sentence-02-o2",
+        "text": "他に誰が知っている？"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-03",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "We’ve met before.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私たちは以前に会ったことがある。"
+    ],
+    "notes": "Unicodeの右シングル引用符を含む短縮形は1語。",
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-03-o1",
+        "text": "以前お会いしたことがあります。"
+      },
+      {
+        "output_id": "heldout-sentence-03-o2",
+        "text": "以前会ったことがあります。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-04",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Not this time.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "今回は違う、今回はしない・無理だという文脈に応じた否定。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-04-o1",
+        "text": "今回は違う。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-05",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Would you mind?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "お願いしてもよいか、差し支えないかを丁寧に尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-05-o1",
+        "text": "よろしいでしょうか？"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-06",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "I'd rather stay.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私はむしろここにいたい、残る方がよい。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-06-o1",
+        "text": "むしろここにいたい。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-07",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "She hasn't replied.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女からまだ返事がない、彼女はまだ返答していない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-07-o1",
+        "text": "彼女は返事をしていない。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-08",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "How much longer?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "あとどのくらいかかるのか、あとどれくらい長く続くのかを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-08-o1",
+        "text": "あとどれくらい？"
+      },
+      {
+        "output_id": "heldout-sentence-08-o2",
+        "text": "あとどれくらいですか？"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-09",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "You're welcome to join.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "参加して構わない、よかったら参加してほしいという歓迎。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-09-o1",
+        "text": "ぜひご参加ください。"
+      },
+      {
+        "output_id": "heldout-sentence-09-o2",
+        "text": "どういたしまして。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-10",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "He should have waited.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼は待つべきだった。過去の行動への反実仮想・非難。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-10-o1",
+        "text": "彼は待つべきだった。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-11",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "There's no rush.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "急ぐ必要はない、慌てなくてよい。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-11-o1",
+        "text": "急ぐ必要はありません。"
+      },
+      {
+        "output_id": "heldout-sentence-11-o2",
+        "text": "急がなくていいよ。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-12",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "I can’t help laughing.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "笑わずにはいられない。笑いを助けられないという意味ではない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-12-o1",
+        "text": "笑わずにはいられない。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-13",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Did anyone see that?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "誰か今の・それを見た人がいるかを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-13-o1",
+        "text": "誰かあれ見た？"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-14",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Let’s not argue.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "言い争うのはやめようという提案。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-14-o1",
+        "text": "言い争うのはやめよう。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-15",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Is that still available?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "それはまだ入手できるか、まだ利用できるかを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-15-o1",
+        "text": "それはまだ使えますか？"
+      },
+      {
+        "output_id": "heldout-sentence-15-o2",
+        "text": "それってまだ手に入る？"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-16",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Make yourself at home.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "どうぞくつろいで、自分の家のように気楽にしてという歓迎。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-16-o1",
+        "text": "くつろいでください。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-17",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "I almost missed it.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "危うく見逃す・聞き逃す・乗り遅れるところだった。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-17-o1",
+        "text": "危うく見逃すところだった。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-18",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Nobody told us why.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "誰も私たちに理由を教えてくれなかった。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-18-o1",
+        "text": "誰も理由を教えてくれなかった。"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-19",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "Do you need a hand?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "手伝いが必要かを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-19-o1",
+        "text": "手伝いが必要ですか？"
+      },
+      {
+        "output_id": "heldout-sentence-19-o2",
+        "text": "お手伝いが必要ですか？"
+      }
+    ]
+  },
+  {
+    "id": "heldout-sentence-20",
+    "split": "heldout",
+    "category": "sentence",
+    "source": "It depends on you.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "それはあなた次第だ、あなたにかかっている。"
+    ],
+    "outputs": [
+      {
+        "output_id": "heldout-sentence-20-o1",
+        "text": "あなた次第です。"
+      },
+      {
+        "output_id": "heldout-sentence-20-o2",
+        "text": "あなた次第だよ。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-01",
+    "split": "control",
+    "category": "long_en",
+    "source": "Please let me know when you arrive.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "着いたら知らせてくださいという依頼。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-01-o1",
+        "text": "到着したら教えてください。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-02",
+    "split": "control",
+    "category": "long_en",
+    "source": "I thought you had already left the office.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "あなたはもう会社・オフィスを出たと思っていた。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-02-o1",
+        "text": "もう事務所を出たと思ってたよ。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-03",
+    "split": "control",
+    "category": "long_en",
+    "source": "If it rains tomorrow, we will stay home.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "明日雨なら私たちは家にいるという条件。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-03-o1",
+        "text": "明日雨が降れば、家にいます。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-04",
+    "split": "control",
+    "category": "long_en",
+    "source": "She has been working here for three years.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女はここで3年間働いている。過去から現在までの継続。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-04-o1",
+        "text": "彼女はここで3年間働いている。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-05",
+    "split": "control",
+    "category": "long_en",
+    "source": "The meeting was cancelled because the speaker was ill.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "講演者・登壇者が病気のため会議が中止された。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-05-o1",
+        "text": "講演者が病気だったため、会議は中止になった。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-06",
+    "split": "control",
+    "category": "long_en",
+    "source": "You should save your work before closing the application.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "アプリを閉じる前に作業内容を保存すべきだという助言。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-06-o1",
+        "text": "申請を閉じる前に、作業内容を保存しておくべきです。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-07",
+    "split": "control",
+    "category": "long_en",
+    "source": "Although the instructions were clear, I made a mistake.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "説明は明確だったのに私は間違えた。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-07-o1",
+        "text": "指示は明確だったが、間違いをしてしまった。"
+      }
+    ]
+  },
+  {
+    "id": "control-long_en-08",
+    "split": "control",
+    "category": "long_en",
+    "source": "Could you explain why this option is unavailable?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "この選択肢が利用できない理由を説明してほしい。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-long_en-08-o1",
+        "text": "このオプションが利用できない理由を教えていただけますか？"
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-01",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "今日は少し寒いですね。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "It is a little cold today. 自然な英語で今日の軽い寒さを表す。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-01-o1",
+        "text": "It's a bit chilly today, isn't it?"
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-02",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "明日までに返事をください。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "Please reply by tomorrow. 明日を期限に返答を求める。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-02-o1",
+        "text": "Please give me an answer by tomorrow."
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-03",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "まだ決めていません。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "I have not decided yet. 未決定であることを表す。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-03-o1",
+        "text": "I haven't decided yet."
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-04",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "お手伝いしましょうか。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "Can I help you? または Shall I help? 手助けを申し出る。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-04-o1",
+        "text": "Shall I help you?"
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-05",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "間に合ってよかった。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "I am glad I made it in time. 間に合ったことへの安堵。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-05-o1",
+        "text": "I'm glad I made it in time."
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-06",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "この設定を変更しないでください。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "Please do not change this setting. 設定変更を禁止・拒否する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-06-o1",
+        "text": "Please do not change this setting."
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-07",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "彼はもう帰ったと思います。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "I think he has already left. すでに帰ったという推測。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-07-o1",
+        "text": "I think he's already gone home."
+      }
+    ]
+  },
+  {
+    "id": "control-reverse_ja-08",
+    "split": "control",
+    "category": "reverse_ja",
+    "source": "急がなくても大丈夫です。",
+    "direction": "ja_to_en",
+    "acceptable_meanings": [
+      "There is no need to hurry. 急がなくてよいと伝える。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-reverse_ja-08-o1",
+        "text": "There's no need to hurry."
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-01",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "Hello、世界！",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "こんにちは、世界！など、英語の挨拶と日本語の世界を自然につなぐ。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-01-o1",
+        "text": "ハロー、世界！"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-02",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "このAPI is deprecated.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "このAPIは非推奨です。このAPIは廃止予定です。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-02-o1",
+        "text": "このAPIは非推奨です。"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-03",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "OpenAI",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "OpenAIという組織名を維持する。正当な表記であるOpenAIまたはオープンAIを許容する。"
+    ],
+    "notes": "固有名詞は音写や原綴りを不正解にしない。",
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-03-o1",
+        "text": "OpenAI"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-04",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "Tokyo",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "東京。都市名として正当なトーキョー表記も意味が明らかなら許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-04-o1",
+        "text": "東京"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-05",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "coffee",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "コーヒー。標準的な外来語を正答として許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-05-o1",
+        "text": "コーヒー"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-06",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "email",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "メール、電子メール。標準的な外来語を正答として許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-06-o1",
+        "text": "メール"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-07",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "42",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "数値42を維持する。四十二などの等価な数表現も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-07-o1",
+        "text": "42"
+      }
+    ]
+  },
+  {
+    "id": "control-mixed_other-08",
+    "split": "control",
+    "category": "mixed_other",
+    "source": "€19.99",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "金額19.99ユーロを維持する。意味を変えない通貨表記を許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "control-mixed_other-08-o1",
+        "text": "€19.99"
+      }
+    ]
+  }
+]

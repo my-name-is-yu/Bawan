@@ -1,0 +1,542 @@
+[
+  {
+    "output_id": "heldout-word-01-o1",
+    "score": 2,
+    "reason": "支払いを求める書類という妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-02-o1",
+    "score": 2,
+    "reason": "値や状態の境目という正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-03-o1",
+    "score": 2,
+    "reason": "足の跡という基本的で正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-04-o1",
+    "score": 2,
+    "reason": "支払いを受け取った証明書という妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-05-o1",
+    "score": 2,
+    "reason": "予定を後日に延ばすという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-06-o1",
+    "score": 2,
+    "reason": "小さな声で話すという中心義を自然に表している。孤立した語なので名詞と動詞をともに許容する。"
+  },
+  {
+    "output_id": "heldout-word-06-o2",
+    "score": 2,
+    "reason": "小さな声で話すという中心義を自然に表している。孤立した語なので名詞と動詞をともに許容する。"
+  },
+  {
+    "output_id": "heldout-word-07-o1",
+    "score": 2,
+    "reason": "候補削減という意味にも取れるので多少迷うが、物を強く絞る・狭める操作を表す日本語としても成立し、孤立語の妥当な訳として許容する。"
+  },
+  {
+    "output_id": "heldout-word-07-o2",
+    "score": 2,
+    "reason": "圧力を加えて絞るという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-08-o1",
+    "score": 2,
+    "reason": "何かを受けるにふさわしいという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-09-o1",
+    "score": 2,
+    "reason": "決断や行動にためらうという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-10-o1",
+    "score": 2,
+    "reason": "緊張を解いてくつろぐという正当な語義を自然に表している。リラックスは定着した外来語として許容する。"
+  },
+  {
+    "output_id": "heldout-word-10-o2",
+    "score": 2,
+    "reason": "緊張を解いてくつろぐという正当な語義を自然に表している。リラックスは定着した外来語として許容する。"
+  },
+  {
+    "output_id": "heldout-word-11-o1",
+    "score": 2,
+    "reason": "割れたり壊れたりしやすいという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-12-o1",
+    "score": 2,
+    "reason": "水分を含んで湿っているという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-13-o1",
+    "score": 2,
+    "reason": "丈夫でしっかりしているという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-14-o1",
+    "score": 2,
+    "reason": "急で前触れがないという正当な語義を自然に表している。孤立した語での修飾形の違いは重大な意味変更ではない。"
+  },
+  {
+    "output_id": "heldout-word-14-o2",
+    "score": 2,
+    "reason": "急で前触れがないという正当な語義を自然に表している。孤立した語での修飾形の違いは重大な意味変更ではない。"
+  },
+  {
+    "output_id": "heldout-word-15-o1",
+    "score": 2,
+    "reason": "疲労しているという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-16-o1",
+    "score": 2,
+    "reason": "無理なく買える手頃な価格という通常の読みが自然に成立する。"
+  },
+  {
+    "output_id": "heldout-word-17-o1",
+    "score": 2,
+    "reason": "何とか最低限成立するという正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-18-o1",
+    "score": 2,
+    "reason": "否定と共起して低い頻度を表す標準的な語。単語の訳なので後続の否定を伴わない形も語義を示す省略として許容する。"
+  },
+  {
+    "output_id": "heldout-word-18-o2",
+    "score": 2,
+    "reason": "頻度が非常に低いという中心義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-19-o1",
+    "score": 2,
+    "reason": "遅れずすぐに行うという妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-word-20-o1",
+    "score": 2,
+    "reason": "ほかの場所という中心義を自然に表している。孤立した語での助詞省略は許容する。"
+  },
+  {
+    "output_id": "heldout-idiom-01-o1",
+    "score": 2,
+    "reason": "明示されていない意図を読み取るという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-02-o1",
+    "score": 2,
+    "reason": "つらいことをする覚悟を決めるという慣用義を自然に表している。原文は命令としても読めるため活用形を許容する。"
+  },
+  {
+    "output_id": "heldout-idiom-02-o2",
+    "score": 2,
+    "reason": "つらいことをする覚悟を決めるという慣用義を自然に表している。原文は命令としても読めるため活用形を許容する。"
+  },
+  {
+    "output_id": "heldout-idiom-03-o1",
+    "score": 2,
+    "reason": "必要な手順を省き手を抜くという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-03-o2",
+    "score": 2,
+    "reason": "必要な手順を省き手を抜くという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-04-o1",
+    "score": 1,
+    "reason": "位置の把握を失う状況では近いが、通常の慣用義である追跡や把握ができなくなることを、道を間違える状況へ限定しており判断に迷う。"
+  },
+  {
+    "output_id": "heldout-idiom-04-o2",
+    "score": 2,
+    "reason": "追っていた対象や状況を把握できなくなるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-05-o1",
+    "score": 2,
+    "reason": "連絡を取り合うという慣用句の中心義を自然に伝える。孤立した表現なので名詞形も許容する。"
+  },
+  {
+    "output_id": "heldout-idiom-05-o2",
+    "score": 2,
+    "reason": "連絡を取り合うという慣用句の中心義を自然に伝える。孤立した表現なので名詞形も許容する。"
+  },
+  {
+    "output_id": "heldout-idiom-06-o1",
+    "score": 2,
+    "reason": "難しいことを成功裏に完了するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-07-o1",
+    "score": 2,
+    "reason": "音量や温度を低くするという明示的に許容された語義として自然。"
+  },
+  {
+    "output_id": "heldout-idiom-08-o1",
+    "score": 2,
+    "reason": "予期せず出会うという正当な慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-08-o2",
+    "score": 2,
+    "reason": "予期せず出会うという正当な慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-09-o1",
+    "score": 2,
+    "reason": "人や問題などにぶつかるという明示的に許容された語義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-10-o1",
+    "score": 0,
+    "reason": "物を上へ移す字義的な行為になり、話題に出す・育てるなどの慣用義を伝えていない。"
+  },
+  {
+    "output_id": "heldout-idiom-10-o2",
+    "score": 2,
+    "reason": "話題として取り上げるという正当な慣用義として自然に読める。"
+  },
+  {
+    "output_id": "heldout-idiom-11-o1",
+    "score": 0,
+    "reason": "日本語として意味の通る句にならず、問題を調整・解消する慣用義を失っている。"
+  },
+  {
+    "output_id": "heldout-idiom-11-o2",
+    "score": 0,
+    "reason": "金属のくずという無関係な意味になり、問題を調整・解消する慣用義を失っている。"
+  },
+  {
+    "output_id": "heldout-idiom-12-o1",
+    "score": 0,
+    "reason": "物の上に乗って寝るという行動になり、判断を一晩待つ慣用義を失っている。"
+  },
+  {
+    "output_id": "heldout-idiom-12-o2",
+    "score": 0,
+    "reason": "その件について一晩考えて判断を待つという意味が日本語として伝わらず、寝ておくという別の行動に変わっている。"
+  },
+  {
+    "output_id": "heldout-idiom-13-o1",
+    "score": 2,
+    "reason": "求められる以上の努力をするという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-14-o1",
+    "score": 2,
+    "reason": "進展が失われ最初からやり直すという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-15-o1",
+    "score": 2,
+    "reason": "危険を間一髪で免れたという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-16-o1",
+    "score": 2,
+    "reason": "遠距離からのショットや遠景撮影を示す定着した専門外来語。明示的に遠距離の一撃も許容されているため正答とする。"
+  },
+  {
+    "output_id": "heldout-idiom-16-o2",
+    "score": 2,
+    "reason": "見込みが薄い候補・成功可能性の低い試みという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-17-o1",
+    "score": 2,
+    "reason": "注意して見張ったり見つけようとしたりする慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-18-o1",
+    "score": 1,
+    "reason": "慣用句を音写しただけで、解放される・受話器が外れるという意味が日本語として不透明。定着した一般外来語とは判断できない。"
+  },
+  {
+    "output_id": "heldout-idiom-18-o2",
+    "score": 0,
+    "reason": "先頭の空白を除けば原文のままであり、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "heldout-idiom-19-o1",
+    "score": 2,
+    "reason": "怖くなって尻込みするという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "heldout-idiom-20-o1",
+    "score": 2,
+    "reason": "物理的な線にも読めるが、日本語でも境界や限度を設ける比喩として成立するため慣用義の訳として許容する。"
+  },
+  {
+    "output_id": "heldout-sentence-01-o1",
+    "score": 2,
+    "reason": "自分が間違っている可能性を認める発話の意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-01-o2",
+    "score": 2,
+    "reason": "自分が間違っている可能性を認める発話の意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-02-o1",
+    "score": 2,
+    "reason": "ほかにそのことを知る人を尋ねる意味を自然に保っている。わかるも文脈なしでは知識を持つという妥当な読みが可能。"
+  },
+  {
+    "output_id": "heldout-sentence-02-o2",
+    "score": 2,
+    "reason": "ほかにそのことを知る人を尋ねる意味を自然に保っている。わかるも文脈なしでは知識を持つという妥当な読みが可能。"
+  },
+  {
+    "output_id": "heldout-sentence-03-o1",
+    "score": 2,
+    "reason": "以前に会った経験があるという意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-03-o2",
+    "score": 2,
+    "reason": "以前に会った経験があるという意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-04-o1",
+    "score": 2,
+    "reason": "今回はそうではないという文脈に応じた否定を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-05-o1",
+    "score": 2,
+    "reason": "差し支えないかを丁寧に尋ねる意図を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-06-o1",
+    "score": 2,
+    "reason": "ほかの選択よりここに残ることを望む意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-07-o1",
+    "score": 2,
+    "reason": "彼女からまだ返答がないという現在までの未完了を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-08-o1",
+    "score": 2,
+    "reason": "あとどのくらい時間がかかるかを尋ねる意図を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-08-o2",
+    "score": 2,
+    "reason": "あとどのくらい時間がかかるかを尋ねる意図を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-09-o1",
+    "score": 2,
+    "reason": "相手の参加を歓迎して促す意図を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-09-o2",
+    "score": 0,
+    "reason": "感謝への返礼に変わり、参加してよいという招待・歓迎の意味を失っている。"
+  },
+  {
+    "output_id": "heldout-sentence-10-o1",
+    "score": 2,
+    "reason": "待つべきだったという過去の行動に対する反実仮想・非難を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-11-o1",
+    "score": 2,
+    "reason": "急がなくてよいという意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-11-o2",
+    "score": 2,
+    "reason": "急がなくてよいという意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-12-o1",
+    "score": 2,
+    "reason": "笑うことを抑えられないという慣用的な意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-13-o1",
+    "score": 2,
+    "reason": "それを見た人がいるかを尋ねる過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-14-o1",
+    "score": 2,
+    "reason": "言い争いをしないよう提案する意図を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-15-o1",
+    "score": 2,
+    "reason": "まだ利用・入手が可能かを尋ねる意味を自然に保っている。文脈による正当な語義の違いを許容する。"
+  },
+  {
+    "output_id": "heldout-sentence-15-o2",
+    "score": 2,
+    "reason": "まだ利用・入手が可能かを尋ねる意味を自然に保っている。文脈による正当な語義の違いを許容する。"
+  },
+  {
+    "output_id": "heldout-sentence-16-o1",
+    "score": 2,
+    "reason": "自分の家のように気楽にしてよいと勧める意図を自然に表している。"
+  },
+  {
+    "output_id": "heldout-sentence-17-o1",
+    "score": 2,
+    "reason": "実際には見逃さず、危うくそうなるところだったという意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-18-o1",
+    "score": 2,
+    "reason": "理由を誰からも教えられなかったという否定の意味を自然に保っている。受け手の省略は日本語として自然。"
+  },
+  {
+    "output_id": "heldout-sentence-19-o1",
+    "score": 2,
+    "reason": "手助けを必要としているか尋ねる意図を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-19-o2",
+    "score": 2,
+    "reason": "手助けを必要としているか尋ねる意図を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-20-o1",
+    "score": 2,
+    "reason": "結果が相手にかかっているという意味を自然に保っている。"
+  },
+  {
+    "output_id": "heldout-sentence-20-o2",
+    "score": 2,
+    "reason": "結果が相手にかかっているという意味を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-01-o1",
+    "score": 2,
+    "reason": "到着したときに知らせるよう依頼する意味を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-02-o1",
+    "score": 2,
+    "reason": "相手がすでに事務所を出たと思っていたという過去の認識を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-03-o1",
+    "score": 2,
+    "reason": "明日雨が降る場合には家にいるという条件関係を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-04-o1",
+    "score": 2,
+    "reason": "彼女がここで三年間勤務を続けているという意味を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-05-o1",
+    "score": 2,
+    "reason": "登壇者の病気を原因として会議が中止されたという因果関係を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-06-o1",
+    "score": 1,
+    "reason": "閉じる前に作業内容を保存するという助言は伝わるが、ソフトウェアのapplicationを申請と誤訳し、対象が不自然になっている。"
+  },
+  {
+    "output_id": "control-long_en-07-o1",
+    "score": 2,
+    "reason": "指示は明確だったのに間違えたという逆接の関係を自然に保っている。"
+  },
+  {
+    "output_id": "control-long_en-08-o1",
+    "score": 2,
+    "reason": "この選択肢が使えない理由の説明を丁寧に依頼する意図を自然に保っている。"
+  },
+  {
+    "output_id": "control-reverse_ja-01-o1",
+    "score": 2,
+    "reason": "今日の少し寒い気候と相手への同意確認を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-02-o1",
+    "score": 2,
+    "reason": "明日を期限に返答を求める意図を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-03-o1",
+    "score": 2,
+    "reason": "まだ決めていないという現在までの未完了を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-04-o1",
+    "score": 2,
+    "reason": "手助けを申し出る意図を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-05-o1",
+    "score": 2,
+    "reason": "間に合ったことへの安堵を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-06-o1",
+    "score": 2,
+    "reason": "この設定を変更しないよう求める意図を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-07-o1",
+    "score": 2,
+    "reason": "彼がすでに帰宅したと考えているという推測を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-reverse_ja-08-o1",
+    "score": 2,
+    "reason": "急ぐ必要がないという安心させる意味を自然な英語で表している。"
+  },
+  {
+    "output_id": "control-mixed_other-01-o1",
+    "score": 2,
+    "reason": "英語の挨拶を定着したハローで表し、日本語の世界と自然につないでいる。"
+  },
+  {
+    "output_id": "control-mixed_other-02-o1",
+    "score": 2,
+    "reason": "このAPIが推奨されないという混在入力の意味を自然な日本語で表している。"
+  },
+  {
+    "output_id": "control-mixed_other-03-o1",
+    "score": 2,
+    "reason": "組織名を正当な原綴りで維持している。"
+  },
+  {
+    "output_id": "control-mixed_other-04-o1",
+    "score": 2,
+    "reason": "都市名を標準的な日本語表記で表している。"
+  },
+  {
+    "output_id": "control-mixed_other-05-o1",
+    "score": 2,
+    "reason": "標準的で定着した外来語による正確な訳である。"
+  },
+  {
+    "output_id": "control-mixed_other-06-o1",
+    "score": 2,
+    "reason": "電子メールを示す標準的で定着した外来語による正確な訳である。"
+  },
+  {
+    "output_id": "control-mixed_other-07-o1",
+    "score": 2,
+    "reason": "入力の数値を正確に維持している。"
+  },
+  {
+    "output_id": "control-mixed_other-08-o1",
+    "score": 2,
+    "reason": "入力の金額と通貨を正確に維持している。"
+  }
+]

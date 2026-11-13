@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-13",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "architecture": "arm64",
+  "hardware_model": "Mac16,10",
+  "chip": "Apple M4",
+  "memory_bytes": 17179869184,
+  "source_base_commit": "1f7b9513b1a138f6a15f3655a83d18ac4ced1ce8",
+  "model": "PLaMo 3 Translate 0.8B Q4_K_M",
+  "model_sha256": "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6",
+  "llama_cpp_tag": "b12307",
+  "production_source_sha256": {
+    "src/TranslationEngine.cpp": "363e83730f88fbba35dd52478fc2a57c18362f1dcfc6dd471a904fad794b4ceb",
+    "src/TranslationPrompt.h": "41c4bf1a74cd0865a890e9ceb25f1466f93dfa5d2ea3149db8a708a5d0f8773e",
+    "src/ShortInput.h": "39d5ee1a2279f103303e1c575dcc958effe990eb09d4de8303813b122a9f80f8",
+    "tests/engine_evaluate.cpp": "4154a5a535c9af8722fcbc3830b7690740df594633bbd98288c44557bffae9a4"
+  },
+  "notes": [
+    "Raw executable/source hashes describe the build at each experiment stage. Production changed only after the frozen confirmation passed.",
+    "Absolute repository/home prefixes in published process metadata were normalized to $REPO/$HOME.",
+    "Apple strategy names are requested settings, not proof of the actual selected Apple model."
+  ]
+}

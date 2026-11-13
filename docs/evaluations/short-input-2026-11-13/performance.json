@@ -1,0 +1,502 @@
+{
+  "plamo": {
+    "purpose": "Pre-selection development measurements; no heldout output generated",
+    "percentile": "nearest rank",
+    "warm_repetitions": 5,
+    "warmups": 2,
+    "translation_benchmarks_concurrent": false,
+    "variants": {
+      "baseline": {
+        "requests": 300,
+        "median_completion_ms": 34.367000000000004,
+        "p95_completion_ms": 53.949,
+        "median_physical_footprint_bytes": 231081136.0,
+        "max_observed_completion_footprint_bytes": 231441608,
+        "median_rss_bytes": 830193664.0,
+        "first_request_ms": [
+          66.143,
+          63.182,
+          63.057
+        ],
+        "median_first_request_ms": 63.182
+      },
+      "single_en_multi_minimal_ja": {
+        "requests": 300,
+        "median_completion_ms": 32.735,
+        "p95_completion_ms": 54.42,
+        "median_physical_footprint_bytes": 231081136.0,
+        "max_observed_completion_footprint_bytes": 231441608,
+        "median_rss_bytes": 830193664.0,
+        "first_request_ms": [
+          62.586,
+          67.047,
+          62.912
+        ],
+        "median_first_request_ms": 62.912
+      },
+      "fewshot": {
+        "requests": 300,
+        "median_completion_ms": 43.436,
+        "p95_completion_ms": 63.61,
+        "median_physical_footprint_bytes": 231081136.0,
+        "max_observed_completion_footprint_bytes": 231441608,
+        "median_rss_bytes": 830193664.0
+      },
+      "fewshot_en": {
+        "requests": 300,
+        "median_completion_ms": 43.821,
+        "p95_completion_ms": 63.208,
+        "median_physical_footprint_bytes": 231081136.0,
+        "max_observed_completion_footprint_bytes": 231441608,
+        "median_rss_bytes": 830193664.0
+      }
+    },
+    "memory_note": "Physical footprint is not RSS. Apple language download ran in the background; no Apple translation inference ran. PLaMo variants do not call OS translation services.",
+    "plamo_finalist_gate": {
+      "warm_p95_delta_ms": 0.47100000000000364,
+      "first_request_delta_ms": -0.2700000000000031,
+      "steady_footprint_delta_bytes": 0.0,
+      "passed": true
+    }
+  },
+  "apple": {
+    "lowLatency": {
+      "provenance": {
+        "dev_fixture_sha256": "05a056847f7b54e5b82a3c75ac6a6e9e153aa47dc14f93fbf1206a6c5cd68b3b",
+        "model_sha256": "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6",
+        "resident_engine_sha256": "c7fe96dd664fb89a2585d62aa9d8e954d6d541f8c4b0fad2bbc3e7388d45f49a",
+        "apple_host_sha256": "54a988788d19f06db727d4e33d97cdc2b95d31d742c556083ad8921c9bc0ef76",
+        "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+        "strategy_requested": "lowLatency",
+        "repeat": 5,
+        "sampling_interval_seconds": 0.2,
+        "availability_before": [
+          {
+            "os_version": "Version 26.6.2 (Build 25G83)",
+            "phase": "status",
+            "pid": 44948,
+            "record_type": "availability",
+            "source_language": "en",
+            "status": "installed",
+            "strategy_requested": "lowLatency",
+            "target_language": "ja",
+            "timestamp": "2026-11-13T06:46:26Z"
+          },
+          {
+            "os_version": "Version 26.6.2 (Build 25G83)",
+            "phase": "status",
+            "pid": 44948,
+            "record_type": "availability",
+            "source_language": "en",
+            "status": "installed",
+            "strategy_requested": "highFidelity",
+            "target_language": "ja",
+            "timestamp": "2026-11-13T06:46:26Z"
+          }
+        ],
+        "resident_pid": 44951,
+        "resident_ready": {
+          "type": "ready",
+          "model_load_ms": 418.104,
+          "current_rss_bytes": 825327616,
+          "physical_footprint_bytes": 223053000,
+          "max_rss_bytes": 825327616
+        }
+      },
+      "expected_requests": 300,
+      "observed_requests": 300,
+      "all_requests_complete": true,
+      "first_request_completion_ms": 70.5385,
+      "warm_requests": 240,
+      "warm_median_completion_ms": 8.29475,
+      "warm_p95_completion_ms": 24.370209,
+      "p95_method": "nearest rank",
+      "host_request_boundary_max_footprint_bytes": 5849760,
+      "per_process_memory": [
+        {
+          "pid": 8070,
+          "process_start_abstime": 89224435548203,
+          "command": "/System/Library/PrivateFrameworks/AppleIntelligenceReportingProcessing.framework/Versions/A/XPCServices/AppleIntelligenceReportingProcessingService.xpc/Contents/MacOS/AppleIntelligenceReportingProcessingService",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 4538896.0,
+          "peak_run_footprint_bytes": 4538896,
+          "after_median_footprint_bytes": 4538896.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 16550,
+          "process_start_abstime": 69478351447011,
+          "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCore.framework/Versions/A/intelligenceplatformd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 9437712.0,
+          "peak_run_footprint_bytes": 9437712,
+          "after_median_footprint_bytes": 9437712.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 20252,
+          "process_start_abstime": 89604320412126,
+          "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCore.framework/Versions/A/knowledgeconstructiond",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 7176648.0,
+          "peak_run_footprint_bytes": 7176648,
+          "after_median_footprint_bytes": 7176648.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 20589,
+          "process_start_abstime": 89621423045891,
+          "command": "/System/Library/Frameworks/Translation.framework/translationd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 55952272.0,
+          "peak_run_footprint_bytes": 55935888,
+          "after_median_footprint_bytes": 55919504.0,
+          "peak_increment_bytes": -16384.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 31148,
+          "process_start_abstime": 87897562452947,
+          "command": "/System/Library/PrivateFrameworks/IntelligenceTasksEngine.framework/Support/intelligencetasksd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 3211648.0,
+          "peak_run_footprint_bytes": 3211648,
+          "after_median_footprint_bytes": 3211648.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 44951,
+          "process_start_abstime": 89805922778274,
+          "command": "$REPO/build/engine_evaluate_production",
+          "role": "plamo_resident",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 180815048.0,
+          "peak_run_footprint_bytes": 180815048,
+          "after_median_footprint_bytes": 180356272.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 88595,
+          "process_start_abstime": 88892835764784,
+          "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCompute.framework/Versions/A/XPCServices/IntelligencePlatformComputeService.xpc/Contents/MacOS/IntelligencePlatformComputeService",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 13124112.0,
+          "peak_run_footprint_bytes": 13124112,
+          "after_median_footprint_bytes": 13124112.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 89013,
+          "process_start_abstime": 87624034637416,
+          "command": "/System/Library/PrivateFrameworks/IntelligenceFlowRuntime.framework/Versions/A/intelligenceflowd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 4129248.0,
+          "peak_run_footprint_bytes": 4129248,
+          "after_median_footprint_bytes": 4129248.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 89529,
+          "process_start_abstime": 87636203380457,
+          "command": "/System/Library/PrivateFrameworks/GenerativeExperiencesRuntime.framework/Versions/A/generativeexperiencesd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 7782928.0,
+          "peak_run_footprint_bytes": 7782928,
+          "after_median_footprint_bytes": 7782928.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 90961,
+          "process_start_abstime": 87662843202311,
+          "command": "/System/Library/PrivateFrameworks/IntelligenceFlowContextRuntime.framework/Versions/A/intelligencecontextd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 4948496.0,
+          "peak_run_footprint_bytes": 4948496,
+          "after_median_footprint_bytes": 4948496.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 92107,
+          "process_start_abstime": null,
+          "command": "/usr/libexec/modelmanagerd",
+          "role": "shared_os_service",
+          "unavailable_samples": 42,
+          "baseline_median_footprint_bytes": null,
+          "peak_run_footprint_bytes": null,
+          "after_median_footprint_bytes": null,
+          "peak_increment_bytes": null,
+          "newly_observed_without_baseline": true,
+          "identity_confirmed": false
+        },
+        {
+          "pid": 44964,
+          "process_start_abstime": 89806008179237,
+          "command": "$REPO/build/apple-translation-eval/AppleTranslationEval.app/Contents/MacOS/AppleTranslationEval",
+          "role": "apple_host",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": null,
+          "peak_run_footprint_bytes": 5849760,
+          "after_median_footprint_bytes": null,
+          "peak_increment_bytes": null,
+          "newly_observed_without_baseline": true,
+          "identity_confirmed": true
+        }
+      ],
+      "notes": [
+        "PLaMo is resident and idle; stdin stays open until observations finish.",
+        "The first pass is excluded from warm statistics; the first request is not a claim of cold OS models.",
+        "Host request memory is separate from sampled OS-service memory.",
+        "Per-process run peaks are sampled and may miss activity shorter than the interval.",
+        "No RSS is treated as physical footprint and no per-process peak sum is called system physical memory.",
+        "PID and process start time identify processes; unavailable samples and new processes are explicit."
+      ]
+    },
+    "highFidelity": {
+      "provenance": {
+        "dev_fixture_sha256": "05a056847f7b54e5b82a3c75ac6a6e9e153aa47dc14f93fbf1206a6c5cd68b3b",
+        "model_sha256": "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6",
+        "resident_engine_sha256": "c7fe96dd664fb89a2585d62aa9d8e954d6d541f8c4b0fad2bbc3e7388d45f49a",
+        "apple_host_sha256": "54a988788d19f06db727d4e33d97cdc2b95d31d742c556083ad8921c9bc0ef76",
+        "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+        "strategy_requested": "highFidelity",
+        "repeat": 5,
+        "sampling_interval_seconds": 0.2,
+        "availability_before": [
+          {
+            "os_version": "Version 26.6.2 (Build 25G83)",
+            "phase": "status",
+            "pid": 44998,
+            "record_type": "availability",
+            "source_language": "en",
+            "status": "installed",
+            "strategy_requested": "lowLatency",
+            "target_language": "ja",
+            "timestamp": "2026-11-13T06:47:09Z"
+          },
+          {
+            "os_version": "Version 26.6.2 (Build 25G83)",
+            "phase": "status",
+            "pid": 44998,
+            "record_type": "availability",
+            "source_language": "en",
+            "status": "installed",
+            "strategy_requested": "highFidelity",
+            "target_language": "ja",
+            "timestamp": "2026-11-13T06:47:09Z"
+          }
+        ],
+        "resident_pid": 45001,
+        "resident_ready": {
+          "type": "ready",
+          "model_load_ms": 416.801,
+          "current_rss_bytes": 827129856,
+          "physical_footprint_bytes": 222577864,
+          "max_rss_bytes": 827129856
+        }
+      },
+      "expected_requests": 300,
+      "observed_requests": 300,
+      "all_requests_complete": true,
+      "first_request_completion_ms": 97.125958,
+      "warm_requests": 240,
+      "warm_median_completion_ms": 21.9399795,
+      "warm_p95_completion_ms": 38.581541,
+      "p95_method": "nearest rank",
+      "host_request_boundary_max_footprint_bytes": 6144648,
+      "per_process_memory": [
+        {
+          "pid": 8070,
+          "process_start_abstime": 89224435548203,
+          "command": "/System/Library/PrivateFrameworks/AppleIntelligenceReportingProcessing.framework/Versions/A/XPCServices/AppleIntelligenceReportingProcessingService.xpc/Contents/MacOS/AppleIntelligenceReportingProcessingService",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 4538896.0,
+          "peak_run_footprint_bytes": 4538896,
+          "after_median_footprint_bytes": 4538896.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 16550,
+          "process_start_abstime": 69478351447011,
+          "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCore.framework/Versions/A/intelligenceplatformd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 9437712.0,
+          "peak_run_footprint_bytes": 9437712,
+          "after_median_footprint_bytes": 9437712.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 20252,
+          "process_start_abstime": 89604320412126,
+          "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCore.framework/Versions/A/knowledgeconstructiond",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 7176648.0,
+          "peak_run_footprint_bytes": 7176648,
+          "after_median_footprint_bytes": 7176648.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 20589,
+          "process_start_abstime": 89621423045891,
+          "command": "/System/Library/Frameworks/Translation.framework/translationd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 55968656.0,
+          "peak_run_footprint_bytes": 55952272,
+          "after_median_footprint_bytes": 55903120.0,
+          "peak_increment_bytes": -16384.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 31148,
+          "process_start_abstime": 87897562452947,
+          "command": "/System/Library/PrivateFrameworks/IntelligenceTasksEngine.framework/Support/intelligencetasksd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 3211648.0,
+          "peak_run_footprint_bytes": 3211648,
+          "after_median_footprint_bytes": 3211648.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 45001,
+          "process_start_abstime": 89806940684128,
+          "command": "$REPO/build/engine_evaluate_production",
+          "role": "plamo_resident",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 180339912.0,
+          "peak_run_footprint_bytes": 180339912,
+          "after_median_footprint_bytes": 179799216.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 88595,
+          "process_start_abstime": 88892835764784,
+          "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCompute.framework/Versions/A/XPCServices/IntelligencePlatformComputeService.xpc/Contents/MacOS/IntelligencePlatformComputeService",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 13124112.0,
+          "peak_run_footprint_bytes": 13124112,
+          "after_median_footprint_bytes": 13124112.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 89013,
+          "process_start_abstime": 87624034637416,
+          "command": "/System/Library/PrivateFrameworks/IntelligenceFlowRuntime.framework/Versions/A/intelligenceflowd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 4129248.0,
+          "peak_run_footprint_bytes": 4129248,
+          "after_median_footprint_bytes": 4129248.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 89529,
+          "process_start_abstime": 87636203380457,
+          "command": "/System/Library/PrivateFrameworks/GenerativeExperiencesRuntime.framework/Versions/A/generativeexperiencesd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 7782928.0,
+          "peak_run_footprint_bytes": 7782928,
+          "after_median_footprint_bytes": 7782928.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 90961,
+          "process_start_abstime": 87662843202311,
+          "command": "/System/Library/PrivateFrameworks/IntelligenceFlowContextRuntime.framework/Versions/A/intelligencecontextd",
+          "role": "shared_os_service",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": 4948496.0,
+          "peak_run_footprint_bytes": 4948496,
+          "after_median_footprint_bytes": 4948496.0,
+          "peak_increment_bytes": 0.0,
+          "newly_observed_without_baseline": false,
+          "identity_confirmed": true
+        },
+        {
+          "pid": 92107,
+          "process_start_abstime": null,
+          "command": "/usr/libexec/modelmanagerd",
+          "role": "shared_os_service",
+          "unavailable_samples": 60,
+          "baseline_median_footprint_bytes": null,
+          "peak_run_footprint_bytes": null,
+          "after_median_footprint_bytes": null,
+          "peak_increment_bytes": null,
+          "newly_observed_without_baseline": true,
+          "identity_confirmed": false
+        },
+        {
+          "pid": 45016,
+          "process_start_abstime": 89807025243190,
+          "command": "$REPO/build/apple-translation-eval/AppleTranslationEval.app/Contents/MacOS/AppleTranslationEval",
+          "role": "apple_host",
+          "unavailable_samples": 0,
+          "baseline_median_footprint_bytes": null,
+          "peak_run_footprint_bytes": 6144648,
+          "after_median_footprint_bytes": null,
+          "peak_increment_bytes": null,
+          "newly_observed_without_baseline": true,
+          "identity_confirmed": true
+        }
+      ],
+      "notes": [
+        "PLaMo is resident and idle; stdin stays open until observations finish.",
+        "The first pass is excluded from warm statistics; the first request is not a claim of cold OS models.",
+        "Host request memory is separate from sampled OS-service memory.",
+        "Per-process run peaks are sampled and may miss activity shorter than the interval.",
+        "No RSS is treated as physical footprint and no per-process peak sum is called system physical memory.",
+        "PID and process start time identify processes; unavailable samples and new processes are explicit."
+      ]
+    }
+  }
+}

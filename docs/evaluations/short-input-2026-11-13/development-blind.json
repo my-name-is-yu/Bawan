@@ -1,0 +1,1536 @@
+[
+  {
+    "id": "dev-word-01",
+    "split": "dev",
+    "category": "word",
+    "source": "serendipitous",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "偶然の幸運による、思いがけず良いものに出会う性質の。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-01-o1",
+        "text": "セレンディピトゥス"
+      },
+      {
+        "output_id": "dev-word-01-o2",
+        "text": "横向きの"
+      },
+      {
+        "output_id": "dev-word-01-o3",
+        "text": "横向き"
+      },
+      {
+        "output_id": "dev-word-01-o4",
+        "text": "世俗的な"
+      },
+      {
+        "output_id": "dev-word-01-o5",
+        "text": "セレンジピトース"
+      },
+      {
+        "output_id": "dev-word-01-o6",
+        "text": "偶然の"
+      },
+      {
+        "output_id": "dev-word-01-o7",
+        "text": "空位"
+      },
+      {
+        "output_id": "dev-word-01-o8",
+        "text": "セランディピトゥス"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-02",
+    "split": "dev",
+    "category": "word",
+    "source": "ephemeral",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "はかない、つかの間の、ごく短期間しか続かない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-02-o1",
+        "text": "儚い"
+      },
+      {
+        "output_id": "dev-word-02-o2",
+        "text": "短命の"
+      },
+      {
+        "output_id": "dev-word-02-o3",
+        "text": "エフェメラル"
+      },
+      {
+        "output_id": "dev-word-02-o4",
+        "text": "ephemeral"
+      },
+      {
+        "output_id": "dev-word-02-o5",
+        "text": "一時的"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-03",
+    "split": "dev",
+    "category": "word",
+    "source": "ubiquitous",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "至る所にある、どこにでも見られる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-03-o1",
+        "text": "どこにでもいる"
+      },
+      {
+        "output_id": "dev-word-03-o2",
+        "text": "遍在する"
+      },
+      {
+        "output_id": "dev-word-03-o3",
+        "text": "至る所にいる"
+      },
+      {
+        "output_id": "dev-word-03-o4",
+        "text": "どこにでもある"
+      },
+      {
+        "output_id": "dev-word-03-o5",
+        "text": "至る所にある"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-04",
+    "split": "dev",
+    "category": "word",
+    "source": "elusive",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "見つける・捕まえる・理解するのが難しい、とらえどころのない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-04-o1",
+        "text": "捉えどころのない"
+      },
+      {
+        "output_id": "dev-word-04-o2",
+        "text": "捕らえどころのない"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-05",
+    "split": "dev",
+    "category": "word",
+    "source": "conscientious",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "良心的な、誠実で仕事を丁寧に果たす、注意深い。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-05-o1",
+        "text": "良心的な"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-06",
+    "split": "dev",
+    "category": "word",
+    "source": "pragmatic",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "現実的な、実用的な、実際の効果を重視する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-06-o1",
+        "text": "実用的な"
+      },
+      {
+        "output_id": "dev-word-06-o2",
+        "text": "語用論的な"
+      },
+      {
+        "output_id": "dev-word-06-o3",
+        "text": "語用論的"
+      },
+      {
+        "output_id": "dev-word-06-o4",
+        "text": "実用的"
+      },
+      {
+        "output_id": "dev-word-06-o5",
+        "text": "現実的な"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-07",
+    "split": "dev",
+    "category": "word",
+    "source": "resilient",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "回復力がある、立ち直りが早い、弾力性がある。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-07-o1",
+        "text": "しなやかな"
+      },
+      {
+        "output_id": "dev-word-07-o2",
+        "text": "強靭な"
+      },
+      {
+        "output_id": "dev-word-07-o3",
+        "text": "レジリエントな"
+      },
+      {
+        "output_id": "dev-word-07-o4",
+        "text": "回復力のある"
+      },
+      {
+        "output_id": "dev-word-07-o5",
+        "text": "レジリエント"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-08",
+    "split": "dev",
+    "category": "word",
+    "source": "plausible",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "もっともらしい、ありそうな、説得力がある。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-08-o1",
+        "text": "もっともらしい"
+      },
+      {
+        "output_id": "dev-word-08-o2",
+        "text": "ありそうな"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-09",
+    "split": "dev",
+    "category": "word",
+    "source": "candid",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "率直な、包み隠さない。写真なら自然な姿を撮った。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-09-o1",
+        "text": "candid"
+      },
+      {
+        "output_id": "dev-word-09-o2",
+        "text": "率直な"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-10",
+    "split": "dev",
+    "category": "word",
+    "source": "redundant",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "余分な、重複して不要な、冗長な。雇用では人員整理の対象の。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-10-o1",
+        "text": "冗長な"
+      },
+      {
+        "output_id": "dev-word-10-o2",
+        "text": "余分な"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-11",
+    "split": "dev",
+    "category": "word",
+    "source": "obsolete",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "時代遅れの、廃れた、もはや使われない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-11-o1",
+        "text": "時代遅れの"
+      },
+      {
+        "output_id": "dev-word-11-o2",
+        "text": "obsolete"
+      },
+      {
+        "output_id": "dev-word-11-o3",
+        "text": "廃れた"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-12",
+    "split": "dev",
+    "category": "word",
+    "source": "mundane",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ありふれた、平凡な、日常的な。文脈次第で世俗の。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-12-o1",
+        "text": "平凡な"
+      },
+      {
+        "output_id": "dev-word-12-o2",
+        "text": "ありふれた"
+      },
+      {
+        "output_id": "dev-word-12-o3",
+        "text": "日常的な"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-13",
+    "split": "dev",
+    "category": "word",
+    "source": "caveat",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "注意事項、留保条件、ただし書き。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-13-o1",
+        "text": "caveat"
+      },
+      {
+        "output_id": "dev-word-13-o2",
+        "text": "警告"
+      },
+      {
+        "output_id": "dev-word-13-o3",
+        "text": "注意書き"
+      },
+      {
+        "output_id": "dev-word-13-o4",
+        "text": "注意事項"
+      },
+      {
+        "output_id": "dev-word-13-o5",
+        "text": "注意点"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-14",
+    "split": "dev",
+    "category": "word",
+    "source": "deadline",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "締め切り、期限。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-14-o1",
+        "text": "deadline"
+      },
+      {
+        "output_id": "dev-word-14-o2",
+        "text": "期限"
+      },
+      {
+        "output_id": "dev-word-14-o3",
+        "text": "締め切り"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-15",
+    "split": "dev",
+    "category": "word",
+    "source": "acknowledge",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "認める、受け取ったことを知らせる、謝意や存在を示す。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-15-o1",
+        "text": "確認する"
+      },
+      {
+        "output_id": "dev-word-15-o2",
+        "text": "承認する"
+      },
+      {
+        "output_id": "dev-word-15-o3",
+        "text": "認める"
+      },
+      {
+        "output_id": "dev-word-15-o4",
+        "text": "acknowledge"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-16",
+    "split": "dev",
+    "category": "word",
+    "source": "compromise",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "妥協、妥協する。または安全性・原則などを損なう。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-16-o1",
+        "text": "妥協"
+      },
+      {
+        "output_id": "dev-word-16-o2",
+        "text": "妥協する"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-17",
+    "split": "dev",
+    "category": "word",
+    "source": "arguably",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "おそらく、議論の余地はあるがそう言える、〜と言ってよい。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-17-o1",
+        "text": "おそらく"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-18",
+    "split": "dev",
+    "category": "word",
+    "source": "reluctantly",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "しぶしぶ、気が進まないながらも。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-18-o1",
+        "text": "しぶしぶ"
+      },
+      {
+        "output_id": "dev-word-18-o2",
+        "text": "渋々"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-19",
+    "split": "dev",
+    "category": "word",
+    "source": "nuance",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "微妙な違い、意味や表現の微妙な差、ニュアンス。"
+    ],
+    "notes": "定着した外来語のニュアンスは正答として許容する。",
+    "outputs": [
+      {
+        "output_id": "dev-word-19-o1",
+        "text": "ニュアンス"
+      }
+    ]
+  },
+  {
+    "id": "dev-word-20",
+    "split": "dev",
+    "category": "word",
+    "source": "breakthrough",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "突破口、大きな進展、画期的な発見や成果。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-word-20-o1",
+        "text": "ブレイクスルー"
+      },
+      {
+        "output_id": "dev-word-20-o2",
+        "text": "突破口"
+      },
+      {
+        "output_id": "dev-word-20-o3",
+        "text": "突破"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-01",
+    "split": "dev",
+    "category": "idiom",
+    "source": "on the fence",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "態度や判断を決めかねている、どちらにもつかず迷っている。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-01-o1",
+        "text": "どっちつかず"
+      },
+      {
+        "output_id": "dev-idiom-01-o2",
+        "text": "柵の上の"
+      },
+      {
+        "output_id": "dev-idiom-01-o3",
+        "text": "どっちつかずの態度で"
+      },
+      {
+        "output_id": "dev-idiom-01-o4",
+        "text": "フェンスの上"
+      },
+      {
+        "output_id": "dev-idiom-01-o5",
+        "text": "迷っている"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-02",
+    "split": "dev",
+    "category": "idiom",
+    "source": "kick the bucket",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "死ぬ、くたばるというくだけた表現。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-02-o1",
+        "text": "死ぬ"
+      },
+      {
+        "output_id": "dev-idiom-02-o2",
+        "text": "バケツを蹴る"
+      },
+      {
+        "output_id": "dev-idiom-02-o3",
+        "text": "くたばる"
+      },
+      {
+        "output_id": "dev-idiom-02-o4",
+        "text": "kick the bucket"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-03",
+    "split": "dev",
+    "category": "idiom",
+    "source": "spill the beans",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "秘密を漏らす、うっかり話してしまう。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-03-o1",
+        "text": "情報を漏らす"
+      },
+      {
+        "output_id": "dev-idiom-03-o2",
+        "text": "暴露する"
+      },
+      {
+        "output_id": "dev-idiom-03-o3",
+        "text": "情報を明かす"
+      },
+      {
+        "output_id": "dev-idiom-03-o4",
+        "text": "秘密を漏らす"
+      },
+      {
+        "output_id": "dev-idiom-03-o5",
+        "text": "秘密を明かす"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-04",
+    "split": "dev",
+    "category": "idiom",
+    "source": "break a leg",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "頑張って、成功を祈るという激励。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-04-o1",
+        "text": "頑張ってね"
+      },
+      {
+        "output_id": "dev-idiom-04-o2",
+        "text": "足を壊す"
+      },
+      {
+        "output_id": "dev-idiom-04-o3",
+        "text": "頑張って"
+      },
+      {
+        "output_id": "dev-idiom-04-o4",
+        "text": "幸運を祈る"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-05",
+    "split": "dev",
+    "category": "idiom",
+    "source": "once in a blue moon",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ごくまれに、めったにない頻度で。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-05-o1",
+        "text": "ごくたまに"
+      },
+      {
+        "output_id": "dev-idiom-05-o2",
+        "text": "ごく稀に"
+      },
+      {
+        "output_id": "dev-idiom-05-o3",
+        "text": "ごくまれに"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-06",
+    "split": "dev",
+    "category": "idiom",
+    "source": "piece of cake",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "とても簡単なこと、朝飯前。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-06-o1",
+        "text": "簡単です"
+      },
+      {
+        "output_id": "dev-idiom-06-o2",
+        "text": "ピース・オブ・ケーキ"
+      },
+      {
+        "output_id": "dev-idiom-06-o3",
+        "text": "朝飯前"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-07",
+    "split": "dev",
+    "category": "idiom",
+    "source": "in a nutshell",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "手短に言うと、要するに、簡潔に。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-07-o1",
+        "text": "簡潔に"
+      },
+      {
+        "output_id": "dev-idiom-07-o2",
+        "text": "端的に言うと"
+      },
+      {
+        "output_id": "dev-idiom-07-o3",
+        "text": "要するに"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-08",
+    "split": "dev",
+    "category": "idiom",
+    "source": "take for granted",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "当然と思う、ありがたみを感じず当たり前のものと見なす。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-08-o1",
+        "text": "当然視する"
+      },
+      {
+        "output_id": "dev-idiom-08-o2",
+        "text": "当たり前のこととみなす"
+      },
+      {
+        "output_id": "dev-idiom-08-o3",
+        "text": "当然と思う"
+      },
+      {
+        "output_id": "dev-idiom-08-o4",
+        "text": "当然だと思う"
+      },
+      {
+        "output_id": "dev-idiom-08-o5",
+        "text": "当たり前だと思う"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-09",
+    "split": "dev",
+    "category": "idiom",
+    "source": "out of the blue",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "突然、思いがけなく、何の前触れもなく。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-09-o1",
+        "text": "不意に"
+      },
+      {
+        "output_id": "dev-idiom-09-o2",
+        "text": "out of the blue"
+      },
+      {
+        "output_id": "dev-idiom-09-o3",
+        "text": "思いがけなく"
+      },
+      {
+        "output_id": "dev-idiom-09-o4",
+        "text": "唐突に"
+      },
+      {
+        "output_id": "dev-idiom-09-o5",
+        "text": "いきなり"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-10",
+    "split": "dev",
+    "category": "idiom",
+    "source": "by and large",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "概して、おおむね、全体として。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-10-o1",
+        "text": "概ね"
+      },
+      {
+        "output_id": "dev-idiom-10-o2",
+        "text": "おおむね"
+      },
+      {
+        "output_id": "dev-idiom-10-o3",
+        "text": "概して"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-11",
+    "split": "dev",
+    "category": "idiom",
+    "source": "in hot water",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "困った立場にある、面倒な事態に陥っている。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-11-o1",
+        "text": "熱いお湯で"
+      },
+      {
+        "output_id": "dev-idiom-11-o2",
+        "text": "熱湯に"
+      },
+      {
+        "output_id": "dev-idiom-11-o3",
+        "text": "窮地に立たされた"
+      },
+      {
+        "output_id": "dev-idiom-11-o4",
+        "text": "in hot water"
+      },
+      {
+        "output_id": "dev-idiom-11-o5",
+        "text": "窮地に立たされている"
+      },
+      {
+        "output_id": "dev-idiom-11-o6",
+        "text": "お湯の中で"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-12",
+    "split": "dev",
+    "category": "idiom",
+    "source": "call it a day",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "今日はここまでにする、作業を切り上げる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-12-o1",
+        "text": "一日の終わりとする"
+      },
+      {
+        "output_id": "dev-idiom-12-o2",
+        "text": "切り上げよう"
+      },
+      {
+        "output_id": "dev-idiom-12-o3",
+        "text": "おしまいにする"
+      },
+      {
+        "output_id": "dev-idiom-12-o4",
+        "text": "今日はここまでにしよう"
+      },
+      {
+        "output_id": "dev-idiom-12-o5",
+        "text": "切り上げる"
+      },
+      {
+        "output_id": "dev-idiom-12-o6",
+        "text": "一日一杯飲む"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-13",
+    "split": "dev",
+    "category": "idiom",
+    "source": "hit the sack",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "寝る、床に就く。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-13-o1",
+        "text": "くたばる"
+      },
+      {
+        "output_id": "dev-idiom-13-o2",
+        "text": "寝る"
+      },
+      {
+        "output_id": "dev-idiom-13-o3",
+        "text": "仕事を切り上げる"
+      },
+      {
+        "output_id": "dev-idiom-13-o4",
+        "text": "くたたき"
+      },
+      {
+        "output_id": "dev-idiom-13-o5",
+        "text": "仕事に行く"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-14",
+    "split": "dev",
+    "category": "idiom",
+    "source": "the last straw",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "我慢の限界に達させる最後の出来事、ついに堪忍袋の緒が切れる原因。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-14-o1",
+        "text": "決定打"
+      },
+      {
+        "output_id": "dev-idiom-14-o2",
+        "text": "最後の一滴"
+      },
+      {
+        "output_id": "dev-idiom-14-o3",
+        "text": "我慢の限界"
+      },
+      {
+        "output_id": "dev-idiom-14-o4",
+        "text": "最後の一押し"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-15",
+    "split": "dev",
+    "category": "idiom",
+    "source": "hang in there",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "もう少し頑張って、くじけないで、持ちこたえて。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-15-o1",
+        "text": "へこたれない"
+      },
+      {
+        "output_id": "dev-idiom-15-o2",
+        "text": "踏ん張れ"
+      },
+      {
+        "output_id": "dev-idiom-15-o3",
+        "text": "踏ん張って"
+      },
+      {
+        "output_id": "dev-idiom-15-o4",
+        "text": "踏ん張る"
+      },
+      {
+        "output_id": "dev-idiom-15-o5",
+        "text": "頑張って"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-16",
+    "split": "dev",
+    "category": "idiom",
+    "source": "give up",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "諦める、やめる、手放す。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-16-o1",
+        "text": "ギブアップ"
+      },
+      {
+        "output_id": "dev-idiom-16-o2",
+        "text": "諦める"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-17",
+    "split": "dev",
+    "category": "idiom",
+    "source": "put off",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "延期する、後回しにする。または気をそぐ・嫌な気にさせる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-17-o1",
+        "text": "put off"
+      },
+      {
+        "output_id": "dev-idiom-17-o2",
+        "text": "延期する"
+      },
+      {
+        "output_id": "dev-idiom-17-o3",
+        "text": "後回しにする"
+      },
+      {
+        "output_id": "dev-idiom-17-o4",
+        "text": "出航する"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-18",
+    "split": "dev",
+    "category": "idiom",
+    "source": "look into",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "調べる、調査する、検討する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-18-o1",
+        "text": "調べる"
+      },
+      {
+        "output_id": "dev-idiom-18-o2",
+        "text": "look into"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-19",
+    "split": "dev",
+    "category": "idiom",
+    "source": "rule out",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "可能性や候補から除外する、排除する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-19-o1",
+        "text": "除外する"
+      }
+    ]
+  },
+  {
+    "id": "dev-idiom-20",
+    "split": "dev",
+    "category": "idiom",
+    "source": "put up with",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "我慢する、耐える。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-idiom-20-o1",
+        "text": "我慢して"
+      },
+      {
+        "output_id": "dev-idiom-20-o2",
+        "text": "やり過ごす"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-01",
+    "split": "dev",
+    "category": "sentence",
+    "source": "The bucket is empty.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "そのバケツは空だ。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-01-o1",
+        "text": "バケツは空だ。"
+      },
+      {
+        "output_id": "dev-sentence-01-o2",
+        "text": "バケツは空です。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-02",
+    "split": "dev",
+    "category": "sentence",
+    "source": "I don't agree.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私は賛成しない、同意しない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-02-o1",
+        "text": "同意できません。"
+      },
+      {
+        "output_id": "dev-sentence-02-o2",
+        "text": "賛成できません。"
+      },
+      {
+        "output_id": "dev-sentence-02-o3",
+        "text": "同意しません。"
+      },
+      {
+        "output_id": "dev-sentence-02-o4",
+        "text": "同意できない。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-03",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Did you call her?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女に電話したのかを尋ねる。呼んだのかという解釈も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-03-o1",
+        "text": "彼女に電話しましたか？"
+      },
+      {
+        "output_id": "dev-sentence-03-o2",
+        "text": "彼女に電話した？"
+      },
+      {
+        "output_id": "dev-sentence-03-o3",
+        "text": "彼女に電話したの？"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-04",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Please close the door.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "ドアを閉めてくださいという依頼。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-04-o1",
+        "text": "ドアを閉めてください。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-05",
+    "split": "dev",
+    "category": "sentence",
+    "source": "She was late again.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼女はまた遅刻した、また遅れてきた。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-05-o1",
+        "text": "彼女はまた遅刻しました。"
+      },
+      {
+        "output_id": "dev-sentence-05-o2",
+        "text": "彼女はまた遅刻した。"
+      },
+      {
+        "output_id": "dev-sentence-05-o3",
+        "text": "彼女はまた遅れた。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-06",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Don't open that file.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "そのファイルを開けてはいけないという禁止。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-06-o1",
+        "text": "そのファイルを開かないでください。"
+      },
+      {
+        "output_id": "dev-sentence-06-o2",
+        "text": "そのファイルを開けないで。"
+      },
+      {
+        "output_id": "dev-sentence-06-o3",
+        "text": "そのファイルは開かないで。"
+      },
+      {
+        "output_id": "dev-sentence-06-o4",
+        "text": "そのファイルは開けないで。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-07",
+    "split": "dev",
+    "category": "sentence",
+    "source": "It might rain tomorrow.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "明日は雨が降るかもしれない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-07-o1",
+        "text": "明日は雨が降るかもしれない。"
+      },
+      {
+        "output_id": "dev-sentence-07-o2",
+        "text": "明日は雨が降るかもしれません。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-08",
+    "split": "dev",
+    "category": "sentence",
+    "source": "You must not enter.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "立ち入りを禁止する。入らなくてもよいという任意の意味は不可。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-08-o1",
+        "text": "入力してはいけません。"
+      },
+      {
+        "output_id": "dev-sentence-08-o2",
+        "text": "入場してはいけません。"
+      },
+      {
+        "output_id": "dev-sentence-08-o3",
+        "text": "入ってはいけません。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-09",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Where did he go?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "彼はどこへ行ったのかを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-09-o1",
+        "text": "彼はどこへ行きましたか？"
+      },
+      {
+        "output_id": "dev-sentence-09-o2",
+        "text": "彼はどこへ行ったのですか。"
+      },
+      {
+        "output_id": "dev-sentence-09-o3",
+        "text": "彼はどこへ行ったの？"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-10",
+    "split": "dev",
+    "category": "sentence",
+    "source": "I haven't finished it yet.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私はそれをまだ終えていない。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-10-o1",
+        "text": "まだ終わっていない。"
+      },
+      {
+        "output_id": "dev-sentence-10-o2",
+        "text": "まだ終わっていません。"
+      },
+      {
+        "output_id": "dev-sentence-10-o3",
+        "text": "まだ終わってないんだ。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-11",
+    "split": "dev",
+    "category": "sentence",
+    "source": "This is not my bag.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "これは私のかばんではない。くだけた慣用義の「これは私の趣味・好みではない」も許容する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-11-o1",
+        "text": "これは私のバッグじゃない。"
+      },
+      {
+        "output_id": "dev-sentence-11-o2",
+        "text": "これは私のバッグではありません。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-12",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Send me the revised version.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "改訂版・修正版を私に送るよう依頼する。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-12-o1",
+        "text": "改訂版を送ってください。"
+      },
+      {
+        "output_id": "dev-sentence-12-o2",
+        "text": "修正版を送ってください。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-13",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Have a seat.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "座ってください、どうぞお掛けください。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-13-o1",
+        "text": "お掛けください。"
+      },
+      {
+        "output_id": "dev-sentence-13-o2",
+        "text": "どうぞ座ってください。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-14",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Leave it to me.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "私に任せて。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-14-o1",
+        "text": "私に任せてください。"
+      },
+      {
+        "output_id": "dev-sentence-14-o2",
+        "text": "私に任せてください"
+      },
+      {
+        "output_id": "dev-sentence-14-o3",
+        "text": "任せて。"
+      },
+      {
+        "output_id": "dev-sentence-14-o4",
+        "text": "私に任せて。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-15",
+    "split": "dev",
+    "category": "sentence",
+    "source": "I used to smoke.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "以前はたばこを吸っていた。過去の習慣を表す。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-15-o1",
+        "text": "以前はタバコを吸っていました。"
+      },
+      {
+        "output_id": "dev-sentence-15-o2",
+        "text": "以前は喫煙していました。"
+      },
+      {
+        "output_id": "dev-sentence-15-o3",
+        "text": "以前はタバコを吸っていた。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-16",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Let me think.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "考えさせて、少し考えてみる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-16-o1",
+        "text": "考えてみます。"
+      },
+      {
+        "output_id": "dev-sentence-16-o2",
+        "text": "考えさせてください。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-17",
+    "split": "dev",
+    "category": "sentence",
+    "source": "Are you serious?",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "本気なのか、冗談ではないのかを尋ねる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-17-o1",
+        "text": "本気ですか？"
+      },
+      {
+        "output_id": "dev-sentence-17-o2",
+        "text": "本気なの？"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-18",
+    "split": "dev",
+    "category": "sentence",
+    "source": "That sounds fair.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "それは公平・妥当なようだ、それなら納得できる。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-18-o1",
+        "text": "それは妥当だね。"
+      },
+      {
+        "output_id": "dev-sentence-18-o2",
+        "text": "それは妥当そうだ。"
+      },
+      {
+        "output_id": "dev-sentence-18-o3",
+        "text": "それは妥当です。"
+      },
+      {
+        "output_id": "dev-sentence-18-o4",
+        "text": "それは公平そうだね。"
+      },
+      {
+        "output_id": "dev-sentence-18-o5",
+        "text": "それは妥当に思えます。"
+      },
+      {
+        "output_id": "dev-sentence-18-o6",
+        "text": "それは妥当ですね。"
+      },
+      {
+        "output_id": "dev-sentence-18-o7",
+        "text": "それは公平そうですね。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-19",
+    "split": "dev",
+    "category": "sentence",
+    "source": "I wish I could.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "そうできればよいのに、できたらよいのだがという願望。"
+    ],
+    "outputs": [
+      {
+        "output_id": "dev-sentence-19-o1",
+        "text": "できればと思います。"
+      },
+      {
+        "output_id": "dev-sentence-19-o2",
+        "text": "できればいいんだけど。"
+      },
+      {
+        "output_id": "dev-sentence-19-o3",
+        "text": "できればいいのですが。"
+      },
+      {
+        "output_id": "dev-sentence-19-o4",
+        "text": "できたらいいのに。"
+      }
+    ]
+  },
+  {
+    "id": "dev-sentence-20",
+    "split": "dev",
+    "category": "sentence",
+    "source": "It’s already been sent.",
+    "direction": "en_to_ja",
+    "acceptable_meanings": [
+      "それはもう送ってある、すでに送信済みだ。"
+    ],
+    "notes": "Unicodeの右シングル引用符を含む短縮形は1語。",
+    "outputs": [
+      {
+        "output_id": "dev-sentence-20-o1",
+        "text": "すでに送信済みです。"
+      },
+      {
+        "output_id": "dev-sentence-20-o2",
+        "text": "すでに送信されています。"
+      },
+      {
+        "output_id": "dev-sentence-20-o3",
+        "text": "もう送信済みです。"
+      },
+      {
+        "output_id": "dev-sentence-20-o4",
+        "text": "もう送られた。"
+      },
+      {
+        "output_id": "dev-sentence-20-o5",
+        "text": "もう送られました。"
+      },
+      {
+        "output_id": "dev-sentence-20-o6",
+        "text": "もう送っちゃったよ。"
+      }
+    ]
+  }
+]

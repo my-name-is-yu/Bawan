@@ -18,7 +18,7 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-          cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke engine_smoke engine_profile --parallel 3
+          cmake --build build --target gesture_tests shortcut_tests short_input_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke engine_smoke engine_profile engine_evaluate engine_evaluate_production --parallel 3
           codesign --verify --strict build/Lore.app
           ctest --test-dir build --output-on-failure
       - name: Check pointer motion with OS Reduce Motion disabled

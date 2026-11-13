@@ -1,0 +1,1017 @@
+[
+  {
+    "output_id": "dev-word-01-o1",
+    "score": 1,
+    "reason": "原語に対応する音写だが、偶然の幸運という意味を日本語で伝えていない。"
+  },
+  {
+    "output_id": "dev-word-01-o2",
+    "score": 0,
+    "reason": "横向きという方向の意味になり、偶然の幸運という核心と異なる。"
+  },
+  {
+    "output_id": "dev-word-01-o3",
+    "score": 0,
+    "reason": "横向きという方向の意味になり、偶然の幸運という核心と異なる。"
+  },
+  {
+    "output_id": "dev-word-01-o4",
+    "score": 0,
+    "reason": "世俗的という別の性質を表し、偶然の幸運の意味がない。"
+  },
+  {
+    "output_id": "dev-word-01-o5",
+    "score": 1,
+    "reason": "意味を説明しない不透明な音写。一般に定着した日本語の形容詞とは判断できない。"
+  },
+  {
+    "output_id": "dev-word-01-o7",
+    "score": 0,
+    "reason": "空いている地位という無関係な意味になっている。"
+  },
+  {
+    "output_id": "dev-word-01-o8",
+    "score": 1,
+    "reason": "意味を説明しない不透明な音写で、単独では実用的な訳にならない。"
+  },
+  {
+    "output_id": "dev-word-02-o1",
+    "score": 2,
+    "reason": "はかなく短命であるという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-02-o3",
+    "score": 1,
+    "reason": "専門領域で外来語として使う可能性はあり判断に迷うが、単独では短命・一時的という意味が不透明。"
+  },
+  {
+    "output_id": "dev-word-02-o4",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-word-02-o5",
+    "score": 2,
+    "reason": "短期間しか続かないという妥当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-03-o1",
+    "score": 2,
+    "reason": "どこにでも存在するという意味を自然に表す。対象が人か物か未指定なので、いる・あるの違いは許容する。"
+  },
+  {
+    "output_id": "dev-word-03-o2",
+    "score": 2,
+    "reason": "どこにでも存在するという意味を自然に表す。対象が人か物か未指定なので、いる・あるの違いは許容する。"
+  },
+  {
+    "output_id": "dev-word-03-o3",
+    "score": 2,
+    "reason": "どこにでも存在するという意味を自然に表す。対象が人か物か未指定なので、いる・あるの違いは許容する。"
+  },
+  {
+    "output_id": "dev-word-03-o4",
+    "score": 2,
+    "reason": "どこにでも存在するという意味を自然に表す。対象が人か物か未指定なので、いる・あるの違いは許容する。"
+  },
+  {
+    "output_id": "dev-word-03-o5",
+    "score": 2,
+    "reason": "どこにでも存在するという意味を自然に表す。対象が人か物か未指定なので、いる・あるの違いは許容する。"
+  },
+  {
+    "output_id": "dev-word-04-o1",
+    "score": 2,
+    "reason": "捕まえたり理解したりしにくいという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-05-o1",
+    "score": 2,
+    "reason": "良心に従い誠実に務めるという妥当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-06-o2",
+    "score": 2,
+    "reason": "日常義とは異なるが、文脈なしでは言語学における語用論に関するという正当な語義を許容する。"
+  },
+  {
+    "output_id": "dev-word-06-o3",
+    "score": 2,
+    "reason": "日常義とは異なるが、文脈なしでは言語学における語用論に関するという正当な語義を許容する。"
+  },
+  {
+    "output_id": "dev-word-06-o4",
+    "score": 2,
+    "reason": "実用を重視するという妥当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-06-o5",
+    "score": 2,
+    "reason": "実際の状況や効果を重視するという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-07-o1",
+    "score": 2,
+    "reason": "文脈がないので、物理的な弾力性や折れにくい柔軟さを表す語義として許容する。"
+  },
+  {
+    "output_id": "dev-word-07-o2",
+    "score": 2,
+    "reason": "困難に耐えて持ちこたえる強さという自然で妥当な訳。"
+  },
+  {
+    "output_id": "dev-word-07-o3",
+    "score": 1,
+    "reason": "専門外来語としての使用はあり判断に迷うが、単独では回復力・弾力性の意味が不透明な音写。"
+  },
+  {
+    "output_id": "dev-word-07-o5",
+    "score": 1,
+    "reason": "専門外来語としての使用はあり判断に迷うが、単独では回復力・弾力性の意味が不透明な音写。"
+  },
+  {
+    "output_id": "dev-word-08-o2",
+    "score": 2,
+    "reason": "実際にあり得そうだという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-09-o1",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-word-09-o2",
+    "score": 2,
+    "reason": "隠さず正直に述べるという妥当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-10-o1",
+    "score": 2,
+    "reason": "必要以上に長い・余分であるという正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-11-o1",
+    "score": 2,
+    "reason": "古くなり現状に合わなくなったという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-11-o2",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-word-11-o3",
+    "score": 2,
+    "reason": "使われなくなったという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-12-o1",
+    "score": 2,
+    "reason": "ありふれた日常の事柄という妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-12-o2",
+    "score": 2,
+    "reason": "ありふれた日常の事柄という妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-12-o3",
+    "score": 2,
+    "reason": "ありふれた日常の事柄という妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-13-o1",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-word-13-o3",
+    "score": 2,
+    "reason": "ただし書きや注意を記したものという妥当な意味を表している。"
+  },
+  {
+    "output_id": "dev-word-13-o4",
+    "score": 2,
+    "reason": "注意すべき事項という妥当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-13-o5",
+    "score": 2,
+    "reason": "注意すべき事項という妥当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-14-o1",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-word-14-o2",
+    "score": 2,
+    "reason": "期限・締め切りという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-14-o3",
+    "score": 2,
+    "reason": "期限・締め切りという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-15-o1",
+    "score": 2,
+    "reason": "受領や認識を確認するという用法として文脈なしでは妥当。単なる検証の意味だけに限定しない。"
+  },
+  {
+    "output_id": "dev-word-15-o3",
+    "score": 2,
+    "reason": "事実や存在を認めるという正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-15-o4",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-word-16-o1",
+    "score": 2,
+    "reason": "互いに譲歩するという正当な語義を自然に表している。名詞と動詞の双方を許容する。"
+  },
+  {
+    "output_id": "dev-word-16-o2",
+    "score": 2,
+    "reason": "互いに譲歩するという正当な語義を自然に表している。名詞と動詞の双方を許容する。"
+  },
+  {
+    "output_id": "dev-word-17-o1",
+    "score": 2,
+    "reason": "断定を和らげる推量表現として、許容される意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-18-o1",
+    "score": 2,
+    "reason": "気が進まないながら行うという意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-18-o2",
+    "score": 2,
+    "reason": "気が進まないながら行うという意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-19-o1",
+    "score": 2,
+    "reason": "意味や表現の微妙な差を表す、定着した外来語である。"
+  },
+  {
+    "output_id": "dev-word-20-o1",
+    "score": 2,
+    "reason": "大きな進展・突破口という意味を表す。ブレイクスルーは定着した外来語として許容する。"
+  },
+  {
+    "output_id": "dev-word-20-o2",
+    "score": 2,
+    "reason": "大きな進展・突破口という意味を表す。ブレイクスルーは定着した外来語として許容する。"
+  },
+  {
+    "output_id": "dev-idiom-01-o1",
+    "score": 2,
+    "reason": "態度を決めかねている慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-01-o2",
+    "score": 0,
+    "reason": "柵の上という字義にとどまり、態度を決めかねる慣用義を伝えていない。"
+  },
+  {
+    "output_id": "dev-idiom-01-o4",
+    "score": 0,
+    "reason": "フェンスの上という字義にとどまり、態度を決めかねる慣用義を伝えていない。"
+  },
+  {
+    "output_id": "dev-idiom-01-o5",
+    "score": 2,
+    "reason": "決断を迷っている慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-02-o2",
+    "score": 0,
+    "reason": "バケツを蹴るという字義になり、死ぬという慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-02-o3",
+    "score": 2,
+    "reason": "死ぬというくだけた慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-02-o4",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-idiom-03-o1",
+    "score": 2,
+    "reason": "隠れていた秘密や情報を明かす・漏らすという慣用義を自然に表している。情報というやや広い表現も許容する。"
+  },
+  {
+    "output_id": "dev-idiom-03-o3",
+    "score": 2,
+    "reason": "隠れていた秘密や情報を明かす・漏らすという慣用義を自然に表している。情報というやや広い表現も許容する。"
+  },
+  {
+    "output_id": "dev-idiom-03-o4",
+    "score": 2,
+    "reason": "隠れていた秘密や情報を明かす・漏らすという慣用義を自然に表している。情報というやや広い表現も許容する。"
+  },
+  {
+    "output_id": "dev-idiom-03-o5",
+    "score": 2,
+    "reason": "隠れていた秘密や情報を明かす・漏らすという慣用義を自然に表している。情報というやや広い表現も許容する。"
+  },
+  {
+    "output_id": "dev-idiom-04-o1",
+    "score": 2,
+    "reason": "成功を祈り励ますという慣用的な意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-04-o3",
+    "score": 2,
+    "reason": "成功を祈り励ますという慣用的な意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-04-o4",
+    "score": 2,
+    "reason": "成功を祈り励ますという慣用的な意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-05-o1",
+    "score": 2,
+    "reason": "頻度が非常に低いという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-05-o3",
+    "score": 2,
+    "reason": "頻度が非常に低いという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-06-o2",
+    "score": 1,
+    "reason": "英語慣用句の音写にとどまり、とても簡単という意味が日本語として不透明。"
+  },
+  {
+    "output_id": "dev-idiom-06-o3",
+    "score": 2,
+    "reason": "とても簡単であるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-07-o1",
+    "score": 2,
+    "reason": "簡潔にまとめる・要点を述べるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-07-o2",
+    "score": 2,
+    "reason": "簡潔にまとめる・要点を述べるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-07-o3",
+    "score": 2,
+    "reason": "簡潔にまとめる・要点を述べるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-08-o1",
+    "score": 2,
+    "reason": "当たり前のものとして当然視するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-08-o3",
+    "score": 2,
+    "reason": "当たり前のものとして当然視するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-08-o4",
+    "score": 2,
+    "reason": "当たり前のものとして当然視するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-08-o5",
+    "score": 2,
+    "reason": "当たり前のものとして当然視するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-09-o1",
+    "score": 2,
+    "reason": "思いがけず突然起こるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-09-o2",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-idiom-09-o4",
+    "score": 2,
+    "reason": "予告なく突然起こるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-09-o5",
+    "score": 2,
+    "reason": "予告なく突然起こるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-10-o1",
+    "score": 2,
+    "reason": "全体としておおむねという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-10-o2",
+    "score": 2,
+    "reason": "全体としておおむねという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-10-o3",
+    "score": 2,
+    "reason": "全体としておおむねという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-11-o2",
+    "score": 0,
+    "reason": "熱湯という字義にとどまり、困った立場という慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-11-o3",
+    "score": 2,
+    "reason": "困難な立場に陥るという慣用義を自然に表す。形容的な原文なので日本語の完了形も許容する。"
+  },
+  {
+    "output_id": "dev-idiom-11-o4",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-idiom-11-o5",
+    "score": 2,
+    "reason": "困難な立場にいるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-11-o6",
+    "score": 0,
+    "reason": "お湯の中という字義にとどまり、困った立場という慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-12-o1",
+    "score": 1,
+    "reason": "一日を終えるという方向は分かるが、不自然に字義的で作業を切り上げる意図が弱い。"
+  },
+  {
+    "output_id": "dev-idiom-12-o2",
+    "score": 2,
+    "reason": "今日の作業を終えるという慣用義を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-12-o4",
+    "score": 2,
+    "reason": "今日の作業を終えるという慣用義と提案の意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-12-o5",
+    "score": 2,
+    "reason": "作業を終えるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-12-o6",
+    "score": 0,
+    "reason": "飲酒という原文にない行為を加え、作業を切り上げる慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-13-o1",
+    "score": 0,
+    "reason": "死ぬ・衰弱するという意味になり、床に就くという慣用義と異なる。"
+  },
+  {
+    "output_id": "dev-idiom-13-o2",
+    "score": 2,
+    "reason": "床に就くという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-13-o3",
+    "score": 0,
+    "reason": "仕事を終えることと床に就くことは別で、寝るという核心を伝えていない。"
+  },
+  {
+    "output_id": "dev-idiom-13-o5",
+    "score": 0,
+    "reason": "仕事へ行くという無関係な行動になり、寝るという慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-14-o1",
+    "score": 2,
+    "reason": "ついに限界を超えさせる決定的な原因という読みが自然に可能。負の感情が明示されない点には幅があるが許容する。"
+  },
+  {
+    "output_id": "dev-idiom-14-o2",
+    "score": 1,
+    "reason": "最後の小さな出来事という比喩の方向は分かるが、これだけでは我慢の限界を超える意味が不透明で判断に迷う。"
+  },
+  {
+    "output_id": "dev-idiom-14-o4",
+    "score": 1,
+    "reason": "限界を超えさせる最後の契機という部分は近いが、普通は後押しを意味し、我慢が尽きる慣用義が不明瞭。"
+  },
+  {
+    "output_id": "dev-idiom-15-o2",
+    "score": 2,
+    "reason": "困難でも持ちこたえるよう励ます慣用的な意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-15-o3",
+    "score": 2,
+    "reason": "困難でも持ちこたえるよう励ます慣用的な意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-15-o4",
+    "score": 1,
+    "reason": "持ちこたえるという内容は正しいが、辞書形では相手を励ます発話の意図が伝わりにくい。"
+  },
+  {
+    "output_id": "dev-idiom-15-o5",
+    "score": 2,
+    "reason": "くじけず続けるよう励ます慣用的な意図を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-16-o2",
+    "score": 2,
+    "reason": "諦めるという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-17-o1",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-idiom-17-o2",
+    "score": 2,
+    "reason": "予定を先延ばしにするという正当な慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-17-o3",
+    "score": 2,
+    "reason": "予定を先延ばしにするという正当な慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-18-o1",
+    "score": 2,
+    "reason": "調査するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-18-o2",
+    "score": 0,
+    "reason": "原語がそのまま残り、日本語への翻訳がない。"
+  },
+  {
+    "output_id": "dev-idiom-19-o1",
+    "score": 2,
+    "reason": "可能性や候補から除外するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-20-o1",
+    "score": 2,
+    "reason": "我慢して耐えるという慣用義を自然に表している。活用形の違いは重大な意味の相違ではない。"
+  },
+  {
+    "output_id": "dev-sentence-01-o1",
+    "score": 2,
+    "reason": "バケツが空であるという状態を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-sentence-01-o2",
+    "score": 2,
+    "reason": "バケツが空であるという状態を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-sentence-02-o1",
+    "score": 2,
+    "reason": "同意・賛成しないという否定の意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-02-o2",
+    "score": 2,
+    "reason": "同意・賛成しないという否定の意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-02-o3",
+    "score": 2,
+    "reason": "同意・賛成しないという否定の意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-02-o4",
+    "score": 2,
+    "reason": "同意・賛成しないという否定の意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-03-o2",
+    "score": 2,
+    "reason": "彼女に電話したかという過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-03-o3",
+    "score": 2,
+    "reason": "彼女に電話したかという過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-04-o1",
+    "score": 2,
+    "reason": "ドアを閉めるよう依頼する意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-05-o2",
+    "score": 2,
+    "reason": "彼女が再び遅れたという過去の出来事を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-05-o3",
+    "score": 2,
+    "reason": "彼女が再び遅れたという過去の出来事を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-06-o2",
+    "score": 2,
+    "reason": "そのファイルを開くことを禁じる意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-06-o3",
+    "score": 2,
+    "reason": "そのファイルを開くことを禁じる意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-06-o4",
+    "score": 2,
+    "reason": "そのファイルを開くことを禁じる意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-07-o1",
+    "score": 2,
+    "reason": "明日に雨が降る可能性という時点と不確実性を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-08-o1",
+    "score": 0,
+    "reason": "立ち入りではなくデータ入力を禁じる意味に変わり、要求される行為が異なる。"
+  },
+  {
+    "output_id": "dev-sentence-08-o2",
+    "score": 2,
+    "reason": "入場を禁じる強い禁止の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-08-o3",
+    "score": 2,
+    "reason": "立ち入りを禁じる強い禁止の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-09-o2",
+    "score": 2,
+    "reason": "彼が行った場所を尋ねる過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-09-o3",
+    "score": 2,
+    "reason": "彼が行った場所を尋ねる過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-10-o1",
+    "score": 2,
+    "reason": "まだ完了していないという否定と時間的な含みを自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-10-o2",
+    "score": 2,
+    "reason": "まだ完了していないという否定と時間的な含みを自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-10-o3",
+    "score": 2,
+    "reason": "まだ完了していないという否定と時間的な含みを自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-11-o1",
+    "score": 2,
+    "reason": "これが自分のかばんではないという否定の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-11-o2",
+    "score": 2,
+    "reason": "これが自分のかばんではないという否定の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-12-o1",
+    "score": 2,
+    "reason": "改訂・修正した版を送ってほしいという依頼を自然に表す。日本語では受け手の自分を省略してよい。"
+  },
+  {
+    "output_id": "dev-sentence-12-o2",
+    "score": 2,
+    "reason": "改訂・修正した版を送ってほしいという依頼を自然に表す。日本語では受け手の自分を省略してよい。"
+  },
+  {
+    "output_id": "dev-sentence-13-o1",
+    "score": 2,
+    "reason": "座るよう勧める発話の意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-14-o1",
+    "score": 2,
+    "reason": "自分に任せるよう求める意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-14-o3",
+    "score": 2,
+    "reason": "自分に任せるよう求める意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-14-o4",
+    "score": 2,
+    "reason": "自分に任せるよう求める意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-15-o1",
+    "score": 2,
+    "reason": "以前の喫煙習慣という過去の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-15-o3",
+    "score": 2,
+    "reason": "以前の喫煙習慣という過去の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-16-o2",
+    "score": 2,
+    "reason": "考える時間を求める発話の意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-17-o1",
+    "score": 2,
+    "reason": "相手が本気なのかを尋ねる意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-17-o2",
+    "score": 2,
+    "reason": "相手が本気なのかを尋ねる意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o1",
+    "score": 2,
+    "reason": "相手の話が妥当・公平に思えるという評価を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o2",
+    "score": 2,
+    "reason": "相手の話が妥当・公平に思えるという評価を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o4",
+    "score": 2,
+    "reason": "相手の話が妥当・公平に思えるという評価を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o5",
+    "score": 2,
+    "reason": "相手の話が妥当・公平に思えるという評価を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o6",
+    "score": 2,
+    "reason": "相手の話が妥当・公平に思えるという評価を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o7",
+    "score": 2,
+    "reason": "相手の話が妥当・公平に思えるという評価を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-19-o2",
+    "score": 2,
+    "reason": "実際には難しいがそうできればよいという願望を自然に表している。"
+  },
+  {
+    "output_id": "dev-sentence-19-o3",
+    "score": 2,
+    "reason": "実際には難しいがそうできればよいという願望を自然に表している。"
+  },
+  {
+    "output_id": "dev-sentence-19-o4",
+    "score": 2,
+    "reason": "実際には難しいがそうできればよいという願望を自然に表している。"
+  },
+  {
+    "output_id": "dev-sentence-20-o1",
+    "score": 2,
+    "reason": "すでに送る行為が完了したという意味を自然に保っている。口語の能動表現でも主語は明示されず、重大な主体変更とはしない。"
+  },
+  {
+    "output_id": "dev-sentence-20-o3",
+    "score": 2,
+    "reason": "すでに送る行為が完了したという意味を自然に保っている。口語の能動表現でも主語は明示されず、重大な主体変更とはしない。"
+  },
+  {
+    "output_id": "dev-sentence-20-o4",
+    "score": 2,
+    "reason": "すでに送る行為が完了したという意味を自然に保っている。口語の能動表現でも主語は明示されず、重大な主体変更とはしない。"
+  },
+  {
+    "output_id": "dev-sentence-20-o5",
+    "score": 2,
+    "reason": "すでに送る行為が完了したという意味を自然に保っている。口語の能動表現でも主語は明示されず、重大な主体変更とはしない。"
+  },
+  {
+    "output_id": "dev-sentence-20-o6",
+    "score": 2,
+    "reason": "すでに送る行為が完了したという意味を自然に保っている。口語の能動表現でも主語は明示されず、重大な主体変更とはしない。"
+  },
+  {
+    "output_id": "dev-word-01-o6",
+    "score": 1,
+    "reason": "偶然によるという要素は伝わるが、幸運・思いがけない良い発見という中心的な肯定の意味が欠ける。"
+  },
+  {
+    "output_id": "dev-word-02-o2",
+    "score": 2,
+    "reason": "短期間しか続かないという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-04-o2",
+    "score": 2,
+    "reason": "捕まえたり理解したりしにくいという中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-06-o1",
+    "score": 2,
+    "reason": "実用を重視するという妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-07-o4",
+    "score": 2,
+    "reason": "困難や損傷から回復する力という中心義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-08-o1",
+    "score": 2,
+    "reason": "あり得そうで説得力があるという妥当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-10-o2",
+    "score": 2,
+    "reason": "必要以上で不要なものという正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-13-o2",
+    "score": 2,
+    "reason": "注意を促す警告という正当な語義を自然に表している。"
+  },
+  {
+    "output_id": "dev-word-15-o2",
+    "score": 2,
+    "reason": "認めて受け入れるという用法として文脈なしでは妥当な訳。"
+  },
+  {
+    "output_id": "dev-word-20-o3",
+    "score": 2,
+    "reason": "障害を突破することという正当な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-01-o3",
+    "score": 2,
+    "reason": "どちらにも態度を決められないという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-02-o1",
+    "score": 2,
+    "reason": "死ぬという慣用義を正しく自然に表している。くだけ具合の違いは減点しない。"
+  },
+  {
+    "output_id": "dev-idiom-03-o2",
+    "score": 2,
+    "reason": "隠れた秘密や情報を明らかにするという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-04-o2",
+    "score": 0,
+    "reason": "足を損なうという字義になり、成功を祈る激励の慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-05-o2",
+    "score": 2,
+    "reason": "頻度が非常に低いという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-06-o1",
+    "score": 2,
+    "reason": "非常に容易だという慣用義を自然に伝えている。"
+  },
+  {
+    "output_id": "dev-idiom-08-o2",
+    "score": 2,
+    "reason": "当たり前のものとして当然視するという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-09-o3",
+    "score": 2,
+    "reason": "予想せず突然起こるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-11-o1",
+    "score": 0,
+    "reason": "熱い湯という字義にとどまり、困った立場という慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-12-o3",
+    "score": 2,
+    "reason": "作業を終えるという慣用義を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-13-o4",
+    "score": 0,
+    "reason": "意味を取れる日本語になっておらず、寝るという慣用義が伝わらない。"
+  },
+  {
+    "output_id": "dev-idiom-14-o3",
+    "score": 2,
+    "reason": "ついに堪忍できなくなるという慣用句の中心的な意味を自然に表している。"
+  },
+  {
+    "output_id": "dev-idiom-15-o1",
+    "score": 1,
+    "reason": "くじけないという内容は正しいが、通常の叙述形では相手を励ます発話の意図が弱く、判断に迷う。"
+  },
+  {
+    "output_id": "dev-idiom-16-o1",
+    "score": 2,
+    "reason": "諦めるという意味で定着した外来語を自然に使っている。"
+  },
+  {
+    "output_id": "dev-idiom-17-o4",
+    "score": 0,
+    "reason": "船を出すという別の意味になり、延期・嫌悪させるという慣用義を失っている。"
+  },
+  {
+    "output_id": "dev-idiom-20-o2",
+    "score": 1,
+    "reason": "困難が過ぎるのをしのぐ読みは可能で判断に迷うが、耐えて受け入れるより回避して通過させる意味が強く、慣用義が部分的。"
+  },
+  {
+    "output_id": "dev-sentence-03-o1",
+    "score": 2,
+    "reason": "彼女に電話したかという過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-05-o1",
+    "score": 2,
+    "reason": "彼女が再び遅れたという過去の出来事を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-06-o1",
+    "score": 2,
+    "reason": "そのファイルを開くことを禁じる意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-07-o2",
+    "score": 2,
+    "reason": "明日の降雨の可能性という時点と不確実性を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-09-o1",
+    "score": 2,
+    "reason": "彼が行った場所を尋ねる過去の質問を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-13-o2",
+    "score": 2,
+    "reason": "座るよう勧める意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-14-o2",
+    "score": 2,
+    "reason": "自分に任せるよう求める意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-15-o2",
+    "score": 2,
+    "reason": "以前の喫煙習慣という過去の意味を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-16-o1",
+    "score": 2,
+    "reason": "少し考えることを相手に告げる、自然で実用的な応答になっている。"
+  },
+  {
+    "output_id": "dev-sentence-18-o3",
+    "score": 2,
+    "reason": "相手の話を妥当と評価する中心的な意図を自然に保っている。"
+  },
+  {
+    "output_id": "dev-sentence-19-o1",
+    "score": 2,
+    "reason": "そうできればよいという願望を自然に表す。実現困難の含みは弱めだが、文脈なしの短文として許容する。"
+  },
+  {
+    "output_id": "dev-sentence-20-o2",
+    "score": 2,
+    "reason": "送る行為がすでに完了しているという意味を自然に保っている。"
+  }
+]

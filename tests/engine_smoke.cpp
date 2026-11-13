@@ -102,6 +102,24 @@ int main(int argc, char ** argv) {
         if (!hasNonASCII(second)) { throw std::runtime_error("Automatic English-to-Japanese direction failed"); }
         std::cout << "EN→JA: " << second << '\n';
 
+        const auto word = completed(events, engine.translate("ephemeral", lore::Direction::EnglishToJapanese),
+                                    lore::Direction::EnglishToJapanese);
+        if (word.find("儚") == std::string::npos && word.find("はかな") == std::string::npos &&
+            word.find("一時") == std::string::npos && word.find("短命") == std::string::npos &&
+            word.find("束の間") == std::string::npos) {
+            throw std::runtime_error("Short word lost its meaning: " + word);
+        }
+        const auto idiom = completed(events, engine.translate("on the fence", lore::Direction::Automatic),
+                                     lore::Direction::EnglishToJapanese);
+        if (idiom.find("どっちつかず") == std::string::npos && idiom.find("迷") == std::string::npos &&
+            idiom.find("決めかね") == std::string::npos && idiom.find("中立") == std::string::npos &&
+            idiom.find("日和見") == std::string::npos) {
+            throw std::runtime_error("Short idiom became literal: " + idiom);
+        }
+        completed(events, engine.translate("Please do not leave just yet.", lore::Direction::Automatic),
+                  lore::Direction::EnglishToJapanese);
+        std::cout << "Short EN→JA: " << word << " / " << idiom << '\n';
+
         if (completed(events, engine.translate(japanese, lore::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Repeated greedy translation changed after another request (possible stale KV)");
         }
@@ -129,7 +147,7 @@ int main(int argc, char ** argv) {
             throw std::runtime_error("Superseded request was not cancelled");
         }
         engine.shutdown();
-        std::cout << "PASS: translation, direction, KV reset, input boundaries, streaming and cancellation\n";
+        std::cout << "PASS: translation, short input, direction, KV reset, input boundaries, streaming and cancellation\n";
         return EXIT_SUCCESS;
     } catch (const std::exception & error) {
         std::cerr << "FAIL: " << error.what() << '\n';

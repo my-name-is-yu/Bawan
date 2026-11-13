@@ -1,0 +1,490 @@
+{
+  "totals": {
+    "phrasebook_en": {
+      "cases": 60,
+      "correct": 53,
+      "partial": 3,
+      "wrong": 4,
+      "score": 109,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 38,
+          "correct": 18,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 31,
+          "correct": 15,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "meaning_en": {
+      "cases": 60,
+      "correct": 54,
+      "partial": 1,
+      "wrong": 5,
+      "score": 109,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 31,
+          "correct": 15,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "meaning_en_en": {
+      "cases": 60,
+      "correct": 54,
+      "partial": 1,
+      "wrong": 5,
+      "score": 109,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 31,
+          "correct": 15,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "meaning_ja_en": {
+      "cases": 60,
+      "correct": 52,
+      "partial": 2,
+      "wrong": 6,
+      "score": 106,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 31,
+          "correct": 15,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        }
+      }
+    },
+    "minimal_en_en": {
+      "cases": 60,
+      "correct": 57,
+      "partial": 0,
+      "wrong": 3,
+      "score": 114,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 36,
+          "correct": 18,
+          "wrong": 2
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "minimal_ja": {
+      "cases": 60,
+      "correct": 56,
+      "partial": 2,
+      "wrong": 2,
+      "score": 114,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "minimal_ja_en": {
+      "cases": 60,
+      "correct": 55,
+      "partial": 2,
+      "wrong": 3,
+      "score": 112,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 35,
+          "correct": 17,
+          "wrong": 2
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "phrasebook_ja": {
+      "cases": 60,
+      "correct": 53,
+      "partial": 2,
+      "wrong": 5,
+      "score": 108,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 31,
+          "correct": 15,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "minimal_en": {
+      "cases": 60,
+      "correct": 55,
+      "partial": 2,
+      "wrong": 3,
+      "score": 112,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 35,
+          "correct": 17,
+          "wrong": 2
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "fewshot": {
+      "cases": 60,
+      "correct": 57,
+      "partial": 2,
+      "wrong": 1,
+      "score": 116,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 39,
+          "correct": 19,
+          "wrong": 0
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "fewshot_en": {
+      "cases": 60,
+      "correct": 58,
+      "partial": 0,
+      "wrong": 2,
+      "score": 116,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "baseline": {
+      "cases": 60,
+      "correct": 53,
+      "partial": 4,
+      "wrong": 3,
+      "score": 110,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 37,
+          "correct": 17,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 33,
+          "correct": 16,
+          "wrong": 3
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "apple_highFidelity": {
+      "cases": 60,
+      "correct": 53,
+      "partial": 3,
+      "wrong": 4,
+      "score": 109,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 39,
+          "correct": 19,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 30,
+          "correct": 14,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "apple_lowLatency": {
+      "cases": 60,
+      "correct": 53,
+      "partial": 3,
+      "wrong": 4,
+      "score": 109,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 39,
+          "correct": 19,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 30,
+          "correct": 14,
+          "wrong": 4
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "meaning_ja": {
+      "cases": 60,
+      "correct": 42,
+      "partial": 4,
+      "wrong": 14,
+      "score": 88,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 25,
+          "correct": 12,
+          "wrong": 7
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 25,
+          "correct": 11,
+          "wrong": 6
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        }
+      }
+    },
+    "single_en_multi_meaning_ja": {
+      "cases": 60,
+      "correct": 49,
+      "partial": 4,
+      "wrong": 7,
+      "score": 102,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 39,
+          "correct": 19,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 25,
+          "correct": 11,
+          "wrong": 6
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        }
+      }
+    },
+    "single_en_multi_minimal_ja": {
+      "cases": 60,
+      "correct": 57,
+      "partial": 2,
+      "wrong": 1,
+      "score": 116,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 39,
+          "correct": 19,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 37,
+          "correct": 18,
+          "wrong": 1
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    },
+    "source_en": {
+      "cases": 60,
+      "correct": 56,
+      "partial": 1,
+      "wrong": 3,
+      "score": 113,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 39,
+          "correct": 19,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 34,
+          "correct": 17,
+          "wrong": 3
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        }
+      }
+    }
+  }
+}

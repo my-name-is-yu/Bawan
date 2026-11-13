@@ -1,0 +1,110 @@
+{
+  "totals": {
+    "baseline": {
+      "cases": 84,
+      "correct": 77,
+      "partial": 3,
+      "wrong": 4,
+      "score": 157,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 32,
+          "correct": 15,
+          "wrong": 3
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 38,
+          "correct": 19,
+          "wrong": 1
+        },
+        "long_en": {
+          "cases": 8,
+          "score": 15,
+          "correct": 7,
+          "wrong": 0
+        },
+        "reverse_ja": {
+          "cases": 8,
+          "score": 16,
+          "correct": 8,
+          "wrong": 0
+        },
+        "mixed_other": {
+          "cases": 8,
+          "score": 16,
+          "correct": 8,
+          "wrong": 0
+        }
+      }
+    },
+    "single_en_multi_minimal_ja": {
+      "cases": 84,
+      "correct": 80,
+      "partial": 1,
+      "wrong": 3,
+      "score": 161,
+      "groups": {
+        "word": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        },
+        "idiom": {
+          "cases": 20,
+          "score": 34,
+          "correct": 17,
+          "wrong": 3
+        },
+        "sentence": {
+          "cases": 20,
+          "score": 40,
+          "correct": 20,
+          "wrong": 0
+        },
+        "long_en": {
+          "cases": 8,
+          "score": 15,
+          "correct": 7,
+          "wrong": 0
+        },
+        "reverse_ja": {
+          "cases": 8,
+          "score": 16,
+          "correct": 8,
+          "wrong": 0
+        },
+        "mixed_other": {
+          "cases": 8,
+          "score": 16,
+          "correct": 8,
+          "wrong": 0
+        }
+      }
+    }
+  },
+  "candidate": "single_en_multi_minimal_ja",
+  "regressions": [
+    {
+      "id": "heldout-idiom-18",
+      "baseline": 1,
+      "candidate": 0
+    }
+  ],
+  "gate": {
+    "heldout_correct_delta": 3,
+    "at_least_three_more_correct": true,
+    "no_more_wrong": true,
+    "no_correct_to_wrong": true,
+    "no_group_score_degradation": true,
+    "passed": true
+  }
+}
