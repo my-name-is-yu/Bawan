@@ -124,12 +124,7 @@ inline NSImage *LoreLoadImage(NSString *name) {
 }
 
 // External inline linkage shares these two caches across the app's view files.
-inline NSImage *LoreMascotImage(void) {
-    static NSImage *image;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ image = LoreLoadImage(@"LoreMascot"); });
-    return image;
-}
+NSImage *LoreMascotImage(void);
 
 inline NSImage *LorePaperImage(void) {
     static NSImage *image;
@@ -168,7 +163,7 @@ static inline void LoreDrawHeader(NSRect rect) {
     }
 }
 
-static inline void LoreDrawMedallion(NSRect rect) {
+static inline void LoreDrawMedallionBase(NSRect rect) {
     NSRect circle = NSInsetRect(rect, 1, 1);
     NSBezierPath *path = [NSBezierPath bezierPathWithOvalInRect:circle];
     [LoreColor(LoreGold) setFill];
@@ -176,6 +171,11 @@ static inline void LoreDrawMedallion(NSRect rect) {
     [LoreColor(LoreGoldText) setStroke];
     path.lineWidth = 1.5;
     [path stroke];
+}
+
+static inline void LoreDrawMedallion(NSRect rect) {
+    LoreDrawMedallionBase(rect);
+    NSRect circle = NSInsetRect(rect, 1, 1);
     [LoreMascotImage() drawInRect:NSInsetRect(circle, 3, 3) fromRect:NSZeroRect
                        operation:NSCompositingOperationSourceOver fraction:1
                   respectFlipped:YES hints:nil];

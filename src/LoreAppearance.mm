@@ -1,4 +1,33 @@
 #import "LoreAppearance.h"
+#import <ImageIO/ImageIO.h>
+
+NSImage *LoreMascotImage(void) {
+    static NSImage *image;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+#ifdef LORE_TEST_RESOURCE_DIR
+        NSString *path = [@LORE_TEST_RESOURCE_DIR stringByAppendingPathComponent:@"LoreMascot.png"];
+#else
+        NSString *path = [NSBundle.mainBundle pathForResource:@"LoreMascot" ofType:@"png"];
+#endif
+        if (!path) return;
+        // Decode only the display-size thumbnail; never retain the 1254px original.
+        CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path],
+            (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache:@NO});
+        if (!source) return;
+        CGImageRef bitmap = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)@{
+            (id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,
+            (id)kCGImageSourceCreateThumbnailWithTransform:@YES,
+            (id)kCGImageSourceThumbnailMaxPixelSize:@144,
+            (id)kCGImageSourceShouldCacheImmediately:@YES
+        });
+        CFRelease(source);
+        if (!bitmap) return;
+        image = [[NSImage alloc] initWithCGImage:bitmap size:NSMakeSize(72, 72)];
+        CGImageRelease(bitmap);
+    });
+    return image;
+}
 
 @interface LorePaperClipView : NSClipView
 @end

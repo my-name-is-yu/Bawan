@@ -30,6 +30,7 @@ final result: blocked
 - Both EN/JA translation directions, forced reverse translation, source editing during streaming, and reset for a new request.
 - Copy/Copied/reset behavior, native close, Esc, Command-W and cancellation.
 - Settings callbacks, permission/login states, long error scrolling, theme changes and navigation in the same native window.
+- The shared translator/Settings panel uses normal window level without floating or all-Spaces flags. Explicit calls bring it forward once; selection translation retains the source application's focus. Inactive windows remain available behind other apps rather than hiding automatically. Full-screen auxiliary eligibility is retained independently of window level.
 - CI explicitly builds both panel_smoke and settings_smoke and retains their captures.
 
 ## Component consistency follow-up
@@ -37,6 +38,7 @@ final result: blocked
 - Primary pressed color is a fixed darker vermilion in both themes; bitmap-based tests require at least 4.5:1 text contrast.
 - Translate/Cancel, Copy and Swap share the primary action's 3pt hard shadow while enabled, using each face's own rounded or cut-corner silhouette. Disabled actions have no shadow; settings inputs and icon-only buttons remain flat. Existing light/dark captures cover the enabled actions.
 - Both mastheads share an 80pt height and centered 72pt mascot, with no wordmark. Settings places its label at the left with a 24pt inset and keeps the return action at the right.
+- Both screens share a hover view and one downsampled 144px dog bitmap. A fixed medallion surrounds a masked dog layer with separate ears and eyelids. Pointer entry and clicks cycle through tilt, hop and shake, each with a finite 280ms blink/ear gesture. A click replaces active playback from its presentation state. Exit, navigation, close and Reduce Motion cancel playback; no frame sequence or polling timer is retained. `mascot_smoke` checks the three choices once each, click playback/replacement, and reports decoded pixel bytes, which are not a whole-app memory measurement.
 - Key recorder and press-count controls retain AppKit tracking, menus and focus while sharing a 28pt face, 13pt type, warm background and dark border. Tests read the rendered face to detect native bezel overpainting.
 - The gold swap button keeps its clipped corners. Reset and section icons share explicit Medium symbol sizing.
 - Informational, warning and error messages receive explicit semantic roles. Recording, paused and key-release-wait states replace the misleading ready status while listening is suspended.

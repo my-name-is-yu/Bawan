@@ -5,6 +5,7 @@ Apple Silicon・macOS 14以降向けの、英語↔日本語の常駐翻訳ア�
 ⌥Tを2回押すか、メニューバーの「Open Translator」から画面を開き、原文を手入力できます。
 どちらのグローバル操作も「Settings…」で個別にオン・オフを切り替え、キーの組み合わせと押す回数を変更できます。
 Dockと⌘Tabにも表示され、翻訳パネルを閉じた後も常駐します。
+翻訳・設定画面は呼び出したときに前面へ表示し、その後は通常のウィンドウとして扱います。別のアプリを操作するとその後ろへ回り、全デスクトップへの常時表示は行いません。
 
 翻訳パネルは原文と訳文を左右に並べ、OSのライト／ダーク設定に追従します。
 朱赤のヘッダー、犬の紋章、紙色の背景と金茶のアクセントを使い、設定画面も同じヴィンテージ調に揃えています。
@@ -19,6 +20,7 @@ Dockと⌘Tabにも表示され、翻訳パネルを閉じた後も常駐しま�
 通常案内・警告・エラーは共通の色で区別します。ショートカット記録中は「Recording shortcut…」、キーの解放待ちは「Waiting for key release…」と表示し、一時停止している操作を「Shortcut ready」とは表示しません。
 アプリ独自の文言は英語です。OS由来の案内やエラーはOSの言語に従います。
 フッターのボタンはマウスで押すと120msの短い押下表現を返し、コピー成功時には「Copied」とチェックを表示します。
+ヘッダーの犬はホバーやクリックのたびに、傾く・跳ねる・左右に揺れる動きを順に1回ずつ再生し、まばたきと耳の動きを添えます。再生中のクリックは現在の見た目から次の動きへ切り替わります。丸い背景と枠は固定です。表示用の144px画像1枚を両画面で共有し、Core Animationで犬の部分だけを動かします。待機中の再生タイマーや連番画像は持ちません。
 キーボード操作・ウィンドウの開閉・逐次出力は即時のままです。macOSの「視差効果を減らす」では押下の動きを省き、「コントラストを上げる」では紙の質感を省いて境界線と補助文字を強めます。
 
 AppKit / Objective-C++ / C++17で実装し、llama.cppを静的リンクしています。
@@ -108,13 +110,14 @@ OSによってクリップボード読み取りの許可が表示される場合
 
 ```sh
 ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke engine_smoke engine_profile --parallel 3
+cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke engine_smoke engine_profile --parallel 3
 ctest --test-dir build --output-on-failure
 ./build/engine_smoke "$HOME/Library/Application Support/local.lore.Lore/plamo-3-translate-0.8b-Q4_K_M.gguf"
 ```
 
 `gesture_tests`は従来のコピー操作を確認します。`shortcut_tests`では、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元と旧設定の移行も確認します。
 `panel_smoke`と`settings_smoke`はAppKitの画面・操作・レイアウト・ウィンドウ再利用を確認し、`build/panel-smoke/`と`build/settings-smoke/`へキャプチャを保存します。これらは実アプリ上のグローバルキーやOS権限の許可・取消を検証するテストではありません。
+`mascot_smoke`は3種類のホバーをそれぞれ1回再生し、クリックでの再生・切り替え、枠の固定、縮小画像の共有、有限時間での終了と離脱時の解除を確認します。キャプチャは`build/mascot-smoke/`へ保存します。
 実モデルのテストは英日両方向、連続翻訳でのKVリセット、UTF-8、入力上限、逐次出力、生成中の新要求による取消を確認します。
 任意の文章を1回翻訳することもできます。
 

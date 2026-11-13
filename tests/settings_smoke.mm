@@ -80,6 +80,16 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
 }
 
+static void RequireOrdinaryWindow(NSWindow *window, NSString *stage) {
+    NSWindowCollectionBehavior pinned = NSWindowCollectionBehaviorCanJoinAllSpaces;
+    Require([window isKindOfClass:NSPanel.class] && !((NSPanel *)window).floatingPanel &&
+        window.level == NSNormalWindowLevel && !window.hidesOnDeactivate &&
+        (window.collectionBehavior & pinned) == 0 &&
+        (window.collectionBehavior & NSWindowCollectionBehaviorMoveToActiveSpace) != 0,
+        [NSString stringWithFormat:@"The shared Lore window must retain ordinary ordering %@: level=%ld behavior=%lu",
+            stage, static_cast<long>(window.level), static_cast<unsigned long>(window.collectionBehavior)]);
+}
+
 static NSRect FrameInRoot(NSView *view) {
     return [view convertRect:view.bounds toView:view.window.contentView];
 }
@@ -388,12 +398,14 @@ static void RunSmoke(void) {
         if ([candidate.contentView.identifier isEqualToString:@"lore-panel"]) window = candidate;
     }
     Require(window != nil, @"The translator must provide the only settings host window");
+    RequireOrdinaryWindow(window, @"after manual entry");
     NSView *translationRoot = window.contentView;
     NSTextView *source = (NSTextView *)FindView(translationRoot, @"source");
     NSTextView *output = (NSTextView *)FindView(translationRoot, @"output");
     NSButton *gear = (NSButton *)FindView(translationRoot, @"settings");
     NSString *original = @"The meeting has been moved to next Monday.";
     [panel showForSelection:original];
+    RequireOrdinaryWindow(window, @"after selection entry");
     [panel showForManualInput];
     [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
     [source.undoManager beginUndoGrouping];
@@ -409,6 +421,7 @@ static void RunSmoke(void) {
     NSRect hostFrame = window.frame;
     [gear performClick:nil];
     Settle(window);
+    RequireOrdinaryWindow(window, @"after entering Settings");
     Require(window.contentView == settings.view && settings.view.window == window &&
         translationRoot.window == nil && NSEqualRects(window.frame, hostFrame),
         @"Settings must replace the existing window content without another window or resize");
