@@ -102,6 +102,10 @@ if(LORE_BUILD_TESTS)
     add_executable(shortcut_tests tests/shortcut_tests.cpp)
     target_link_libraries(shortcut_tests PRIVATE lore_gesture)
     add_test(NAME shortcuts COMMAND shortcut_tests)
+    add_executable(engine_lifecycle tests/engine_lifecycle.cpp)
+    target_link_libraries(engine_lifecycle PRIVATE lore_engine)
+    add_test(NAME engine_lifecycle COMMAND engine_lifecycle)
+    set_tests_properties(engine_lifecycle PROPERTIES TIMEOUT 40)
     if(APPLE)
         add_executable(shortcut_preferences_tests tests/shortcut_preferences_tests.mm src/ShortcutPreferences.mm)
         target_link_libraries(shortcut_preferences_tests PRIVATE lore_gesture
@@ -134,6 +138,21 @@ if(LORE_BUILD_TESTS)
         add_test(NAME settings_navigation COMMAND settings_smoke)
         set_tests_properties(settings_navigation PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
+        add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
+            src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm
+            src/LoreAppearance.mm src/LoreMascotView.mm
+            src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm)
+        target_include_directories(app_delegate_smoke PRIVATE src)
+        target_compile_definitions(app_delegate_smoke PRIVATE
+            LORE_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
+        target_link_libraries(app_delegate_smoke PRIVATE lore_engine lore_gesture
+            "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
+            "-framework CoreGraphics" "-framework ServiceManagement" "-framework ImageIO"
+            "-framework ApplicationServices" "-framework Carbon")
+        target_compile_options(app_delegate_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
+        set_tests_properties(app_delegate_smoke PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
         add_executable(mascot_smoke tests/mascot_smoke.mm src/LoreMascotView.mm src/LoreAppearance.mm)
         target_include_directories(mascot_smoke PRIVATE src)
         target_compile_definitions(mascot_smoke PRIVATE
