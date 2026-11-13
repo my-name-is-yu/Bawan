@@ -69,7 +69,8 @@ std::size_t utf8Prefix(const std::string & text, bool * japanese = nullptr,
 }
 
 std::vector<llama_token> tokenize(const llama_vocab * vocab,
-                                  const std::string & text, bool special) {
+                                  const std::string & text, bool special,
+                                  std::size_t tokenBudget = kMaximumPrompt) {
     if (text.size() > INT_MAX) {
         throw std::runtime_error("The text is too long. Select less text and try again.");
     }
@@ -78,6 +79,10 @@ std::vector<llama_token> tokenize(const llama_vocab * vocab,
     if (required == INT_MIN) { throw std::runtime_error("Unable to parse the text."); }
     if (required == 0) { return {}; }
     const auto count = required < 0 ? -required : required;
+    // Reject before allocating/filling a token vector for input we cannot use.
+    if (static_cast<std::size_t>(count) > tokenBudget) {
+        throw std::runtime_error("The text is too long. Select less text and try again (input limit: 4,096 tokens).");
+    }
     std::vector<llama_token> tokens(static_cast<std::size_t>(count));
     const auto actual = llama_tokenize(vocab, text.data(), length, tokens.data(), count, false, special);
     if (actual < 0) { throw std::runtime_error("Unable to parse the text."); }
@@ -240,16 +245,22 @@ private:
         const auto prefix = tokenize(vocab,
             "<|plamo:tag|>dataset<|plamo:msg|>translation"
             "<|plamo:tag|>input<|plamo:msg|>", true);
-        // Parse only the application's PFML3 delimiters as special tokens.
-        const auto source = tokenize(vocab, request.text, false);
         const auto suffix = tokenize(vocab, std::string("<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>") +
             (toEnglish ? "en" : "ja") + "<|plamo:msg|>", true);
+        const auto overhead = result.size() + prefix.size() + suffix.size();
+        if (overhead > kMaximumPrompt) {
+            throw std::runtime_error("This PLaMo model is not supported.");
+        }
+        if (cancelled(request.id)) return {};
+        // Parse only the application's PFML3 delimiters as special tokens.
+        // Keep the existing token limit, not a byte heuristic that could reject
+        // valid input. llama_tokenize's sizing pass itself is not interruptible.
+        const auto source = tokenize(vocab, request.text, false, kMaximumPrompt - overhead);
+        if (cancelled(request.id)) return {};
+        result.reserve(overhead + source.size());
         result.insert(result.end(), prefix.begin(), prefix.end());
         result.insert(result.end(), source.begin(), source.end());
         result.insert(result.end(), suffix.begin(), suffix.end());
-        if (result.size() > kMaximumPrompt) {
-            throw std::runtime_error("The text is too long. Select less text and try again (input limit: 4,096 tokens).");
-        }
         return result;
     }
 

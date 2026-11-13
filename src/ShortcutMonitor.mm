@@ -39,7 +39,6 @@ constexpr unsigned panelIndex = static_cast<unsigned>(lore::ShortcutAction::Open
     NSUInteger _generation;
     NSUInteger _copyReleaseGeneration;
     NSMutableArray<id> *_workspaceObservers;
-    id _activationObserver;
     id _preferencesObserver;
 }
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
@@ -134,9 +133,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self configureGestures];
         [self refresh];
     }]];
-    _activationObserver = [NSNotificationCenter.defaultCenter
-        addObserverForName:NSApplicationDidBecomeActiveNotification object:nil
-        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) { [weakSelf refresh]; }];
     _preferencesObserver = [NSNotificationCenter.defaultCenter
         addObserverForName:LoreShortcutsDidChangeNotification object:_preferences
         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) { [weakSelf applyPreferences]; }];
@@ -154,9 +150,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     NSNotificationCenter *workspace = NSWorkspace.sharedWorkspace.notificationCenter;
     for (id observer in _workspaceObservers) [workspace removeObserver:observer];
     _workspaceObservers = nil;
-    if (_activationObserver) [NSNotificationCenter.defaultCenter removeObserver:_activationObserver];
     if (_preferencesObserver) [NSNotificationCenter.defaultCenter removeObserver:_preferencesObserver];
-    _activationObserver = nil;
     _preferencesObserver = nil;
     [self refresh];
 }

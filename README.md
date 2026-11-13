@@ -117,12 +117,12 @@ OSによってクリップボード読み取りの許可が表示される場合
 
 ```sh
 ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke app_delegate_smoke engine_lifecycle engine_event_mailbox_tests engine_smoke engine_profile --parallel 3
+cmake --build build --target shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke app_delegate_smoke engine_lifecycle engine_event_mailbox_tests engine_smoke engine_profile --parallel 3
 ctest --test-dir build --output-on-failure
 ./build/engine_smoke "$HOME/Library/Application Support/local.lore.Lore/plamo-3-translate-0.8b-Q4_K_M.gguf"
 ```
 
-`gesture_tests`は従来のコピー操作を確認します。`shortcut_tests`では、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元と旧設定の移行も確認します。
+`shortcut_tests`では、実アプリで使う共通の状態機械で従来のダブルコピー操作に加えて、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元と旧設定の移行も確認します。
 `panel_smoke`と`settings_smoke`はAppKitの画面・操作・レイアウト・ウィンドウ再利用を確認し、`build/panel-smoke/`と`build/settings-smoke/`へキャプチャを保存します。これらは実アプリ上のグローバルキーやOS権限の許可・取消を検証するテストではありません。
 `mascot_smoke`は3種類のホバーをそれぞれ1回再生し、クリックでの再生・切り替え、枠の固定、縮小画像の共有、有限時間での終了と離脱時の解除を確認します。キャプチャは`build/mascot-smoke/`へ保存します。
 `engine_event_mailbox_tests`はモデル不要で、UI停止中の途中訳文集約、通知順序、再配送、並行配送を確認します。
@@ -223,4 +223,3 @@ Built with PLaMo. [PLaMo 3 Translate 0.8Bの公式GGUF Q4_K_M](https://huggingfa
 モデルにはPLaMo Community Licenseが適用されます。個人利用を想定しており、他の用途の条件は公式モデルカードを確認してください。
 推論ライブラリ[llama.cpp](https://github.com/ggml-org/llama.cpp/tree/b12307)はMIT Licenseです。
 アプリのResourcesにはそのLICENSEと第三者ライセンスの案内を同梱します。
-

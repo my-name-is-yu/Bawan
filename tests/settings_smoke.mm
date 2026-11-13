@@ -17,6 +17,7 @@
 @property(nonatomic) ShortcutAvailability selectionAvailability;
 @property(nonatomic) ShortcutAvailability panelAvailability;
 @property(nonatomic) NSUInteger permissionRequests;
+@property(nonatomic) NSUInteger refreshCount;
 @property(nonatomic) lore::ShortcutAction lastPermissionAction;
 @end
 
@@ -32,7 +33,7 @@
 }
 - (void)start {}
 - (void)stop {}
-- (void)refresh {}
+- (void)refresh { ++_refreshCount; }
 - (BOOL)suspended { return _testSuspended; }
 - (void)setSuspended:(BOOL)value { _testSuspended = value; }
 - (BOOL)settingsActive { return _testSettingsActive; }
@@ -52,9 +53,11 @@
 @interface SmokeSettingsViewController : SettingsViewController {
     std::set<CGKeyCode> _testHeldKeys;
 }
+@property(nonatomic) NSUInteger refreshCount;
 - (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down;
 @end
 @implementation SmokeSettingsViewController
+- (void)refresh { ++_refreshCount; [super refresh]; }
 - (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down {
     if (down) _testHeldKeys.insert(key);
     else _testHeldKeys.erase(key);
@@ -384,6 +387,18 @@ static void RunSmoke(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SmokeShortcutMonitor *monitor = [[SmokeShortcutMonitor alloc] initWithPreferences:preferences];
     SmokeSettingsViewController *settings = [[SmokeSettingsViewController alloc] initWithPreferences:preferences monitor:monitor];
+    // External notifications are owned by AppDelegate, not a second Settings
+    // subscription. Returning to the screen must still retry monitor access.
+    const NSUInteger initialSettingsRefreshes = settings.refreshCount;
+    const NSUInteger initialMonitorRefreshes = monitor.refreshCount;
+    [NSNotificationCenter.defaultCenter postNotificationName:LoreShortcutsDidChangeNotification object:preferences];
+    [NSNotificationCenter.defaultCenter postNotificationName:NSApplicationDidBecomeActiveNotification object:NSApp];
+    Require(settings.refreshCount == initialSettingsRefreshes && monitor.refreshCount == initialMonitorRefreshes,
+        @"Settings must not independently duplicate external notification refreshes");
+    [settings setActive:YES];
+    Require(settings.refreshCount == initialSettingsRefreshes + 1 && monitor.refreshCount == initialMonitorRefreshes + 1,
+        @"Showing Settings must refresh both permissions and displayed state once");
+    [settings setActive:NO];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0;
     panel.onTranslate = ^(NSString *__unused text, lore::Direction __unused direction) { ++translations; };

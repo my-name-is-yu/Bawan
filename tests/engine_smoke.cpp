@@ -177,6 +177,19 @@ int main(int argc, char ** argv) {
         for (int i = 0; i < 5000; ++i) { overlong += "hello "; }
         const auto tooLong = events.wait(engine.translate(overlong, lore::Direction::Automatic));
         if (tooLong.kind != lore::EngineEvent::Kind::Error) { throw std::runtime_error("Overlong prompt was not rejected"); }
+        events.requireNoOutput(tooLong.requestId);
+        // A large accidental paste still follows the token contract. It must
+        // reject before a second tokenizer pass / full source-token allocation,
+        // not silently truncate or poison the following translation.
+        std::string largePaste;
+        largePaste.reserve(2 * 1024 * 1024);
+        while (largePaste.size() < 2 * 1024 * 1024) largePaste += "hello ";
+        const auto rejectedPaste = events.wait(engine.translate(largePaste, lore::Direction::EnglishToJapanese));
+        if (rejectedPaste.kind != lore::EngineEvent::Kind::Error ||
+            rejectedPaste.text.find("4,096 tokens") == std::string::npos) {
+            throw std::runtime_error("Large pasted input was not rejected by the prompt budget");
+        }
+        events.requireNoOutput(rejectedPaste.requestId);
         if (completed(events, engine.translate(japanese, lore::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Translation did not recover after an overlong prompt");
         }
