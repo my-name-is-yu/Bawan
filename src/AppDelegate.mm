@@ -6,6 +6,7 @@
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
+#include "EngineEventMailbox.h"
 #include <memory>
 
 @interface AppDelegate () <NSMenuDelegate> {
@@ -235,13 +236,16 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_engine || !_modelAvailable || !_modelURL || _terminating) return;
     const uint64_t generation = ++_engineGeneration;
     __weak AppDelegate *weakSelf = self;
+    auto mailbox = std::make_shared<lore::EngineEventMailbox>();
     _engine = std::make_unique<lore::TranslationEngine>(
-        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation](lore::EngineEvent event) {
+        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](lore::EngineEvent event) {
+            if (!mailbox->push(std::move(event))) return;
             @autoreleasepool {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     AppDelegate *owner = weakSelf;
+                    const auto events = mailbox->drain();
                     if (owner && !owner->_terminating && owner->_engineGeneration == generation) {
-                        [owner handleEngineEvent:event];
+                        for (const auto &queued : events) [owner handleEngineEvent:queued];
                     }
                 });
             }
@@ -425,3 +429,4 @@ static NSString *StringFromUTF8(const std::string &text) {
     [NSStatusBar.systemStatusBar removeStatusItem:_statusItem];
 }
 @end
+
