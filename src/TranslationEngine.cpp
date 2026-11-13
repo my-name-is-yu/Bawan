@@ -1,4 +1,5 @@
 #include "TranslationEngine.h"
+#include "TranslationPrompt.h"
 
 #include "llama.h"
 
@@ -69,7 +70,8 @@ std::size_t utf8Prefix(const std::string & text, bool * japanese = nullptr,
 }
 
 std::vector<llama_token> tokenize(const llama_vocab * vocab,
-                                  const std::string & text, bool special) {
+                                  const std::string & text, bool special,
+                                  std::size_t tokenBudget = kMaximumPrompt) {
     if (text.size() > INT_MAX) {
         throw std::runtime_error("The text is too long. Select less text and try again.");
     }
@@ -78,6 +80,10 @@ std::vector<llama_token> tokenize(const llama_vocab * vocab,
     if (required == INT_MIN) { throw std::runtime_error("Unable to parse the text."); }
     if (required == 0) { return {}; }
     const auto count = required < 0 ? -required : required;
+    // Reject before allocating/filling a token vector for input we cannot use.
+    if (static_cast<std::size_t>(count) > tokenBudget) {
+        throw std::runtime_error("The text is too long. Select less text and try again (input limit: 4,096 tokens).");
+    }
     std::vector<llama_token> tokens(static_cast<std::size_t>(count));
     const auto actual = llama_tokenize(vocab, text.data(), length, tokens.data(), count, false, special);
     if (actual < 0) { throw std::runtime_error("Unable to parse the text."); }
@@ -101,19 +107,18 @@ std::string tokenPiece(const llama_vocab * vocab, llama_token token) {
 
 class TranslationEngine::Impl {
 public:
-    explicit Impl(Callback callback)
-        : callback_(std::move(callback)), worker_([this] { run(); }) {}
+    Impl(std::string modelPath, Callback callback, std::chrono::milliseconds idleTimeout)
+        : modelPath_(std::move(modelPath)), callback_(std::move(callback)),
+          idleTimeout_(std::max(idleTimeout, std::chrono::milliseconds::zero())),
+          worker_([this] { run(); }) {}
 
     ~Impl() { shutdown(); }
 
-    void loadModel(std::string path) {
+    void warmUp() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (stopping_) { return; }
-            ++revision_;
-            ++loadRevision_;
-            pendingRequest_.reset();
-            pendingModel_ = std::move(path);
+            pendingWarmUp_ = true;
         }
         changed_.notify_one();
     }
@@ -131,9 +136,14 @@ public:
     }
 
     void cancel() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ++revision_;
-        pendingRequest_.reset();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++revision_;
+            ++cancellation_;
+            pendingRequest_.reset();
+            pendingWarmUp_ = false;
+        }
+        changed_.notify_one();
     }
 
     void shutdown() {
@@ -141,8 +151,9 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             stopping_ = true;
             ++revision_;
+            ++cancellation_;
             pendingRequest_.reset();
-            pendingModel_.reset();
+            pendingWarmUp_ = false;
         }
         changed_.notify_one();
         if (worker_.joinable()) { worker_.join(); }
@@ -157,7 +168,7 @@ private:
 
     struct LoadProgress {
         Impl * owner;
-        std::uint64_t revision;
+        std::uint64_t cancellation;
     };
 
     bool cancelled(std::uint64_t id) const {
@@ -172,51 +183,49 @@ private:
         catch (...) { /* Never unwind across the inference thread boundary. */ }
     }
 
-    void resetResources() {
-        batch_.reset();
-        sampler_.reset();
-        context_.reset();
+    void unload() {
         model_.reset();
+        if (backendInitialized_) {
+            llama_backend_free();
+            backendInitialized_ = false;
+            emit(EngineEvent::Kind::Idle);
+        }
     }
 
-    void load(const std::string & path, std::uint64_t loadRevision) {
-        resetResources();
+    bool load(std::uint64_t cancellation) {
+        if (model_) { return true; }
+        if (stopping_ || cancellation_.load() != cancellation) { return false; }
         emit(EngineEvent::Kind::Loading, 0, "Loading the model…");
+        if (stopping_ || cancellation_.load() != cancellation) {
+            emit(EngineEvent::Kind::Cancelled);
+            return false;
+        }
+        llama_backend_init();
+        backendInitialized_ = true;
+        if (stopping_ || cancellation_.load() != cancellation) {
+            unload();
+            emit(EngineEvent::Kind::Cancelled);
+            return false;
+        }
         auto modelParameters = llama_model_default_params();
         modelParameters.n_gpu_layers = -1;
         modelParameters.load_mode = LLAMA_LOAD_MODE_MMAP;
-        LoadProgress progress{this, loadRevision};
+        LoadProgress progress{this, cancellation};
         modelParameters.progress_callback = [](float, void * opaque) {
             const auto * state = static_cast<LoadProgress *>(opaque);
-            return !state->owner->stopping_ && state->owner->loadRevision_.load() == state->revision;
+            return !state->owner->stopping_ &&
+                state->owner->cancellation_.load() == state->cancellation;
         };
         modelParameters.progress_callback_user_data = &progress;
-        model_.reset(llama_model_load_from_file(path.c_str(), modelParameters));
-        if (stopping_ || loadRevision_.load() != loadRevision) { resetResources(); return; }
+        model_.reset(llama_model_load_from_file(modelPath_.c_str(), modelParameters));
+        if (stopping_ || cancellation_.load() != cancellation) {
+            unload();
+            emit(EngineEvent::Kind::Cancelled);
+            return false;
+        }
         if (!model_) { throw std::runtime_error("Unable to load the model. Please check the model file."); }
-
-        auto parameters = llama_context_default_params();
-        parameters.n_ctx = kMaximumPrompt + kMaximumOutput;
-        parameters.n_batch = kBatchSize;
-        parameters.n_ubatch = kBatchSize;
-        parameters.n_seq_max = 1;
-        parameters.n_outputs_max = 1;
-        parameters.n_outputs_max_per_seq = 1;
-        parameters.n_threads = static_cast<std::int32_t>(std::min(4u, std::max(1u, std::thread::hardware_concurrency())));
-        parameters.n_threads_batch = parameters.n_threads;
-        parameters.type_k = GGML_TYPE_F16;
-        parameters.type_v = GGML_TYPE_F16;
-        parameters.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
-        context_.reset(llama_init_from_model(model_.get(), parameters));
-        if (!context_) { throw std::runtime_error("Unable to allocate memory for translation."); }
-        batch_.reset(llama_batch_ext_init(context_.get()));
-        sampler_.reset(llama_sampler_chain_init(llama_sampler_chain_default_params()));
-        if (!batch_ || !sampler_) { throw std::runtime_error("Unable to prepare the translation engine."); }
-        // A chain retains llama.cpp's vocabulary-sized sampling scratch buffer;
-        // passing the bare greedy sampler would allocate it for every token.
-        llama_sampler_chain_add(sampler_.get(), llama_sampler_init_greedy());
-        if (stopping_ || loadRevision_.load() != loadRevision) { resetResources(); return; }
         emit(EngineEvent::Kind::Ready, 0, "Ready to translate");
+        return true;
     }
 
     std::vector<llama_token> prompt(Request & request) {
@@ -234,49 +243,76 @@ private:
         const auto bos = llama_vocab_bos(vocab);
         if (bos == LLAMA_TOKEN_NULL) { throw std::runtime_error("This PLaMo model is not supported."); }
         std::vector<llama_token> result{bos};
-        const auto prefix = tokenize(vocab,
-            "<|plamo:tag|>dataset<|plamo:msg|>translation"
-            "<|plamo:tag|>input<|plamo:msg|>", true);
-        // Parse only the application's PFML3 delimiters as special tokens.
-        const auto source = tokenize(vocab, request.text, false);
+        const auto prefix = tokenize(vocab, detail::translationPromptPrefix(request.text, toEnglish), true);
         const auto suffix = tokenize(vocab, std::string("<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>") +
             (toEnglish ? "en" : "ja") + "<|plamo:msg|>", true);
+        const auto overhead = result.size() + prefix.size() + suffix.size();
+        if (overhead > kMaximumPrompt) {
+            throw std::runtime_error("This PLaMo model is not supported.");
+        }
+        if (cancelled(request.id)) return {};
+        // Parse only the application's PFML3 delimiters as special tokens.
+        // Keep the existing token limit, not a byte heuristic that could reject
+        // valid input. llama_tokenize's sizing pass itself is not interruptible.
+        const auto source = tokenize(vocab, request.text, false, kMaximumPrompt - overhead);
+        if (cancelled(request.id)) return {};
+        result.reserve(overhead + source.size());
         result.insert(result.end(), prefix.begin(), prefix.end());
         result.insert(result.end(), source.begin(), source.end());
         result.insert(result.end(), suffix.begin(), suffix.end());
-        if (result.size() > kMaximumPrompt) {
-            throw std::runtime_error("The text is too long. Select less text and try again (input limit: 4,096 tokens).");
-        }
         return result;
     }
 
-    void decode(const llama_token * tokens, std::size_t count,
+    void decode(llama_context * context, llama_batch_ext * batch,
+                const llama_token * tokens, std::size_t count,
                 std::size_t position, bool output) {
-        llama_batch_ext_clear(batch_.get());
+        llama_batch_ext_clear(batch);
         for (std::size_t token = 0; token < count; ++token) {
-            const auto index = llama_batch_ext_add_token(batch_.get(), 0, tokens[token]);
+            const auto index = llama_batch_ext_add_token(batch, 0, tokens[token]);
             const auto pos = static_cast<llama_pos>(position + token);
-            if (index < 0 || !llama_batch_ext_set_pos(batch_.get(), index, &pos) ||
+            if (index < 0 || !llama_batch_ext_set_pos(batch, index, &pos) ||
                 (output && token + 1 == count &&
-                 !llama_batch_ext_set_output_logits(batch_.get(), index, true))) {
+                 !llama_batch_ext_set_output_logits(batch, index, true))) {
                 throw std::runtime_error("Unable to prepare a translation batch.");
             }
         }
-        if (llama_process(context_.get(), LLAMA_PROCESS_TYPE_DECODE, batch_.get()) != 0) {
+        if (llama_process(context, LLAMA_PROCESS_TYPE_DECODE, batch) != 0) {
             throw std::runtime_error("An inference error occurred during translation.");
         }
     }
 
-    void translate(Request & request) {
-        if (!context_) { throw std::runtime_error("The model is not ready."); }
+    EngineEvent translate(Request & request) {
+        if (!model_) { throw std::runtime_error("The model is not ready."); }
         const auto tokens = prompt(request);
-        llama_memory_clear(llama_get_memory(context_.get()), false);
-        llama_sampler_reset(sampler_.get());
+        if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+
+        // Keep only the model resident. Request-local resources are released on
+        // success, cancellation and exceptions, before a terminal event is sent.
+        auto parameters = llama_context_default_params();
+        parameters.n_ctx = kMaximumPrompt + kMaximumOutput;
+        parameters.n_batch = kBatchSize;
+        parameters.n_ubatch = kBatchSize;
+        parameters.n_seq_max = 1;
+        parameters.n_outputs_max = 1;
+        parameters.n_outputs_max_per_seq = 1;
+        parameters.n_threads = static_cast<std::int32_t>(std::min(4u, std::max(1u, std::thread::hardware_concurrency())));
+        parameters.n_threads_batch = parameters.n_threads;
+        parameters.type_k = GGML_TYPE_F16;
+        parameters.type_v = GGML_TYPE_F16;
+        parameters.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+        parameters.swa_full = false;
+        Context context(llama_init_from_model(model_.get(), parameters), llama_free);
+        if (!context) { throw std::runtime_error("Unable to allocate memory for translation."); }
+        Batch batch(llama_batch_ext_init(context.get()), llama_batch_ext_free);
+        Sampler sampler(llama_sampler_chain_init(llama_sampler_chain_default_params()), llama_sampler_free);
+        if (!batch || !sampler) { throw std::runtime_error("Unable to prepare the translation engine."); }
+        // Reuse vocabulary-sized sampling scratch within this translation.
+        llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
         const auto * vocab = llama_model_get_vocab(model_.get());
         for (std::size_t position = 0; position < tokens.size(); position += kBatchSize) {
-            if (cancelled(request.id)) { emit(EngineEvent::Kind::Cancelled, request.id); return; }
+            if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto count = std::min(kBatchSize, tokens.size() - position);
-            decode(tokens.data() + position, count, position, position + count == tokens.size());
+            decode(context.get(), batch.get(), tokens.data() + position, count, position, position + count == tokens.size());
         }
         const auto stopTags = tokenize(vocab, "<|plamo:tag|>", true);
         const auto stopBos = llama_vocab_bos(vocab);
@@ -287,12 +323,11 @@ private:
         std::size_t validBytes = 0;
         auto lastEmission = std::chrono::steady_clock::time_point{};
         for (std::size_t generated = 0; generated < kMaximumOutput; ++generated) {
-            if (cancelled(request.id)) { emit(EngineEvent::Kind::Cancelled, request.id); return; }
-            const auto token = llama_sampler_sample(sampler_.get(), context_.get(), -1);
+            if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            const auto token = llama_sampler_sample(sampler.get(), context.get(), -1);
             if (llama_vocab_is_eog(vocab, token) || token == stopTags.front() || token == stopBos) {
                 if (validBytes != output.size()) { throw std::runtime_error("Unable to read the end of the translation."); }
-                emit(EngineEvent::Kind::Complete, request.id, output, false, request.direction);
-                return;
+                return {EngineEvent::Kind::Complete, request.id, std::move(output), false, request.direction};
             }
             output += tokenPiece(vocab, token);
             validBytes = utf8Prefix(output, nullptr, validBytes);
@@ -304,66 +339,96 @@ private:
                 lastEmission = now;
             }
             if (generated + 1 < kMaximumOutput) {
-                decode(&token, 1, tokens.size() + generated, true);
+                decode(context.get(), batch.get(), &token, 1, tokens.size() + generated, true);
             }
         }
-        emit(EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction);
+        return {EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction};
     }
 
     void run() {
-        llama_backend_init();
+        using Clock = std::chrono::steady_clock;
+        auto idleDeadline = Clock::time_point::max();
         for (;;) {
-            std::optional<std::string> modelPath;
             std::optional<Request> request;
-            std::uint64_t modelRevision = 0;
+            std::uint64_t cancellation = 0;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                changed_.wait(lock, [this] { return stopping_ || pendingModel_ || pendingRequest_; });
-                if (stopping_) { break; }
-                if (pendingModel_) {
-                    modelPath = std::move(pendingModel_);
-                    pendingModel_.reset();
-                    modelRevision = loadRevision_.load();
+                const auto hasWork = [this] { return stopping_ || pendingWarmUp_ || pendingRequest_; };
+                if (model_) {
+                    if (!changed_.wait_until(lock, idleDeadline, hasWork)) {
+                        lock.unlock();
+                        unload();
+                        continue;
+                    }
                 } else {
-                    request = std::move(pendingRequest_);
-                    pendingRequest_.reset();
+                    changed_.wait(lock, hasWork);
+                }
+                if (stopping_) { break; }
+                request = std::move(pendingRequest_);
+                pendingRequest_.reset();
+                pendingWarmUp_ = false;
+                cancellation = cancellation_.load();
+            }
+            // Repeated warmUp calls neither reload a hot model nor extend its
+            // idle lifetime. A request queued during prewarming reuses the load.
+            if (!request && model_) { continue; }
+            try {
+                if (request && cancelled(request->id)) {
+                    emit(EngineEvent::Kind::Cancelled, request->id);
+                } else if (load(cancellation)) {
+                    if (request) {
+                        auto result = translate(*request);
+                        emit(result.kind, result.requestId, std::move(result.text), result.truncated, result.direction);
+                    }
+                } else if (request) {
+                    emit(EngineEvent::Kind::Cancelled, request->id);
+                }
+            } catch (const std::exception & error) {
+                if (!model_) {
+                    unload();
+                    emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
+                         0, error.what());
+                }
+                if (request) {
+                    if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
+                    else { emit(EngineEvent::Kind::Error, request->id, error.what()); }
+                }
+            } catch (...) {
+                if (!model_) {
+                    unload();
+                    emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
+                         0, "An unexpected translation error occurred.");
+                }
+                if (request) {
+                    if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
+                    else { emit(EngineEvent::Kind::Error, request->id, "An unexpected translation error occurred."); }
                 }
             }
-            try {
-                if (modelPath) { load(*modelPath, modelRevision); }
-                else if (request && !cancelled(request->id)) { translate(*request); }
-            } catch (const std::exception & error) {
-                if (modelPath) { resetResources(); }
-                if (!request || !cancelled(request->id)) {
-                    emit(EngineEvent::Kind::Error, request ? request->id : 0, error.what());
-                } else { emit(EngineEvent::Kind::Cancelled, request->id); }
-            } catch (...) {
-                if (modelPath) { resetResources(); }
-                emit(EngineEvent::Kind::Error, request ? request->id : 0, "An unexpected translation error occurred.");
-            }
+            if (model_) { idleDeadline = Clock::now() + idleTimeout_; }
         }
-        resetResources();
-        llama_backend_free();
+        unload();
     }
 
+    const std::string modelPath_;
     Callback callback_;
+    const std::chrono::milliseconds idleTimeout_;
     std::mutex mutex_;
     std::condition_variable changed_;
     std::atomic<bool> stopping_{false};
     std::atomic<std::uint64_t> revision_{0};
-    std::atomic<std::uint64_t> loadRevision_{0};
-    std::optional<std::string> pendingModel_;
+    std::atomic<std::uint64_t> cancellation_{0};
+    bool pendingWarmUp_ = false;
     std::optional<Request> pendingRequest_;
     Model model_{nullptr, llama_model_free};
-    Context context_{nullptr, llama_free};
-    Batch batch_{nullptr, llama_batch_ext_free};
-    Sampler sampler_{nullptr, llama_sampler_free};
+    bool backendInitialized_ = false;
     std::thread worker_;
 };
 
-TranslationEngine::TranslationEngine(Callback callback) : impl_(std::make_unique<Impl>(std::move(callback))) {}
+TranslationEngine::TranslationEngine(std::string modelPath, Callback callback,
+                                     std::chrono::milliseconds idleTimeout)
+    : impl_(std::make_unique<Impl>(std::move(modelPath), std::move(callback), idleTimeout)) {}
 TranslationEngine::~TranslationEngine() = default;
-void TranslationEngine::loadModel(std::string path) { impl_->loadModel(std::move(path)); }
+void TranslationEngine::warmUp() { impl_->warmUp(); }
 std::uint64_t TranslationEngine::translate(std::string text, Direction direction) { return impl_->translate(std::move(text), direction); }
 void TranslationEngine::cancel() { impl_->cancel(); }
 void TranslationEngine::shutdown() { impl_->shutdown(); }
