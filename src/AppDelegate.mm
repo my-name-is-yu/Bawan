@@ -21,7 +21,12 @@
     ShortcutMonitor *_shortcut;
     std::unique_ptr<lore::TranslationEngine> _engine;
     uint64_t _activeRequestId;
-    BOOL _modelReady;
+    uint64_t _engineGeneration;
+    NSURL *_modelURL;
+    NSString *_pendingText;
+    lore::Direction _pendingDirection;
+    BOOL _warmUpWhenAvailable;
+    BOOL _modelAvailable;
     BOOL _busy;
     BOOL _terminating;
     BOOL _modelFailed;
@@ -49,14 +54,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     _translationPanel.onClose = ^{ [weakSelf cancelTranslation]; };
     _translationPanel.onSettings = ^{ [weakSelf openSettings:nil]; };
 
-    _engine = std::make_unique<lore::TranslationEngine>([weakSelf](lore::EngineEvent event) {
-        @autoreleasepool {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                AppDelegate *owner = weakSelf;
-                if (owner && !owner->_terminating) [owner handleEngineEvent:event];
-            });
-        }
-    });
     _modelStore = [[ModelStore alloc] init];
     _modelStore.onProgress = ^(double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
@@ -67,14 +64,28 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStore.onReady = ^(NSURL *fileURL) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        owner->_modelStatus = @"Loading the model…";
+        owner->_modelURL = fileURL;
+        owner->_modelAvailable = YES;
+        owner->_modelFailed = NO;
+        owner->_modelStatus = @"Ready to translate · On-device processing";
+        if (owner->_pendingText) {
+            NSString *text = owner->_pendingText;
+            auto direction = owner->_pendingDirection;
+            [owner translateText:text direction:direction];
+        } else if (owner->_warmUpWhenAvailable) {
+            [owner warmUpEngine];
+        }
         [owner updateStatus];
-        owner->_engine->loadModel(fileURL.fileSystemRepresentation);
     };
     _modelStore.onError = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        owner->_modelReady = NO;
+        owner->_modelAvailable = NO;
+        owner->_modelURL = nil;
+        owner->_pendingText = nil;
+        owner->_warmUpWhenAvailable = NO;
+        owner->_busy = NO;
+        owner->_activeRequestId = 0;
         owner->_modelFailed = YES;
         owner->_modelStatus = message;
         [owner updateStatus];
@@ -85,23 +96,19 @@ static NSString *StringFromUTF8(const std::string &text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner->_translationPanel showForSelection:text];
-        if (owner->_modelReady) {
-            [owner translateText:text direction:lore::Direction::Automatic];
-        } else {
-            [owner updateStatus];
-        }
+        [owner translateText:text direction:lore::Direction::Automatic];
     };
     _shortcut.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
         [owner->_translationPanel showWithoutChangingInput];
-        [owner->_translationPanel setAvailable:owner->_modelReady busy:owner->_busy status:message kind:LoreStatusWarning];
+        [owner->_translationPanel setAvailable:owner->_modelAvailable busy:owner->_busy status:message kind:LoreStatusWarning];
         owner->_statusItem.button.toolTip = message;
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner->_translationPanel showForManualInput];
+        if (owner && !owner->_terminating) [owner openTranslation:nil];
     };
     _shortcut.onAvailabilityChanged = ^{
         AppDelegate *owner = weakSelf;
@@ -187,8 +194,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
     _statusItem.button.toolTip = [@"Lore — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:_modelReady busy:NO status:_modelReady ? @"" : _modelItem.title
+    if (!_busy) [_translationPanel setAvailable:_modelAvailable busy:NO status:_modelAvailable ? @"" : _modelItem.title
                                          kind:_modelFailed ? LoreStatusError : LoreStatusInformation];
+    else if (!_modelAvailable) [_translationPanel setAvailable:NO busy:YES status:_modelItem.title
+                                                        kind:_modelFailed ? LoreStatusError : LoreStatusInformation];
 }
 
 - (void)updateShortcutItem {
@@ -222,8 +231,47 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateShortcutItem];
 }
 
+- (void)ensureEngine {
+    if (_engine || !_modelAvailable || !_modelURL || _terminating) return;
+    const uint64_t generation = ++_engineGeneration;
+    __weak AppDelegate *weakSelf = self;
+    _engine = std::make_unique<lore::TranslationEngine>(
+        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation](lore::EngineEvent event) {
+            @autoreleasepool {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    AppDelegate *owner = weakSelf;
+                    if (owner && !owner->_terminating && owner->_engineGeneration == generation) {
+                        [owner handleEngineEvent:event];
+                    }
+                });
+            }
+        });
+}
+
+- (void)warmUpEngine {
+    if (_terminating) return;
+    _warmUpWhenAvailable = !_modelAvailable;
+    [self ensureEngine];
+    if (_engine) _engine->warmUp();
+}
+
 - (void)translateText:(NSString *)text direction:(lore::Direction)direction {
-    if (!_modelReady || !_engine || _terminating) return;
+    if (_terminating) return;
+    if (!_modelAvailable) {
+        if (_modelFailed) { [self updateStatus]; return; }
+        // Keep only the latest selection while the model file is being verified
+        // or downloaded. Closing/cancelling clears it before setup completes.
+        _pendingText = [text copy];
+        _pendingDirection = direction;
+        _activeRequestId = 0;
+        _busy = YES;
+        [_translationPanel setOutput:@"" direction:lore::Direction::Automatic];
+        [self updateStatus];
+        return;
+    }
+    _pendingText = nil;
+    _warmUpWhenAvailable = NO;
+    [self ensureEngine];
     const char *utf8 = text.UTF8String;
     if (!utf8) return;
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
@@ -235,20 +283,23 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)handleEngineEvent:(const lore::EngineEvent &)event {
     using Kind = lore::EngineEvent::Kind;
     if (event.requestId == 0) {
+        // Availability describes the verified file, independently of whether
+        // inference resources are currently loaded or have expired after idle.
+        if (event.kind == Kind::Idle) return;
         if (event.kind == Kind::Loading) {
-            _modelReady = NO;
             _modelFailed = NO;
             _modelStatus = @"Loading the model…";
-        } else if (event.kind == Kind::Ready) {
-            _modelReady = YES;
+        } else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) {
             _modelFailed = NO;
             _modelStatus = @"Ready to translate · On-device processing";
         } else if (event.kind == Kind::Error) {
-            _modelReady = NO;
             _modelFailed = YES;
             _modelStatus = StringFromUTF8(event.text);
         }
         [self updateStatus];
+        [_translationPanel setAvailable:_modelAvailable busy:_busy
+            status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _modelStatus
+            kind:event.kind == Kind::Error ? LoreStatusError : LoreStatusInformation];
         return;
     }
     if (event.requestId != _activeRequestId) return;
@@ -260,33 +311,40 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [_translationPanel setAvailable:_modelReady busy:NO status:event.truncated ?
+            [_translationPanel setAvailable:_modelAvailable busy:NO status:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
                                       kind:event.truncated ? LoreStatusWarning : LoreStatusInformation];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
+            [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelReady busy:NO status:StringFromUTF8(event.text) kind:LoreStatusError];
+            [_translationPanel setAvailable:_modelAvailable busy:NO status:StringFromUTF8(event.text) kind:LoreStatusError];
             break;
         default: break;
     }
 }
 
 - (void)cancelTranslation {
-    if (!_busy) return;
+    _pendingText = nil;
+    _warmUpWhenAvailable = NO;
+    if (_engine) _engine->cancel();
+    if (_modelAvailable && !_modelFailed) _modelStatus = @"Ready to translate · On-device processing";
+    if (!_busy) { [self updateStatus]; return; }
     _activeRequestId = 0;
     _busy = NO;
-    if (_engine) _engine->cancel();
-    [_translationPanel setAvailable:_modelReady busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
+    [self updateStatus];
+    [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
 }
 
-- (void)openTranslation:(id)sender { [_translationPanel showForManualInput]; }
+- (void)openTranslation:(id)sender {
+    [_translationPanel showForManualInput];
+    [self warmUpEngine];
+}
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
     auto action = static_cast<lore::ShortcutAction>(sender.tag);
@@ -302,7 +360,10 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)retryModel:(id)sender {
     [self cancelTranslation];
-    _modelReady = NO;
+    ++_engineGeneration;
+    _engine.reset();
+    _modelURL = nil;
+    _modelAvailable = NO;
     _modelFailed = NO;
     _modelStatus = @"Checking the model…";
     [self updateStatus];
@@ -346,7 +407,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
-    [_translationPanel showForManualInput];
+    [self openTranslation:nil];
     return YES;
 }
 
