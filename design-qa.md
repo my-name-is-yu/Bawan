@@ -1,6 +1,6 @@
 # Bawan Vintage UI QA — 2026-11-13
 
-**Final result: blocked** — Awaiting full-window visual QA and live macOS interaction, accessibility, and resource checks on Apple Silicon.
+**Current result: Bawan v1 accepted for normal use on 2026-11-14.** Full-window, live appearance/accessibility and 20-cycle whole-app measurements were performed on 2026-11-13. The user confirmed both physical-key shortcuts, including selection translation without taking source-app focus. Advanced GPU/allocation tracing and sleep/wake recovery remain unverified; the original exhaustive checklist below is not fully passed. See [current local acceptance evidence](design/acceptance-2026-11-13.md) for results and limits.
 
 ## Visual Target
 
@@ -40,9 +40,9 @@ The following checks come from earlier implementation, CI, and follow-up reviews
 - **Mascot & controls:** `mascot_smoke` verifies tilt/hop/shake click playback and cancellation (exit, navigation, close, Reduce Motion) using one 144px downsampled bitmap without polling timers. Key recorder and press-count controls share a 28pt face and 13pt type; `Command-Return` mirrors Translate/Cancel; status messages use semantic roles and explicit recording/paused/key-release-wait states.
 - **Settings & usability:** Settings run as a retained view controller inside the shared panel (non-recording `Esc` and back return without clearing or cancelling; leaving Settings stops recording while keeping held-key release protection). Follow-ups added prefix-preserving streaming appends that auto-scroll only within one line of the end, on-demand permission help, product-driven error scroll-into-view, explicit initial focus, and shared paper-textured scroll gutters with no added timers or background observers.
 
-## Outstanding Verification (Blocking)
+## Original Acceptance Checklist
 
-Content-view captures omit native titlebar overlays and cross-app interaction, and whole-app RAM/CPU measurements remain unrecorded. The earlier build and CI results above are historical evidence, not completion of these checks. Do not mark this report as passed until all checks below pass on an Apple Silicon Mac:
+The checklist below predates the local acceptance run linked above. Full-window and whole-app CPU/memory evidence is now recorded there; its remaining items and limits still prevent an unrestricted pass of this original checklist. Historical build/CI evidence alone does not complete these checks.
 
 1. **Native build, signature, and tests:**
    ```sh

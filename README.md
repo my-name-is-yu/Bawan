@@ -138,35 +138,6 @@ In **Settings…**, click **Shortcut (click)** to record a new key combination a
 
 Bawan uses its own bundle ID and storage directory and does not migrate models or settings from other apps.
 
-## 🧪 Testing & Verification
-
-Tests, smoke checks, and profiling tools are excluded from standard release builds. To build and run them locally on Apple Silicon:
-
-```sh
-./scripts/build.sh -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
-cmake --build build --target short_input_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke app_delegate_smoke engine_lifecycle engine_event_mailbox_tests engine_smoke engine_profile --parallel 3
-ctest --test-dir build --output-on-failure
-./build/engine_smoke "$HOME/Library/Application Support/local.bawan.Bawan/plamo-3-translate-0.8b-Q4_K_M.gguf"
-```
-
-You can also run single-string inference or resource profiling against a local GGUF model:
-
-```sh
-./build/engine_smoke /path/to/model.gguf 'The meeting has been moved to next Monday.'
-./build/engine_profile /path/to/model.gguf
-```
-
-On Linux, you can build and test the CPU inference engine without the macOS app target:
-
-```sh
-cmake -S . -B build -DBAWAN_BUILD_APP=OFF -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-./build/engine_smoke /path/to/model.gguf
-```
-
-GitHub Actions CI is not used; run builds, signature checks, and real-model tests locally. Live shortcut permissions and key interception checks, full-window UI acceptance, and whole-app resource measurements remain unrecorded. See the [UI QA record](design-qa.md) for evidence and outstanding checks. Engine profiling excludes AppKit and does not establish whole-app memory use or Metal performance from Linux RSS.
-
 <a id="model--licenses"></a>
 
 ## 📜 Model & Licenses
