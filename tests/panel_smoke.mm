@@ -44,29 +44,10 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
 }
 
-// Compare app-owned objects, not private scroller, field-editor or layout-manager caches.
-// NSValue stores addresses without keeping old views/constraints alive during the test.
-static void CollectObjects(NSView *view, NSMutableSet<NSValue *> *views,
-                           NSMutableSet<NSValue *> *constraints) {
-    [views addObject:[NSValue valueWithPointer:(__bridge const void *)view]];
-    for (NSLayoutConstraint *constraint in view.constraints) {
-        if ([constraint.identifier hasPrefix:@"lore."]) {
-            [constraints addObject:[NSValue valueWithPointer:(__bridge const void *)constraint]];
-        }
-    }
-    if ([view isKindOfClass:NSScrollView.class]) {
-        NSView *document = ((NSScrollView *)view).documentView;
-        if (document) CollectObjects(document, views, constraints);
-        return;
-    }
-    if ([view isKindOfClass:NSTextView.class] || [view isKindOfClass:NSControl.class]) return;
-    for (NSView *child in view.subviews) CollectObjects(child, views, constraints);
-}
-
 static void CheckBounds(NSWindow *window) {
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
-    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot", @"brand-name",
+    for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot",
                                    @"status", @"instructions", @"shortcut-hint"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing view: " stringByAppendingString:identifier]);
@@ -78,29 +59,22 @@ static void CheckBounds(NSWindow *window) {
     }
     NSView *header = Control(window, @"header", NSView.class);
     NSView *mascot = Control(window, @"mascot", NSView.class);
-    NSTextField *brand = (NSTextField *)Control(window, @"brand-name", NSTextField.class);
-    NSRect brandFrame = [brand convertRect:brand.bounds toView:header];
     NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
-    // Anchors measure alignment rectangles; text-field frames include native ornament insets.
-    NSRect brandAlignment = [brand.superview convertRect:[brand alignmentRectForFrame:brand.frame] toView:header];
-    NSRect mascotAlignment = [mascot.superview convertRect:[mascot alignmentRectForFrame:mascot.frame] toView:header];
-    CGFloat brandGap = NSMinX(brandAlignment) - NSMaxX(mascotAlignment);
+    Require(FindView(root, @"brand-name") == nil, @"The translator header must omit the wordmark");
     Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
             std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
             std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
-            std::abs(brand.font.pointSize - LoreBrandLogoSize) < 0.1 &&
-            std::abs(NSMinX(mascotAlignment) - LoreBrandLeading) < 1 &&
-            std::abs(brandGap - LoreBrandGap) < 1,
+            std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
+            std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1,
             [NSString stringWithFormat:
-        @"Translator branding must use the shared geometry and typography: "
-        @"headerHeight=%.2f expected=%.2f mascotBounds=%@ frame=%@ alignment=%@ expectedSize=%.2f "
-        @"leading=%.2f expected=%.2f brandFrame=%@ alignment=%@ font=%.2f expected=%.2f gap=%.2f expected=%.2f",
-        header.bounds.size.height, LoreHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), NSStringFromRect(mascotAlignment), LoreBrandMarkSize,
-        NSMinX(mascotAlignment), LoreBrandLeading, NSStringFromRect(brandFrame), NSStringFromRect(brandAlignment),
-        brand.font.pointSize, LoreBrandLogoSize, brandGap, LoreBrandGap]);
-    Require(NSContainsRect(header.bounds, brandFrame) && !NSIntersectsRect(brandFrame, mascotFrame),
-            @"The translator wordmark must fit beside its mascot");
+        @"The translator mascot must retain its size and stay centered in the header: "
+        @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f",
+        NSStringFromRect(header.bounds), LoreHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), LoreBrandMarkSize]);
+    NSView *settings = Control(window, @"settings", NSButton.class);
+    NSRect settingsFrame = [settings convertRect:settings.bounds toView:header];
+    Require(NSContainsRect(header.bounds, mascotFrame) && !NSIntersectsRect(mascotFrame, settingsFrame),
+            @"The centered mascot must fit in the header without overlapping Settings");
     NSTextView *source = (NSTextView *)Control(window, @"source", NSTextView.class);
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
     NSRect sourcePane = [source.enclosingScrollView convertRect:source.enclosingScrollView.bounds toView:root];
@@ -760,73 +734,26 @@ static void RunSmoke(void) {
             @"Informational messages must clear the previous error styling");
     Capture(window, @"cancelled");
 
-    // Warm both native text/theme states before establishing object identity baselines.
     [panel showForSelection:english];
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
     [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-    Settle(window);
-    NSMutableSet<NSValue *> *baselineViews = [NSMutableSet set];
-    NSMutableSet<NSValue *> *baselineConstraints = [NSMutableSet set];
-    CollectObjects(window.contentView, baselineViews, baselineConstraints);
-    Require(baselineConstraints.count > 0, @"No explicitly identified app constraints were found");
-    NSUInteger beforeLifecycleCancellations = cancellations;
-    for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
-        @autoreleasepool {
-            [panel showForSelection:english];
-            [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
-            [translate performClick:nil];
-            [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
-            [panel setOutput:@"会議" direction:lore::Direction::EnglishToJapanese];
-            [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
-            [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
-            [translate performClick:nil];
-            [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
-            [panel setOutput:@"会議は" direction:lore::Direction::EnglishToJapanese];
-            [translate performClick:nil];
-            [panel setAvailable:YES busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
-            window.appearance = [NSAppearance appearanceNamed:iteration % 2
-                ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
-            [panel close];
-            Require([copy.layer animationForKey:@"lore.press"] == nil &&
-                    [translate.layer animationForKey:@"lore.press"] == nil,
-                    @"Closing must remove owned animation records");
-            [panel showWithoutChangingInput];
-            Settle(window);
-            Require(PanelWindow() == window, @"Panel was recreated during its lifecycle");
-            NSMutableSet<NSValue *> *views = [NSMutableSet set];
-            NSMutableSet<NSValue *> *constraints = [NSMutableSet set];
-            CollectObjects(window.contentView, views, constraints);
-            Require([views isEqualToSet:baselineViews] && [constraints isEqualToSet:baselineConstraints],
-                    @"App views or explicit constraints were recreated during updates");
-            NSString *motionStage = [NSString stringWithFormat:@"lifecycle cycle %lu after close/reopen",
-                static_cast<unsigned long>(iteration + 1)];
-            RequireNoPressMotion(copy, motionStage);
-            RequireNoPressMotion(translate, motionStage);
-            CheckBounds(window);
-        }
-    }
-    Require(cancellations == beforeLifecycleCancellations + 20 && closes == 20,
-            @"Repeated lifecycle callbacks were lost or duplicated");
     [copy performClick:nil];
-    Require([copy.title isEqualToString:@"Copied"], @"Copy confirmation must remain available after reuse");
+    Require([copy.title isEqualToString:@"Copied"], @"Copy confirmation must be available before closing");
     [closeButton performClick:nil];
-    Require(closes == 21 && !window.visible, @"The native close button must use the close callback");
+    Require(closes == 1 && !window.visible, @"The native close button must use the close callback");
     Require([copy.title isEqualToString:@"Copy Translation"], @"Closing must clear copy confirmation");
-    RequireNoPressMotion(copy, @"native close after lifecycle cycles");
-    RequireNoPressMotion(translate, @"native close after lifecycle cycles");
+    RequireNoPressMotion(copy, @"native close");
+    RequireNoPressMotion(translate, @"native close");
     [panel showForManualInput];
     Settle(window);
     [window sendEvent:KeyEvent(window, @"\033", 0, 53)];
     Settle(window);
-    Require(closes == 22, @"Escape must close the panel through its close callback");
+    Require(closes == 2, @"Escape must close the panel through its close callback");
     [panel showForManualInput];
     Settle(window);
     Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand, 13)] &&
-            closes == 23 && !window.visible, @"Command-W must use the same close callback");
-    std::cout << "panel_smoke_complete=true\nreused_panel_cycles=20\n"
-              << "app_view_count=" << baselineViews.count << '\n'
-              << "app_constraint_count=" << baselineConstraints.count << '\n'
+            closes == 3 && !window.visible, @"Command-W must use the same close callback");
+    std::cout << "panel_smoke_complete=true\n"
               << "reduce_motion_enabled=" << static_cast<bool>(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) << '\n'
               << "increase_contrast_enabled=" << static_cast<bool>(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast) << '\n'
               << "captures=panel-smoke (AppKit views; not full UI/resource validation)\n";

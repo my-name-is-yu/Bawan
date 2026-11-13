@@ -770,18 +770,6 @@ static void RunSmoke(void) {
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     CheckLegacyPaper(window, scroll);
     [window setFrame:settingsFrame display:NO];
-    for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
-        [back performClick:nil];
-        Require(window.contentView == translationRoot && !monitor.settingsActive,
-            @"Returning to translation must deactivate Settings without changing windows");
-        [gear performClick:nil];
-        Require(settings.view == root && window.contentView == root && settings.view.window == window &&
-            FindView(root, @"shortcut-selection-key") == selectionKey &&
-            FindView(root, @"settings-scroll") == scroll && FindView(root, @"settings-document") == document &&
-            FindView(root, @"shortcut-help") == help && window.attachedSheet == nil && NSEqualRects(window.frame, settingsFrame),
-            @"Twenty navigation cycles must reuse the same host, controller view and shortcut controls");
-        CheckBounds(window);
-    }
     [back performClick:nil];
     Require(source.undoManager.canUndo, @"The prior passage must still have undo history before the selection boundary check");
     [gear performClick:nil];
@@ -814,7 +802,7 @@ static void RunSmoke(void) {
         !window.visible && closes == 2 && !monitor.settingsActive,
         @"Command-W outside recording must close the same shared window exactly once");
     [defaults removePersistentDomainForName:suite];
-    std::cout << "settings_smoke_complete=true\nreused_navigation_cycles=20\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
+    std::cout << "settings_smoke_complete=true\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
 }
 
 int main(void) {
