@@ -1,93 +1,68 @@
-# Bawan vintage UI QA — 2026-11-13
+# Bawan Vintage UI QA — 2026-11-13
 
-final result: blocked
+**Final result: blocked** — Awaiting full-window visual QA and live macOS interaction, accessibility, and resource checks on Apple Silicon.
 
-## Bawan rename verification — local MacBook, 2026-11-13
+## Visual Target
 
-- A clean Release build succeeded with `BAWAN_BUILD_TESTS=ON` and `BAWAN_BUILD_SMOKE=ON`; all 9 CTests passed in 13.88 seconds. `codesign --verify --strict build/Bawan.app` passed.
-- Bundle executable/name/display name are Bawan; Bundle ID is `local.bawan.Bawan`. The packaged mascot, paper and icons match the existing artwork byte for byte.
-- Reviewed newly generated translation and Settings captures in light and dark appearances and replaced the four PNGs in `design/screenshots/`. Their local provenance is documented beside them.
-- Obsolete shortcut-setting fallback was removed. The preferences test verifies that obsolete settings do not override current defaults.
-- No old product-name references remain in current source text or filenames. The repository's local directory name and Git history are intentionally retained.
-- The previous installed app was normally quit after unregistering launch at login. The old installed bundle, preferences, model directory and build outputs were removed. macOS retains a disabled historical login-item record; no system-wide login-item database reset was performed.
-- Custom untracked UI-validation scripts and previews from the old build directory were preserved outside the checkout before cleaning it.
-- No model was downloaded for this verification; the app was not installed in Applications. Real-model inference was not rerun. The broader historical UI acceptance status below remains separate from this rename check.
+- **Reference:** `design/vintage-reference.png` (third refinement), updated to remove the `×` next to Settings, use native macOS window controls, add a matching dark theme and in-window Settings view, and drop the `ORIGINAL`/`TRANSLATION` bands, language badges, and horizontal rules (both panes start 24pt below the 80pt masthead, gaining 55.5pt of reading height).
+- **Viewport:** 720×500pt initial, 640×420pt minimum (AppKit coordinates).
+- **Light palette:** cream `#F7E7BB`, ink `#443024`, vermilion `#B53B28`, gold `#D99E3D`.
+- **Dark palette:** espresso `#28211C`, ivory `#F5E6C8`, red-brown `#7B2D20`, gold `#C99B53`.
 
-## Selected visual target
+## Completed Checks
 
-- Reference: `design/vintage-reference.png`, the third displayed refinement selected by the user.
-- Approved changes to the reference: remove the × beside Settings; show native macOS close/minimize/zoom controls; add a matching dark appearance and settings screen in the same window.
-- Follow-up: remove the ORIGINAL/TRANSLATION bands, language badges and horizontal rules. Both text panes start 24pt below the masthead, gaining 55.5pt of reading height at the same window size.
-- Implementation viewport: initial 720×500pt, minimum 640×420pt. AppKit content coordinates apply, not browser/CSS pixels.
-- Light palette: cream #F7E7BB, ink #443024, vermilion #B53B28, gold #D99E3D.
-- Dark palette: espresso #28211C, ivory #F5E6C8, red-brown #7B2D20, gold #C99B53.
+### Rename verification (local MacBook, 2026-11-13)
+- Clean Release build (`BAWAN_BUILD_TESTS=ON`, `BAWAN_BUILD_SMOKE=ON`) succeeded; 9/9 CTests passed in 13.88s, and `codesign --verify --strict build/Bawan.app` passed.
+- Bundle name, executable, and display name are `Bawan` (`local.bawan.Bawan`); packaged mascot, paper, and icon assets match existing artwork byte for byte.
+- Regenerated light and dark translation and Settings captures in `design/screenshots/`, with local provenance documented alongside them.
+- Removed the obsolete shortcut-setting fallback (verified by the preferences test) and all old product-name references in current source text and filenames; the local repository directory name and Git history are intentionally kept.
+- Unregistered launch at login, quit the previous installed app, and removed the old bundle, preferences, model directory, and build outputs (macOS retains a disabled historical login-item record; custom untracked UI-validation scripts and previews from the old build directory were saved outside the checkout).
+- *Scope note:* No model was downloaded, the app was not installed in `/Applications`, and real-model inference was not rerun. This check is separate from the broader historical UI status below.
 
-## Completed evidence
+### Expanded text-area verification
+- [Native CI run 43360514233](https://github.com/my-name-is-yu/Bawan/actions/runs/43360514233) (commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c`) passed arm64 build and signature checks, 5/5 CTests, pointer feedback, and official-model translation.
+- Light and minimum-size dark captures confirm both pane tops sit 24pt below the masthead. Deleted bands, rules, constraints, and display-only language state were removed rather than hidden, while smoke tests continue to cover direction, reverse translation, long-text scrolling, and accessible roles.
 
-- Inspected the actual selected image and generated mascot/paper resources.
-- PNG integrity, real mascot alpha, resource names and CMake packaging were checked. Product and both command-line smoke executables receive the same UI resources.
-- Shared external-inline caches keep one palette, one mascot and one paper image across both screens.
-- Source/control inspection confirms native AppKit views, editable source, selectable output, independent scrolling, accessible source/translation labels, and one reused panel.
-- The previous regular-app configuration was applied: no LSUIElement agent flag, NSApplicationActivationPolicyRegular at launch.
-- Static color calculations include the actual paper asset's extrema composited at 3.5%. Minimum normal-text contrast is 4.59:1 on the textured light header; primary buttons exceed 4.70:1. Body, secondary text and settings status colors also exceed 4.5:1. Results are in `build/ui-validation/static-checks.json`.
-- Libclang 18.1.1 parsed the integrated UI sources, AppDelegate and both smoke tests against actual macOS 14.5 SDK headers, targeting arm64 macOS 14. Both the product NSBundle loader and test-resource loader branches passed with zero errors. Warnings are limited to existing unused callback/main parameters. Reports are retained under `build/`. This is syntax/API checking, not native linking or execution.
-- Rebased onto the configurable-shortcuts version of main, retaining both shortcut rows, key recording/release handling, panel recall/focus behavior and Command-Shift-C copying. Both screens use the shared 720×500pt panel and support its 640×420pt minimum.
-- Portable CMake configuration and build succeeded after integration. Both copy_gesture and shortcuts CTests passed (2/2) on Linux. This does not exercise AppKit.
-- `git diff --check` passes.
+## Historical Evidence
 
-## Native automated acceptance checks
+The following checks come from earlier implementation, CI, and follow-up reviews. They do not substitute for current full-window or live-app verification.
 
-- Both themes, initial and minimum sizes, paper-background repainting after appearance changes, header and footer bounds, loaded images, wrapping and separate text scrolling.
-- Both EN/JA translation directions, forced reverse translation, source editing during streaming, and reset for a new request.
-- Copy/Copied/reset behavior, native close, Esc, Command-W and cancellation.
-- Settings callbacks, permission/login states, long error scrolling, theme changes and navigation in the same native window.
-- The shared translator/Settings panel uses normal window level without floating or all-Spaces flags. Explicit calls bring it forward once; selection translation retains the source application's focus. Inactive windows remain available behind other apps rather than hiding automatically. Full-screen auxiliary eligibility is retained independently of window level.
-- CI explicitly builds both panel_smoke and settings_smoke and retains their captures.
+### Static, asset, and Linux integration checks
+- Verified PNG integrity, mascot alpha channel, identical UI resource packaging across the app and both smoke executables, and shared external-inline caches across screens.
+- Confirmed native AppKit views, regular app activation (`NSApplicationActivationPolicyRegular`, no `LSUIElement`), and a normal window level (non-floating, full-screen auxiliary eligible, preserves source-app focus during selection translation).
+- Static contrast calculations (compositing the paper texture's extrema at 3.5%; saved in `build/ui-validation/static-checks.json`) are at least 4.59:1 on the textured light header, 4.70:1 on primary buttons, and 4.5:1 for body, secondary text, and settings status colors.
+- Libclang 18.1.1 parsed the UI sources, `AppDelegate`, and both smoke tests against the macOS 14.5 SDK (arm64 macOS 14) with zero errors (syntax/API check only; reports under `build/`).
+- After rebasing onto configurable-shortcuts `main`, the portable CMake build, `git diff --check`, and 2/2 Linux CTests (`copy_gesture`, `shortcuts`) passed (without exercising AppKit).
 
-## Component consistency follow-up
+### Native CI acceptance and follow-up reviews
+- **Automated AppKit smoke coverage:** `panel_smoke` and `settings_smoke` exercise both themes, initial/minimum sizes, appearance repainting, layout bounds, wrapping, independent scrolling, EN/JA and forced reverse translation, streaming edits, `Esc`/`Command-W`/native close, Copy/Copied/reset, and Settings states. Baseline CI for commit `8e556e2` passed; follow-up runs and earlier consistency results are linked in [PR #5](https://github.com/my-name-is-yu/Bawan/pull/5) (`8e556e2` captures do not validate later follow-up changes).
+- **Component consistency:** Unified the 80pt masthead (centered 72pt mascot, no wordmark; Settings label inset 24pt left, return button right), fixed darker vermilion pressed state, 3pt hard shadows on enabled Translate/Cancel, Copy, and Swap buttons, ICC-aware color sampling, and alignment-rectangle spacing checks.
+- **Mascot & controls:** `mascot_smoke` verifies tilt/hop/shake click playback and cancellation (exit, navigation, close, Reduce Motion) using one 144px downsampled bitmap without polling timers. Key recorder and press-count controls share a 28pt face and 13pt type; `Command-Return` mirrors Translate/Cancel; status messages use semantic roles and explicit recording/paused/key-release-wait states.
+- **Settings & usability:** Settings run as a retained view controller inside the shared panel (non-recording `Esc` and back return without clearing or cancelling; leaving Settings stops recording while keeping held-key release protection). Follow-ups added prefix-preserving streaming appends that auto-scroll only within one line of the end, on-demand permission help, product-driven error scroll-into-view, explicit initial focus, and shared paper-textured scroll gutters with no added timers or background observers.
 
-- Primary pressed color is a fixed darker vermilion in both themes; bitmap-based tests require at least 4.5:1 text contrast.
-- Translate/Cancel, Copy and Swap share the primary action's 3pt hard shadow while enabled, using each face's own rounded or cut-corner silhouette. Disabled actions have no shadow; settings inputs and icon-only buttons remain flat. Existing light/dark captures cover the enabled actions.
-- Both mastheads share an 80pt height and centered 72pt mascot, with no wordmark. Settings places its label at the left with a 24pt inset and keeps the return action at the right.
-- Both screens share a hover view and one downsampled 144px dog bitmap. A fixed medallion surrounds a masked dog layer with separate ears and eyelids. Pointer entry and clicks cycle through tilt, hop and shake, each with a finite 280ms blink/ear gesture. A click replaces active playback from its presentation state. Exit, navigation, close and Reduce Motion cancel playback; no frame sequence or polling timer is retained. `mascot_smoke` checks the three choices once each, click playback/replacement, and reports decoded pixel bytes, which are not a whole-app memory measurement.
-- Key recorder and press-count controls retain AppKit tracking, menus and focus while sharing a 28pt face, 13pt type, warm background and dark border. Tests read the rendered face to detect native bezel overpainting.
-- The gold swap button keeps its clipped corners. Reset and section icons share explicit Medium symbol sizing.
-- Informational, warning and error messages receive explicit semantic roles. Recording, paused and key-release-wait states replace the misleading ready status while listening is suspended.
-- Command-Return invokes the same primary action as clicking: translate while idle and cancel while busy. Tests require cancellation without starting a new translation.
-- Input faces and primary-button contrast are sampled using the capture's own ICC color space before converting to sRGB. AppKit's generic color wrapper must not reinterpret the raw display samples.
-- Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
-- Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Settings cannot undo hidden translator edits; a newly selected passage returns to the translator before clearing the previous editing session. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
-- The original vintage implementation and earlier consistency results are available from [PR #5](https://github.com/my-name-is-yu/Bawan/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
+## Outstanding Verification (Blocking)
 
-## Lightweight usability follow-up
+Content-view captures omit native titlebar overlays and cross-app interaction, and whole-app RAM/CPU measurements remain unrecorded. The earlier build and CI results above are historical evidence, not completion of these checks. Do not mark this report as passed until all checks below pass on an Apple Silicon Mac:
 
-- The initial footer hint is shown only before input/output and is hidden during translation.
-- Prefix-preserving streaming updates append only the new tail to the existing text store. Output follows the end only when the reader is already within one line of it; native layout is resolved before following. Reading positions use document coordinates and temporary geometry, without retaining an old translation or adding scroll observers, timers or layout polling.
-- Settings expose shortcut editing and press-count labels, show permission instructions only when needed, and move detailed guidance to an on-demand native help dialog. Input Monitoring and Accessibility remain optional for manual typing/pasting.
-- Newly displayed settings errors are brought into view by the product, rather than by the smoke-test fixture. Settings entry has an explicit initial focus and keeps keyboard traversal inside the current screen.
-- A shared native scroll configuration uses the paper palette and grain in Settings and both translation panes, including legacy scroller gutters.
-- Existing views and image caches are reused. No background observer, timer or animation is added for this follow-up. Whole-app RAM/CPU measurements remain a separate manual check below.
-- Copy Translation/Copied and copying partial output remain unchanged, as requested by the user.
+1. **Native build, signature, and tests:**
+   ```sh
+   ./scripts/build.sh -DBAWAN_BUILD_TESTS=ON
+   cmake --build build --target shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke --parallel 3
+   codesign --verify --strict build/Bawan.app
+   ctest --test-dir build --output-on-failure
+   ```
+2. **Reference comparison:** Compare `build/panel-smoke/` and `build/settings-smoke/` captures against `design/vintage-reference.png` using matching sample text and viewport.
+3. **Full-window visual QA:** Inspect a live window screenshot for native traffic-light spacing relative to the medallion, as well as window focus, drag, and close behavior.
+4. **Live OS & app behavior:** Verify macOS Reduce Motion and Increase Contrast settings, selection translation without stealing focus from other apps, and both translation directions in the running app.
 
-## Blocking verification
+## Whole-App Resource Acceptance
 
-The original UI implementation workspace was Linux. Native arm64 builds, signature validation and AppKit smoke checks run in macOS CI; the baseline run for commit 8e556e2 completed successfully, and follow-up runs are linked from PR #5. The AppKit content-view captures support component comparisons but omit native titlebar overlays and interactive operation in other apps. Full-window visual QA and real-app focus/permission/resource checks remain unverified, so the overall report stays blocked on those checks.
+Measure before and after on the same Mac, recording commits, hardware/RAM, macOS, Release configuration, model SHA256, fixed EN/JA input, direction, window size, theme, and identical sampling settings. Complete model setup first and run only one Bawan process. For a comparison with an older minimum height, use matching dimensions such as 720×640pt.
 
-On an Apple Silicon Mac:
+- Warm up both themes and major UI states, then complete one translation in each direction. Measure each theme separately.
+- After the 60-second model-release deadline (for example, at 65 seconds), record CPU, RSS, and physical footprint with the panel both open and closed. Keep RSS and footprint separate. Use Metal System Trace to check for continuous idle GPU work.
+- Record translation CPU time, average CPU (one core = 100%), peak RSS, and peak physical footprint with the same input and sampling settings in both versions.
+- After warmup, run 20 cycles of open → translate → translate a longer cancellation input → cancel after streaming starts and before completion → close. Use the same fixed passage repeated 20 times for cancellation. At 0/5/10/20 cycles, let cancellation and the main run loop settle, then record resources in the same closed state.
+- Compare Allocations generations and Memory Graph at those checkpoints: one reused panel, with no cycle-proportional growth in app-owned views, constraints, callbacks, notification registrations, or retained strings. Investigate retained owners before treating OS caches or memory high-water marks as leaks; record causes rather than imposing arbitrary MB/% thresholds.
 
-```sh
-./scripts/build.sh -DBAWAN_BUILD_TESTS=ON
-cmake --build build --target shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke --parallel 3
-codesign --verify --strict build/Bawan.app
-ctest --test-dir build --output-on-failure
-```
-
-Compare native captures in `build/panel-smoke/` and `build/settings-smoke/` with the selected reference using the same sample text and viewport. Content-view captures omit OS titlebar overlays: inspect a real window screenshot for the traffic lights, their spacing from the medallion, and native focus/drag/close behavior. Check the actual OS Reduce Motion and Increase Contrast settings, selection translation without taking focus, and both language directions in the running app.
-
-Do not change this report to passed until the native build, tests, full-window review and reference comparison pass. Whole-app resource measurements remain separately documented in README.
-
-## Expanded text-area verification
-
-- [Native CI run 43360514233](https://github.com/my-name-is-yu/Bawan/actions/runs/43360514233) for implementation commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c` passed arm64 build/signature checks, all five CTests, pointer feedback and official-model translation.
-- Inspected the new light and minimum-size dark captures. Both pane tops are 24pt below the masthead, and native smoke tests retain direction, reverse-translation, long-text scrolling and accessible source/translation roles.
-- The deleted bands and rules, their constraints and display-only language state are removed rather than hidden.
+Use external tools without adding product monitoring loops or logs. Save conditions, before/after values, findings, screenshots, and Instruments traces under a reviewable path such as `build/ui-validation/`. `engine_profile` excludes AppKit and uses two of its 20 translations for warmup; it does not replace these 20 post-warmup UI cycles. Linux RSS does not establish macOS physical footprint or whole-app resource use.

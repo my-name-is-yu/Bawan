@@ -1,35 +1,27 @@
 # Bawan
 
-Apple Silicon・macOS 14以降向けの、英語↔日本語の常駐翻訳アプリです。
-文章を選択して⌘Cを400ms以内に2回押すと、カーソル付近に原文と訳文を表示します。
-⌥Tを2回押すか、メニューバーの「Open Translator」から画面を開き、原文を手入力できます。
-どちらのグローバル操作も「Settings…」で個別にオン・オフを切り替え、キーの組み合わせと押す回数を変更できます。
-Dockと⌘Tabにも表示され、翻訳パネルを閉じた後も常駐します。
-翻訳・設定画面は呼び出したときに前面へ表示し、その後は通常のウィンドウとして扱います。別のアプリを操作するとその後ろへ回り、全デスクトップへの常時表示は行いません。
+Bawan is a resident English ↔ Japanese translation app for Apple Silicon Macs running macOS 14 or later.
 
-翻訳パネルは原文と訳文を左右に並べ、OSのライト／ダーク設定に追従します。
-朱赤のヘッダー、犬の紋章、紙色の背景と金茶のアクセントを使い、設定画面も同じヴィンテージ調に揃えています。
-欧文はGeorgia、和文はヒラギノ明朝を使います。採用したデザインは`design/vintage-reference.png`です。
-左右の本文をヘッダーの24pt下から表示し、見出し帯・言語ラベル・横罫線の分を文章の領域に充てています。中央のボタンで原文と訳文を入れ替えます。
-フッターには朱赤の翻訳ボタンと枠付きのコピーボタンを配置し、モデル準備・エラー・権限の案内には必要な高さだけ確保します。
-翻訳・コピー・入れ替えの操作ボタンは、同じ3ptの硬い影で厚みを揃えます。無効時は影を消し、設定の入力欄とアイコンボタンは平面で表示します。
-翻訳画面では左上の標準ボタン、Esc、⌘Wでパネルを閉じられます。右上の歯車とメニューの「Settings…」は、同じウィンドウ内で設定画面へ切り替えます。
-設定のヘッダーにある「‹ Translator」またはEscで翻訳画面へ戻り、文章・スクロール位置・入力履歴を引き継ぎます。キーの記録中にEscを押すと、まず記録だけを取り消します。設定の本文は縦にスクロールでき、長いエラーもウィンドウを広げずに読めます。標準の赤ボタン、またはキーを記録していないときの⌘Wでウィンドウを閉じます。
-翻訳画面と設定画面のヘッダーは同じ寸法を使い、設定のキー入力・回数選択も紙色の面、濃茶の枠、同じ文字サイズに揃えています。
-入力後はフッターの初期案内を隠します。逐次出力は増えた部分だけ追記し、長い訳文を上へ戻って読んでいる間はその位置を保ちます。末尾付近を見ているときだけ続きを追従します。
-通常案内・警告・エラーは共通の色で区別します。ショートカット記録中は「Recording shortcut…」、キーの解放待ちは「Waiting for key release…」と表示し、一時停止している操作を「Shortcut ready」とは表示しません。
-アプリ独自の文言は英語です。OS由来の案内やエラーはOSの言語に従います。
-フッターのボタンはマウスで押すと120msの短い押下表現を返し、コピー成功時には「Copied」とチェックを表示します。
-ヘッダーの犬はホバーやクリックのたびに、傾く・跳ねる・左右に揺れる動きを順に1回ずつ再生し、まばたきと耳の動きを添えます。再生中のクリックは現在の見た目から次の動きへ切り替わります。丸い背景と枠は固定です。表示用の144px画像1枚を両画面で共有し、Core Animationで犬の部分だけを動かします。待機中の再生タイマーや連番画像は持ちません。
-キーボード操作・ウィンドウの開閉・逐次出力は即時のままです。macOSの「視差効果を減らす」では押下の動きを省き、「コントラストを上げる」では紙の質感を省いて境界線と補助文字を強めます。
+Select text in any app and press `⌘C` twice within 400 ms to display the source text and translation near your cursor. You can also press `⌥T` twice—or choose **Open Translator** from the menu bar—to open the window for manual input. Both global shortcuts can be enabled, disabled, and customized individually in **Settings…**.
 
-AppKit / Objective-C++ / C++17で実装し、llama.cppを静的リンクしています。
-推論はMetalを使ってアプリの1プロセス内で動作します。
-Electron、Rust、Python、外部の推論サーバーは利用しません。
+Bawan stays resident in the Dock and `⌘Tab` switcher after you close the translation panel. The panel comes to the front when invoked and behaves like a standard window afterward, moving behind other apps when unfocused.
 
-## ビルド・起動
+## Features & Design
 
-Apple SiliconのMacに、AppleのCommand Line ToolsとCMakeを用意してください。
+- **Native single-process architecture:** Built with AppKit, Objective-C++, and C++17, statically linking `llama.cpp` for local Metal inference. No Electron, Rust, Python, or external inference server is used.
+- **Offline translation:** Works completely offline once the model is downloaded.
+- **Side-by-side UI:** Displays source and translated text side by side, follows macOS Light/Dark appearance, and supports macOS **Reduce Motion** and **Increase Contrast** accessibility settings.
+- **Streaming & controls:** Streams translation output incrementally without losing your scroll position when reading earlier text, and includes a swap (`⇄`) button to reverse translation direction.
+- **Privacy & memory efficiency:** Writes no translation history files or logs. The model loads lazily on first use and unloads automatically after 60 seconds of inactivity.
+
+## Building & Installing
+
+### Prerequisites
+
+- Apple Silicon Mac (macOS 14+)
+- Apple Command Line Tools and CMake
+
+### Build from Source
 
 ```sh
 xcode-select --install
@@ -38,84 +30,78 @@ cmake --version
 open build/Bawan.app
 ```
 
-初回のビルドでは、固定版llama.cpp b12307のソースを取得してSHA256を確認します。
-取得物・中間ファイル・完成したアプリはすべてリポジトリ内の同じビルドディレクトリに置きます。
-再実行は増分ビルドです。アプリの利用者にはCMakeや開発ツールは必要ありません。
+The first build downloads `llama.cpp` (`b12307`) and verifies its SHA256 checksum. All downloads, intermediate files, and the built app stay inside `build/`. Subsequent runs perform incremental builds. End users do not need CMake or developer tools to run the built app.
 
-継続して使う場合は、終了してからアプリをApplicationsへコピーし、その場所から開いて権限を設定してください。
-ログイン起動も、アプリを置く場所を決めてから有効にしてください。
+### Install to Applications
+
+For regular use, quit the app, copy it to `/Applications`, and launch it from there before granting macOS permissions or enabling Launch at Login:
 
 ```sh
 ditto build/Bawan.app /Applications/Bawan.app
 open /Applications/Bawan.app
 ```
 
-既定では個人用のad-hoc署名を行います。自分の署名IDを使う場合は次のように指定できます。
+Builds use ad-hoc signing by default. To sign with your own identity:
 
 ```sh
 ./scripts/build.sh -DBAWAN_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
 ```
 
-ビルド出力を消す場合は、アプリを終了してからリポジトリのビルドディレクトリを削除してください。
-Application Supportに保存したモデルとmacOSの権限設定は別に保持されます。
+To clean build artifacts, quit Bawan and delete `build/`. The downloaded model in Application Support and your macOS permissions are stored separately.
 
-## 初回セットアップ・使い方
+## Setup & Usage
 
-1. 初回起動時に公式PLaMoモデル約573MBを取得し、サイズとSHA256を確認します。進捗は画面とメニューバーに表示します。失敗した場合はメニューの「Retry Model Setup」を使ってください。
-2. メニューの「Settings…」を開き、各ショートカットに表示される権限を許可してください。初期設定の選択翻訳には「入力監視」、翻訳画面の呼び出しや変更したキーでの選択翻訳には「アクセシビリティ」を使います。権限がなくても「Open Translator」から手入力で翻訳できます。
-3. 他のアプリで文章を選択し、⌘を押しながらCを2回押します。⌘を各回で押し直す操作にも対応します。
-4. 手入力する場合は、⌥を押しながらTを2回押すか、メニューの「Open Translator」を選びます。表示中の画面を呼び出すと、位置・原文・訳文・翻訳状態を保って原文欄にフォーカスします。
-5. 必要に応じて原文を編集して再翻訳し、「Copy Translation」を押します。中央の⇄は訳文を原文側へ移し、逆方向に翻訳します。翻訳中や訳文がない場合は無効です。画面内では⌘Returnで翻訳し、翻訳中に押すとボタンと同じく中止します。⌘⇧Cで訳文コピー、Escで閉じます。
+1. **Model download:** On first launch, Bawan downloads the official PLaMo model (~573 MB) and verifies its file size and SHA256 checksum. Progress appears in the window and menu bar. If setup fails, choose **Retry Model Setup** from the menu.
+2. **Permissions:** Open **Settings…** from the menu bar (or the gear icon) and grant the permissions shown for your shortcuts:
+   - **Input Monitoring** is required for the default `⌘C` ×2 selection translation.
+   - **Accessibility** is required for opening the translator (`⌥T` ×2) or using a custom shortcut for selection translation.
+   - Manual translation via **Open Translator** works without either permission.
+3. **Translate selected text:** Highlight text in another app and press `⌘C` twice (releasing `⌘` between presses also works).
+4. **Translate manually:** Press `⌥T` twice or select **Open Translator**. Invoking the shortcut while the window is already open preserves its position, text, and translation state while focusing the source field.
 
-### ショートカットの設定
+### In-Window Shortcuts
 
-| 操作 | 初期設定 | 権限 |
+| Action | Shortcut |
+| --- | --- |
+| Translate / Cancel active translation | `⌘Return` |
+| Copy translation | `⌘⇧C` |
+| Swap source and translation | `⇄` button |
+| Close translator | `Esc` / `⌘W` |
+
+In Settings, `Esc` cancels shortcut recording first; otherwise it returns to the translator with text, scroll position, and editing history preserved. `⌘W` closes the shared window when shortcut recording is inactive.
+
+### Customizing Shortcuts
+
+| Action | Default | Permission Required |
 | --- | --- | --- |
-| 選択した文章を翻訳 | ⌘Cを2回 | 入力監視 |
-| 翻訳画面を開く | ⌥Tを2回 | アクセシビリティ |
+| Translate selected text | `⌘C` (2 presses) | Input Monitoring |
+| Open translator | `⌥T` (2 presses) | Accessibility |
 
-どちらも初期状態ではオンです。「Settings…」の各行で個別にオン・オフを切り替え、キーの記録欄を押して希望する組み合わせを入力できます。⌘・⌥・⌃のいずれかを含む修飾キーと通常キーを組み合わせ、1回押しか2回押しかを選びます。文字だけ・修飾キーだけの割り当て、Bawanの固定操作に使う⌘Return・⌘⇧C・⌘Q・⌘,、有効なもう一方の操作と同じキーの組み合わせは保存できません。押す回数を変えても同じ組み合わせは重複と扱います。各行から初期設定に戻すこともできます。
+In **Settings…**, click **Shortcut (click)** to record a new key combination and choose **1** or **2** presses:
 
-2回押しの間隔は400ms以内で、1回目と2回目の間に通常キーを離す必要があります。長押し、別のキーを挟む操作、前面アプリをまたぐ操作は実行しません。初期設定の⌘C 2回以外は、途中で修飾キーを変えた場合も取り消します。
+- Shortcuts must combine at least one modifier (`⌘`, `⌥`, or `⌃`) with a regular key.
+- Reserved app shortcuts (`⌘Return`, `⌘⇧C`, `⌘Q`, `⌘,`) and combinations already used by the other active action cannot be assigned.
+- Double-press shortcuts require both presses within 400 ms, releasing the key between presses without holding it down, pressing other keys, or switching apps.
+- Unlike the default `⌘C` ×2 (which preserves normal copy behavior), custom shortcuts are intercepted from the first press and are not forwarded to the active app even if a double-press is not completed.
+- Custom shortcuts for selection translation trigger a copy in the active app after key release and require Accessibility permission.
 
-初期設定の⌘C 2回では通常のコピーがそのまま機能します。それ以外の割り当ては、1回目からBawanがキー操作を受け取り、元のアプリには渡しません。2回押しが成立しなくても1回目の操作を元のアプリに送り直すことはありません。普段使う操作と重ならない組み合わせを選んでください。変更したキーで選択翻訳を行う場合は、キーを離してから元のアプリにコピーを要求し、クリップボードの更新を確認して翻訳します。この操作にはアクセシビリティの許可が必要です。
+### Translation Behavior
 
-入力監視とアクセシビリティの許可は別々です。設定画面には各操作が使えるか、どの許可が必要かを表示します。キーの記録中は翻訳や画面の呼び出しを実行しません。割り当てを変更するとすぐ反映され、次回起動時も保持されます。以前の版で選択翻訳をオフにしていた場合は、その設定を引き継ぎます。
-キー欄の「Shortcut (click)」を押して記録し、「Presses」で押す回数を選びます。詳細な操作やキーの予約に関する説明は、ショートカット欄のHelpから必要なときだけ開けます。権限不足時の案内と、新しく発生した設定エラーは画面内に表示します。
+- **Auto-direction:** Text containing kana or kanji translates Japanese → English; all other text translates English → Japanese. Clicking `⇄` flips the previous direction rather than re-detecting from the translated text.
+- **Limits:** Designed for a few sentences up to a few paragraphs (4,096-token input limit including prompt overhead; 4,096-token output limit, using Q4_K_M weights and F16 KV cache). Oversized input is rejected with a message; output that reaches the generation limit is marked incomplete.
+- **Clipboard safety:** If copying selected text fails (e.g., copy-protected views, image-only selections, or Secure Keyboard Entry), Bawan will not translate stale clipboard contents. Use manual input in these cases or if clipboard access is denied.
 
-モデル取得後はオフラインで翻訳できます。起動時はモデルファイルの確認だけを行い、推論エンジンは翻訳画面を呼び出した時か、最初の翻訳要求で作成します。
-モデルの確認・取得中に選択翻訳を要求した場合は、最新の1件だけを待たせ、準備できたら自動で翻訳します。画面を閉じるか中止すると、その要求も破棄します。
-モデルの読込中も取消でき、続けて届いた翻訳要求は進行中の読込を再利用します。設定画面を開くだけではモデルを読み込みません。
-最後の翻訳・読込が終わってから60秒間要求がなければ、モデルと推論バックエンドを解放します。ワーカーは期限まで休眠し、定期ポーリングは行いません。次の翻訳時はモデルを再び読み込むため、その分だけ表示開始が遅くなります。
-推論コンテキスト・バッチ・サンプラーは翻訳ごとに作成し、完了・取消・エラーの通知前に解放します。SWA（直近のトークンを参照する層）のキャッシュは必要量だけ確保します。
-モデルはQ4_K_M、KVキャッシュはF16、入出力上限は各4,096トークンを維持します。追加の量子化は行いません。
-解放後もアロケーターやMetalが領域を保持する場合があるため、実メモリの削減量と復帰時間は実測で判断します。LinuxのRSSをmacOSのphysical footprintやアプリ全体の使用量として扱わないでください。
-原文・訳文の履歴ファイルやログは作りません。ログイン起動の初期値はオフです。
-途中訳文のUI配送は、main queueが処理できるまで同一要求の連続した全文スナップショットを最新1件にまとめます。完了・取消・エラーなどの通知順序と最終訳文は維持し、推論・量子化・トークン上限は変更しません。
-UIは1つのパネルとそのビュー・制約を再利用し、追加の全文キャッシュやイベント履歴を保持しません。
-テーマ変更や逐次出力はイベントに応じて表示だけを更新し、待機中の定期ポーリングや常時アニメーションは行いません。
-
-自動方向は、かな・漢字を含む文章を日本語→英語、それ以外を英語→日本語として扱います。
-⇄では訳文に含まれる文字から再判定せず、直前の翻訳方向を反転します。
-入れ替えた文章の再翻訳ではその方向を維持し、新しい選択文や手入力での編集は自動判定に戻ります。
-対象は数文〜数段落です。入力上限はPFML3を含め4,096トークン、生成上限は4,096トークンです。
-入力超過は案内を表示し、生成上限まで達した訳文は未完と表示します。
-
-コピー結果を取得できない場合は、以前のクリップボードを翻訳しません。
-コピー禁止の画面、画像だけの選択、Secure Keyboard Entry中は手入力を使ってください。
-OSによってクリップボード読み取りの許可が表示される場合があります。拒否した場合も手入力は利用できます。
-
-モデルの保存先：
+### Model Location
 
 ```text
 ~/Library/Application Support/local.bawan.Bawan/plamo-3-translate-0.8b-Q4_K_M.gguf
 ```
 
-Bawanは独立したBundle IDと保存先を使います。別のアプリの設定やモデルは移行せず、初回起動時にモデルをダウンロードします。macOSの権限とログイン起動もBawanで設定してください。
+Bawan uses its own bundle ID and storage directory and does not migrate models or settings from other apps.
 
-## 検証
+## Testing & Verification
 
-通常の製品ビルドにはテストやCLIは含めません。追加する場合も同じビルドディレクトリを使います。
+Tests, smoke checks, and profiling tools are excluded from standard release builds. To build and run them locally on Apple Silicon:
 
 ```sh
 ./scripts/build.sh -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
@@ -124,27 +110,14 @@ ctest --test-dir build --output-on-failure
 ./build/engine_smoke "$HOME/Library/Application Support/local.bawan.Bawan/plamo-3-translate-0.8b-Q4_K_M.gguf"
 ```
 
-`shortcut_tests`では、実アプリで使う共通の状態機械で従来のダブルコピー操作に加えて、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元、不正な値の初期値への復帰、廃止された設定を読み込まないことも確認します。
-`panel_smoke`と`settings_smoke`はAppKitの画面・操作・レイアウト・ウィンドウ再利用を確認し、`build/panel-smoke/`と`build/settings-smoke/`へキャプチャを保存します。これらは実アプリ上のグローバルキーやOS権限の許可・取消を検証するテストではありません。
-`mascot_smoke`は3種類のホバーをそれぞれ1回再生し、クリックでの再生・切り替え、枠の固定、縮小画像の共有、有限時間での終了と離脱時の解除を確認します。キャプチャは`build/mascot-smoke/`へ保存します。
-`engine_event_mailbox_tests`はモデル不要で、UI停止中の途中訳文集約、通知順序、再配送、並行配送を確認します。
-`engine_lifecycle`はモデル不要で、遅延初期化、存在しないモデルの読込エラー、再試行、未使用時の終了を確認します。`app_delegate_smoke`はmacOSで準備中の要求取消・読込失敗の案内・古いエンジンの通知破棄を確認し、モデル取得やグローバルキー監視は開始しません。
-実モデルのテストは初回の自動ロード、warmupの非干渉、待機後の解放・再ロード、英日両方向、連続翻訳での独立した文脈、UTF-8・入力上限エラー後の復帰、2,048トークンを超える入力、逐次出力、読込中・翻訳中の取消とその後の復帰を確認します。待機のテストには短い期限を指定し、製品の60秒待機を短縮して検証します。
-任意の文章を1回翻訳することもできます。
+You can also run single-string inference or resource profiling against a local GGUF model:
 
 ```sh
-./build/engine_smoke /path/to/model.gguf '会議は来週の月曜日に変更されました。'
-```
-
-常駐リソースの測定用に`engine_profile`も用意しています。モデルを読み込む前の待機5秒のCPU、初回のモデル読込、20回の翻訳、待機後のモデル解放、再読込後の翻訳を順に測定します。測定用には待機期限を1秒に短縮しています。
-最初の訳文までの時間・完了時間・RSS・プロセスのピーク使用量を出力し、macOSではphysical footprintも記録します。翻訳時間には各要求のコンテキスト作成を含み、`reload_first_token_ms`には解放後のモデル再読込も含みます。
-逐次出力時のRSS・physical footprintの最大観測値と、完了直後・待機後に解放した状態を別に記録します。逐次出力時の値は常時サンプリングしたピークではなく、測定自体にもわずかな負荷があります。これは推論部分の測定で、AppKit画面などを含むアプリ全体の測定は下記の実機確認で行います。
-
-```sh
+./build/engine_smoke /path/to/model.gguf 'The meeting has been moved to next Monday.'
 ./build/engine_profile /path/to/model.gguf
 ```
 
-Linuxではアプリを作らず、同じ推論コードをCPUで検証できます。
+On Linux, you can build and test the CPU inference engine without the macOS app target:
 
 ```sh
 cmake -S . -B build -DBAWAN_BUILD_APP=OFF -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
@@ -153,75 +126,10 @@ ctest --test-dir build --output-on-failure
 ./build/engine_smoke /path/to/model.gguf
 ```
 
-GitHub ActionsのCIは使用しません。ビルド・署名確認・実モデルテストは、上記の手順でApple SiliconのMac上でローカル実行してください。
-ショートカットのOS権限と、他アプリへのキー入力の抑止について、実機検証結果は未記録です。
-これと別に、リリース前には実Macで以下を確認してください。
+GitHub Actions CI is not used; run builds, signature checks, and real-model tests locally. Live shortcut permissions and key interception checks, full-window UI acceptance, and whole-app resource measurements remain unrecorded. See the [UI QA record](design-qa.md) for evidence and outstanding checks. Engine profiling excludes AppKit and does not establish whole-app memory use or Metal performance from Linux RSS.
 
-- Safari・Chrome・TextEdit・Preview・VS Codeでの選択翻訳、通常コピー、同一文の再翻訳、選択なし・画像コピー。
-- 初期設定の⌘C 2回・⌥T 2回、カスタムキーの1回・2回、400msの境界、キーの長押し、途中の別キー・修飾キー・アプリ切替。初期⌘C以外は1回目が元のアプリへ渡らず、不成立時も再送しないこと。
-- キーの記録・取消・無効な組み合わせ・押す回数が異なる重複・初期設定への復元。各操作のオン・オフ、変更直後の反映、再起動後の保持、旧版で選択翻訳をオフにした設定の移行。
-- 入力監視のみ許可・アクセシビリティのみ許可・両方拒否・許可の取消で、各操作の利用状態と案内が一致すること。権限拒否・コピー失敗・待機中のアプリ切替で以前のクリップボードを翻訳しないこと。
-- 表示中の翻訳画面をショートカットで呼び出したときに位置・原文・訳文・翻訳状態を保ち、原文へフォーカスすること。画面内の⌘Return・⌘⇧C・Escと、通常の⌘C・IME入力。
-- 入力監視・クリップボード権限の拒否と取消、スリープ復帰、複数画面、フルスクリーン、表示時の元アプリのフォーカス維持。
-- ダウンロード中断からの再試行、取得後のオフライン起動、翻訳中の閉じる・中止・終了。
-- アクティビティモニタで待機60秒のCPU・実メモリ、翻訳中のピーク、繰り返し翻訳後の使用量。ファイルサイズと実メモリ量は別に記録する。
-- InstrumentsのMetal System Traceで、待機中に継続的なGPU処理がないこと。Metalでの初回出力時間と翻訳完了時間も記録する。
+## Model & Licenses
 
-### UIと実アプリの資源回帰確認
+Built with PLaMo. Bawan uses the official [PLaMo 3 Translate 0.8B GGUF Q4_K_M](https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF) model unmodified under the **PLaMo Community License** (intended for personal use; check the official model card for other usage terms).
 
-実機の画面照合と資源測定は、ネイティブビルド・推論テストとは別の受入条件です。
-`engine_profile`はUIを含まず、20回のうち最初の2回をウォームアップに使います。以下の「ウォームアップ後20サイクル」の代わりにはなりません。
-実機測定結果は未記録です。この手順の記載だけでUIや省メモリ性を検証済みとはしません。
-
-**条件を固定する**
-
-変更前後のコミット、Mac機種・メモリ、macOS、Releaseビルド設定、モデルのSHA256、入力文・方向、ウィンドウ寸法、テーマを記録します。
-同じMacで同じ条件を使い、変更前後を順に測定してください。比較用のウィンドウは旧版の最小高も満たす同じ寸法（例：720×640pt）にし、テーマ別に結果を分けます。
-モデルのダウンロード・検証は先に済ませ、別のBawanプロセスを同時に起動しません。入力文には下の固定サンプルを使用し、中止用には同じ文を改行で20回連結した長文を両版で使用します。
-
-```text
-EN → JP: The meeting has been moved to next Monday. Please review the updated document and send your feedback by Friday.
-JP → EN: 会議は来週の月曜日に変更されました。更新された資料を確認し、金曜日までにフィードバックをお送りください。
-```
-
-**画面と操作を確認する**
-
-- ライト／ダーク、表示中の外観変更、初期720×500ptと最小640×420pt、長文の独立スクロールを確認し、同じ文章・状態の実画面を採用案と照合します。
-- 空入力、英日両方向の自動判定、中央の入れ替えと再翻訳、逐次出力、Copy Translation、中止、入力上限、生成上限、モデル準備・失敗、Settingsへの導線を確認します。アプリ独自の文言・ツールチップ・アクセシビリティラベルが英語であることを確認します。
-- ⌘Returnの翻訳・再翻訳・翻訳中の中止、⌘⇧Cの訳文コピー、Escと閉じるボタンの取消、選択翻訳時の元アプリのフォーカス維持、手入力時の編集・ペースト・Undoを確認します。
-- マウスでフッターのボタンを連打・押したままドラッグアウトしても、反応が遅れたり縮小したままにならないことを確認します。キーボードでは押下の動きを追加せず、コピー成功表示は訳文が変わるか閉じるまで保持します。同じ全文を受け取る最後の翻訳イベントでは確認を消しません。
-- 「視差効果を減らす」の有効／無効と「コントラストを上げる」で確認します。押下は同じ小さなレイヤー上の有限アニメーション1つを置換し、タイマー・周期的更新・コピーした全文の保持を追加しません。動きの体感と翻訳負荷下の滑らかさはMacで確認してください。
-  「コントラストを上げる」はmacOSの実設定で確認します。high-contrast appearance名をウィンドウへ直接指定した画像は、この設定の検証結果に使いません。スモークテストは実行時の両アクセシビリティ設定値を記録します。
-  押下テストは実際に押した状態を描画してから、500ms以内の位置・表示の復帰と有限時間の終了を確認します。OSが終了済み情報を保持する場合も、所有するアニメーションのキーは1つに限定し、閉じた時には除去されることを確認します。
-
-**実アプリを測定する**
-
-1. 両テーマと主要UI状態を一度表示してから、測定対象のテーマに固定します。EN→JPとJP→ENを1回ずつ完了してウォームアップし、以降の回数には含めません。
-2. パネルを表示した状態と閉じた状態で、それぞれモデル解放期限を過ぎるまで（例：65秒）待機します。Activity Monitor／Instrumentsで実アプリのPIDを対象にCPU、RSS、physical footprintを記録します。RSSとphysical footprintは別指標で、合算しません。待機中に継続的なGPU処理がないこともMetal System Traceで確認します。
-3. 同じ固定入力の翻訳を測定し、完了までのCPU時間、平均CPU（1コア=100%）、ピークRSS・physical footprintを記録します。同じツールとサンプリング設定を両版で使用してください。
-4. 1サイクルを「表示→固定入力の翻訳完了→中止用の長文で再翻訳→最初の逐次出力後、完了前に中止→閉じる」として20回繰り返します。ウォームアップ直後の0回と5・10・20回終了後に、取消処理とmain run loopが落ち着いた同じ閉じた状態で資源使用量を記録します。
-5. Instruments Allocationsで0・5・10・20回に世代を区切り、生存オブジェクトを比較します。翻訳パネルが常に1つであり、アプリ所有のビュー・レイアウト制約・コールバック・通知登録・保持文字列が操作回数に比例して増えないことを確認します。登録数と同じパネルの再利用は、Memory Graphと該当コードも併せて確認してください。
-
-OS／AppKitの一時的なキャッシュやメモリ高水位だけでリークと判断せず、保持元と生存オブジェクトを追います。
-継続的な増加があれば原因を特定・修正し、同じ条件で再測定します。恣意的な許容MB／%で合格にせず、数値の差と原因を記録します。
-測定は外部ツールで行い、製品へ監視ループ・ログ蓄積・新しい常駐プロセスを追加しません。
-
-結果とスクリーンショット、Instrumentsのtraceは、例えば`build/ui-validation/`へ保存してレビューできるようにします。
-以下を変更前後・テーマ別に埋め、条件と保持オブジェクトの所見を添付してください。
-
-| 項目 | 変更前 | 変更後 | 差分・所見 |
-| --- | --- | --- | --- |
-| コミット／Mac／OS／ビルド設定／モデルSHA256／入力／方向／寸法／テーマ | 未記録 | 未記録 | 未記録 |
-| 表示中60秒：CPU・RSS・physical footprint | 未測定 | 未測定 | 未測定 |
-| 閉じた状態60秒：CPU・RSS・physical footprint | 未測定 | 未測定 | 未測定 |
-| 翻訳：CPU時間・平均CPU・ピークRSS・physical footprint | 未測定 | 未測定 | 未測定 |
-| 0／5／10／20回：RSS・physical footprint・CPU | 未測定 | 未測定 | 未測定 |
-| 生存パネル／ビュー／制約／コールバック／通知登録／保持文字列 | 未確認 | 未確認 | 未確認 |
-| 実画面の照合・操作・フォーカス・外観変更 | 未確認 | 未確認 | 未確認 |
-
-## モデルとライセンス
-
-Built with PLaMo. [PLaMo 3 Translate 0.8Bの公式GGUF Q4_K_M](https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF)を変更せずに利用します。
-モデルにはPLaMo Community Licenseが適用されます。個人利用を想定しており、他の用途の条件は公式モデルカードを確認してください。
-推論ライブラリ[llama.cpp](https://github.com/ggml-org/llama.cpp/tree/b12307)はMIT Licenseです。
-アプリのResourcesにはそのLICENSEと第三者ライセンスの案内を同梱します。
+Inference is powered by [llama.cpp](https://github.com/ggml-org/llama.cpp/tree/b12307) under the **MIT License**. License notices are bundled in the app's `Resources` directory.
