@@ -209,13 +209,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [masthead addSubview:mascot];
-    NSTextField *title = Label(@"Lore", LoreBrandLogoSize, NSFontWeightBold, LoreColor(LoreHeaderText));
-    title.identifier = @"settings-brand-name";
-    title.font = LoreLogoFont(LoreBrandLogoSize);
     NSTextField *subtitle = Label(@"Settings", 12, NSFontWeightRegular,
                                   LoreColor(LoreHeaderText));
     subtitle.identifier = @"settings-subtitle";
-    [masthead addSubview:title];
+    subtitle.alignment = NSTextAlignmentLeft;
     [masthead addSubview:subtitle];
 
     NSButton *back = [NSButton buttonWithTitle:@"Translator" target:self action:@selector(goBack:)];
@@ -422,14 +419,12 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
         [masthead.topAnchor constraintEqualToAnchor:root.topAnchor],
         [masthead.heightAnchor constraintEqualToConstant:LoreHeaderHeight],
-        [mascot.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:LoreBrandLeading],
+        [mascot.centerXAnchor constraintEqualToAnchor:masthead.centerXAnchor],
         [mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [mascot.widthAnchor constraintEqualToConstant:LoreBrandMarkSize],
         [mascot.heightAnchor constraintEqualToConstant:LoreBrandMarkSize],
-        [title.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:LoreBrandGap],
-        [title.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [subtitle.leadingAnchor constraintEqualToAnchor:title.trailingAnchor constant:20],
-        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:back.leadingAnchor constant:-16],
+        [subtitle.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:24],
+        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:mascot.leadingAnchor constant:-24],
         [subtitle.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
         [back.trailingAnchor constraintEqualToAnchor:masthead.trailingAnchor constant:-24],
         [back.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],

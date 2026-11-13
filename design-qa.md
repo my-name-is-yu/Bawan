@@ -28,15 +28,15 @@ final result: blocked
 
 - Both themes, initial and minimum sizes, paper-background repainting after appearance changes, header and footer bounds, loaded images, wrapping and separate text scrolling.
 - Both EN/JA translation directions, forced reverse translation, source editing during streaming, and reset for a new request.
-- Copy/Copied/reset behavior, native close, Esc, Command-W, cancellation, and 20 reuse cycles without rebuilding app-owned views/constraints.
-- Settings callbacks, permission/login states, long error scrolling, theme changes, and 20 navigation/reuse cycles in the same native window.
+- Copy/Copied/reset behavior, native close, Esc, Command-W and cancellation.
+- Settings callbacks, permission/login states, long error scrolling, theme changes and navigation in the same native window.
 - CI explicitly builds both panel_smoke and settings_smoke and retains their captures.
 
 ## Component consistency follow-up
 
 - Primary pressed color is a fixed darker vermilion in both themes; bitmap-based tests require at least 4.5:1 text contrast.
 - Translate/Cancel, Copy and Swap share the primary action's 3pt hard shadow while enabled, using each face's own rounded or cut-corner silhouette. Disabled actions have no shadow; settings inputs and icon-only buttons remain flat. Existing light/dark captures cover the enabled actions.
-- Both mastheads share 80pt height, 64pt mascot, 48pt wordmark, 80pt leading inset and 12pt brand gap. Settings place their subtitle beside the wordmark.
+- Both mastheads share an 80pt height and centered 64pt mascot, with no wordmark. Settings places its label at the left with a 24pt inset and keeps the return action at the right.
 - Key recorder and press-count controls retain AppKit tracking, menus and focus while sharing a 28pt face, 13pt type, warm background and dark border. Tests read the rendered face to detect native bezel overpainting.
 - The gold swap button keeps its clipped corners. Reset and section icons share explicit Medium symbol sizing.
 - Informational, warning and error messages receive explicit semantic roles. Recording, paused and key-release-wait states replace the misleading ready status while listening is suspended.

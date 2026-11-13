@@ -100,7 +100,7 @@ static void CheckBounds(NSWindow *window) {
             @"shortcut-key-heading", @"shortcut-presses-heading", @"shortcut-help",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
             @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
-            @"settings-brand-name", @"settings-subtitle", @"settings-back", @"settings-scroll"]) {
+            @"settings-subtitle", @"settings-back", @"settings-scroll"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -113,36 +113,30 @@ static void CheckBounds(NSWindow *window) {
     }
     NSView *header = FindView(root, @"settings-header");
     NSView *mascot = FindView(root, @"settings-mascot");
-    NSTextField *brand = (NSTextField *)FindView(root, @"settings-brand-name");
     NSView *subtitle = FindView(root, @"settings-subtitle");
-    NSRect brandFrame = [brand convertRect:brand.bounds toView:header];
     NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
     // Anchors measure alignment rectangles; text-field frames include native ornament insets.
-    NSRect brandAlignment = [brand.superview convertRect:[brand alignmentRectForFrame:brand.frame] toView:header];
-    NSRect mascotAlignment = [mascot.superview convertRect:[mascot alignmentRectForFrame:mascot.frame] toView:header];
-    CGFloat brandGap = NSMinX(brandAlignment) - NSMaxX(mascotAlignment);
+    NSRect subtitleAlignment = [subtitle.superview convertRect:[subtitle alignmentRectForFrame:subtitle.frame] toView:header];
     NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
     NSView *back = FindView(root, @"settings-back");
     NSRect backFrame = [back convertRect:back.bounds toView:header];
+    Require(FindView(root, @"settings-brand-name") == nil, @"The Settings header must omit the wordmark");
     Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
             std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
             std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
-            std::abs(brand.font.pointSize - LoreBrandLogoSize) < 0.1 &&
-            std::abs(NSMinX(mascotAlignment) - LoreBrandLeading) < 1 &&
-            std::abs(brandGap - LoreBrandGap) < 1,
+            std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
+            std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1 &&
+            std::abs(NSMinX(subtitleAlignment) - NSMinX(header.bounds) - 24) < 1 &&
+            std::abs(NSMidY(subtitleAlignment) - NSMidY(header.bounds)) < 1,
             [NSString stringWithFormat:
-        @"Settings branding must use the shared geometry and typography: "
-        @"headerHeight=%.2f expected=%.2f mascotBounds=%@ frame=%@ alignment=%@ expectedSize=%.2f "
-        @"leading=%.2f expected=%.2f brandFrame=%@ alignment=%@ font=%.2f expected=%.2f gap=%.2f expected=%.2f",
-        header.bounds.size.height, LoreHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), NSStringFromRect(mascotAlignment), LoreBrandMarkSize,
-        NSMinX(mascotAlignment), LoreBrandLeading, NSStringFromRect(brandFrame), NSStringFromRect(brandAlignment),
-        brand.font.pointSize, LoreBrandLogoSize, brandGap, LoreBrandGap]);
-    Require(NSContainsRect(header.bounds, brandFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
-            NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(brandFrame, subtitleFrame) &&
-            !NSIntersectsRect(brandFrame, mascotFrame) && !NSIntersectsRect(backFrame, brandFrame) &&
+        @"The Settings mascot must retain its size and stay centered, with the label 24pt from the left: "
+        @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f labelAlignment=%@",
+        NSStringFromRect(header.bounds), LoreHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), LoreBrandMarkSize, NSStringFromRect(subtitleAlignment)]);
+    Require(NSContainsRect(header.bounds, mascotFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
+            NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(mascotFrame, subtitleFrame) &&
             !NSIntersectsRect(backFrame, subtitleFrame) && !NSIntersectsRect(backFrame, mascotFrame),
-            @"Settings branding and Back must fit without overlapping each other");
+            @"The Settings label, centered mascot and Back must fit without overlapping each other");
     for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
                                    @"shortcut-panel-count"]) {
         NSControl *control = (NSControl *)FindView(root, identifier);
@@ -770,18 +764,6 @@ static void RunSmoke(void) {
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     CheckLegacyPaper(window, scroll);
     [window setFrame:settingsFrame display:NO];
-    for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
-        [back performClick:nil];
-        Require(window.contentView == translationRoot && !monitor.settingsActive,
-            @"Returning to translation must deactivate Settings without changing windows");
-        [gear performClick:nil];
-        Require(settings.view == root && window.contentView == root && settings.view.window == window &&
-            FindView(root, @"shortcut-selection-key") == selectionKey &&
-            FindView(root, @"settings-scroll") == scroll && FindView(root, @"settings-document") == document &&
-            FindView(root, @"shortcut-help") == help && window.attachedSheet == nil && NSEqualRects(window.frame, settingsFrame),
-            @"Twenty navigation cycles must reuse the same host, controller view and shortcut controls");
-        CheckBounds(window);
-    }
     [back performClick:nil];
     Require(source.undoManager.canUndo, @"The prior passage must still have undo history before the selection boundary check");
     [gear performClick:nil];
@@ -814,7 +796,7 @@ static void RunSmoke(void) {
         !window.visible && closes == 2 && !monitor.settingsActive,
         @"Command-W outside recording must close the same shared window exactly once");
     [defaults removePersistentDomainForName:suite];
-    std::cout << "settings_smoke_complete=true\nreused_navigation_cycles=20\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
+    std::cout << "settings_smoke_complete=true\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
 }
 
 int main(void) {

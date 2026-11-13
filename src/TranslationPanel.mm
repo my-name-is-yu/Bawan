@@ -404,10 +404,6 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [header addSubview:mascot];
-    NSTextField *name = Label(@"Lore", LoreBrandLogoSize, NSFontWeightBold, LoreColor(LoreHeaderText));
-    name.identifier = @"brand-name";
-    name.font = LoreLogoFont(LoreBrandLogoSize);
-    [header addSubview:name];
     LoreActionButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
     settings.image = LoreSymbol(@"gearshape", @"Settings", 20);
     settings.contentTintColor = LoreColor(LoreHeaderText);
@@ -471,17 +467,14 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [header.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [header.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [header.heightAnchor constraintEqualToConstant:LoreHeaderHeight],
-        [mascot.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:LoreBrandLeading],
+        [mascot.centerXAnchor constraintEqualToAnchor:header.centerXAnchor],
         [mascot.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [mascot.widthAnchor constraintEqualToConstant:LoreBrandMarkSize],
         [mascot.heightAnchor constraintEqualToConstant:LoreBrandMarkSize],
-        [name.leadingAnchor constraintEqualToAnchor:mascot.trailingAnchor constant:LoreBrandGap],
-        [name.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [settings.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
         [settings.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [settings.widthAnchor constraintEqualToConstant:36],
         [settings.heightAnchor constraintEqualToConstant:36],
-        [name.trailingAnchor constraintLessThanOrEqualToAnchor:settings.leadingAnchor constant:-24],
         [_swap.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
         [_swap.centerYAnchor constraintEqualToAnchor:sourceScroll.centerYAnchor],
         [_swap.widthAnchor constraintEqualToConstant:36],
