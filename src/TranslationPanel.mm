@@ -709,12 +709,20 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         NSScrollView *scroll = _output.enclosingScrollView;
         NSClipView *clip = scroll.contentView;
         NSPoint readingPosition = clip.bounds.origin;
+        NSUInteger previousLength = _output.string.length;
         // Follow a new result or a reader already within one line of the end.
         // Read geometry on this output event; do not retain another text buffer.
-        BOOL followEnd = _output.string.length == 0 ||
+        BOOL followEnd = previousLength == 0 ||
             NSMaxY(scroll.documentVisibleRect) >= NSMaxY(_output.bounds) - 24;
         [self resetCopyFeedback];
-        _output.string = output;
+        if (previousLength && output.length > previousLength && [output hasPrefix:_output.string]) {
+            // Streaming growth only edits the new tail. Keep earlier glyphs and
+            // the reader's position instead of replacing the entire text store.
+            [_output.textStorage replaceCharactersInRange:NSMakeRange(previousLength, 0)
+                withString:[output substringFromIndex:previousLength]];
+        } else {
+            _output.string = output;
+        }
         if (output.length && followEnd) {
             // Resolve the end before scrolling: deferred layout can otherwise
             // grow the document after AppKit has chosen a stale scroll offset.
