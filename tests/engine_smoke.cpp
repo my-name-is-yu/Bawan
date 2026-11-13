@@ -157,6 +157,26 @@ int main(int argc, char ** argv) {
         if (!hasNonASCII(second)) { throw std::runtime_error("Automatic English-to-Japanese direction failed"); }
         std::cout << "EN→JA: " << second << '\n';
 
+        const auto word = completed(events, engine.translate("ephemeral", lore::Direction::EnglishToJapanese),
+                                    lore::Direction::EnglishToJapanese);
+        if (word.find("儚") == std::string::npos && word.find("はかな") == std::string::npos &&
+            word.find("一時") == std::string::npos && word.find("短命") == std::string::npos &&
+            word.find("束の間") == std::string::npos) {
+            throw std::runtime_error("Short word lost its meaning: " + word);
+        }
+        const auto idiom = completed(events, engine.translate("on the fence", lore::Direction::Automatic),
+                                     lore::Direction::EnglishToJapanese);
+        // Quantized inference can vary by GPU backend; check completion and
+        // direction here, and the exact prompt format in short_input_tests.
+        if (!hasNonASCII(idiom)) throw std::runtime_error("Short idiom did not produce Japanese: " + idiom);
+        completed(events, engine.translate("Please do not leave just yet.", lore::Direction::Automatic),
+                  lore::Direction::EnglishToJapanese);
+        std::cout << "Short EN→JA: " << word << " / " << idiom << '\n';
+
+        if (completed(events, engine.translate(japanese, lore::Direction::JapaneseToEnglish)) != first) {
+            throw std::runtime_error("Repeated greedy translation changed after another request (possible stale KV)");
+        }
+
         const auto warmBurst = events.mark();
         engine.warmUp();
         const auto warmId = engine.translate(japanese, lore::Direction::JapaneseToEnglish);
@@ -266,7 +286,7 @@ int main(int argc, char ** argv) {
         }
         interruptedEvents.requireNoOutput(interruptedId);
         interrupted.shutdown();
-        std::cout << "PASS: lazy loading, warm-up, idle unloading/reloading, translation, direction, input boundaries, error recovery, sliding window, streaming and cancellation\n";
+        std::cout << "PASS: lazy loading, warm-up, idle unloading/reloading, translation, short input, direction, input boundaries, error recovery, sliding window, streaming and cancellation\n";
         return EXIT_SUCCESS;
     } catch (const std::exception & error) {
         std::cerr << "FAIL: " << error.what() << '\n';

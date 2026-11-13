@@ -1,4 +1,5 @@
 #include "TranslationEngine.h"
+#include "TranslationPrompt.h"
 
 #include "llama.h"
 
@@ -242,9 +243,7 @@ private:
         const auto bos = llama_vocab_bos(vocab);
         if (bos == LLAMA_TOKEN_NULL) { throw std::runtime_error("This PLaMo model is not supported."); }
         std::vector<llama_token> result{bos};
-        const auto prefix = tokenize(vocab,
-            "<|plamo:tag|>dataset<|plamo:msg|>translation"
-            "<|plamo:tag|>input<|plamo:msg|>", true);
+        const auto prefix = tokenize(vocab, detail::translationPromptPrefix(request.text, toEnglish), true);
         const auto suffix = tokenize(vocab, std::string("<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>") +
             (toEnglish ? "en" : "ja") + "<|plamo:msg|>", true);
         const auto overhead = result.size() + prefix.size() + suffix.size();
