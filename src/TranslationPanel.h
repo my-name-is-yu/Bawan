@@ -3,6 +3,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class SettingsViewController;
+
+typedef NS_ENUM(NSInteger, LoreStatusKind) {
+    LoreStatusInformation, LoreStatusWarning, LoreStatusError
+};
+
 @interface TranslationPanel : NSObject
 @property(nonatomic, copy, nullable) void (^onTranslate)(NSString *text, lore::Direction direction);
 @property(nonatomic, copy, nullable) void (^onCancel)(void);
@@ -12,9 +18,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showForSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
+- (void)showSettings:(SettingsViewController *)settings;
+- (void)showTranslation;
 - (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;
-- (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status;
+- (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(LoreStatusKind)kind;
 - (void)setOutput:(NSString *)output direction:(lore::Direction)direction;
 - (void)close;
 @end

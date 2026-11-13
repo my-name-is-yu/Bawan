@@ -1,44 +1,73 @@
-# Native translation panel QA — 2026-11-12
+# Lore vintage UI QA — 2026-11-13
 
-final result: passed
+final result: blocked
 
-## Visual target and evidence
+## Selected visual target
 
-- Source visual truth: `$CODEX_HOME/generated_images/01a1cedc-dd26-73b3-8de6-bcafbc631368/exec-e8b3261e-3b34-4dd4-a451-7b44003dc114.png`, the selected Image Gen revision based on the user's sketch.
-- Implementation: `build/panel-smoke/light.png`; supplemental states: `dark.png`, `minimum-permission-error.png`, `model-setup.png`, `copied.png` in the same directory.
-- Native viewport: 720×500pt, minimum 640×420pt. Source pixels: 1505×1045; implementation pixels: 720×500 at 1× density. No browser or CSS viewport applies.
-- Normalization: source downsampled to 720×500 with Lanczos; native capture unchanged. Transparent outer pixels composited on white for comparison only.
-- Matched state: light appearance, fixed Japanese source and English result from the selected image, translation idle, shortcut available, no conditional messages, copy unconfirmed.
-- Full-view comparison: `build/design-qa/reference-and-native.png` (source left, implementation right), opened and inspected together.
-- Focused swap comparison: `build/design-qa/swap-detail.png` (source left, implementation right), both regions enlarged equally for inspection.
-- These AppKit content-view fixtures supply output directly. Real-model interaction checks below were performed separately in the actual app.
+- Reference: `design/vintage-reference.png`, the third displayed refinement selected by the user.
+- Approved changes to the reference: remove the × beside Settings; show native macOS close/minimize/zoom controls; add a matching dark appearance and settings screen in the same window.
+- Implementation viewport: initial 720×500pt, minimum 640×420pt. AppKit content coordinates apply, not browser/CSS pixels.
+- Light palette: cream #F7E7BB, ink #443024, vermilion #B53B28, gold #D99E3D.
+- Dark palette: espresso #28211C, ivory #F5E6C8, red-brown #7B2D20, gold #C99B53.
 
-## Findings and comparison history
+## Completed evidence
 
-1. Initial native capture exposed a vertically enlarged swap button. A frame assertion confirmed 32×42pt instead of a square.
-2. Corrected the custom button's frame/alignment-rect conversion to identity: the app draws its own bezel across the entire bounds and does not use native button ornament insets.
-3. Rebuilt and recaptured. The square/gutter assertions pass at both viewport sizes; the combined full-view and focused comparisons show no remaining actionable P0/P1/P2 differences.
+- Inspected the actual selected image and generated mascot/paper resources.
+- PNG integrity, real mascot alpha, resource names and CMake packaging were checked. Product and both command-line smoke executables receive the same UI resources.
+- Shared external-inline caches keep one palette, one mascot and one paper image across both screens.
+- Source/control inspection confirms native AppKit views, editable source, selectable output, independent scrolling, metadata-based language labels, and one reused panel.
+- The previous regular-app configuration was applied: no LSUIElement agent flag, NSApplicationActivationPolicyRegular at launch.
+- Static color calculations include the actual paper asset's extrema composited at 3.5%. Minimum normal-text contrast is 4.59:1 on the textured light header; primary buttons exceed 4.70:1. Body, language headings, secondary text and settings status colors also exceed 4.5:1. Results are in `build/ui-validation/static-checks.json`.
+- Libclang 18.1.1 parsed the integrated UI sources, AppDelegate and both smoke tests against actual macOS 14.5 SDK headers, targeting arm64 macOS 14. Both the product NSBundle loader and test-resource loader branches passed with zero errors. Warnings are limited to existing unused callback/main parameters. Reports are retained under `build/`. This is syntax/API checking, not native linking or execution.
+- Rebased onto the configurable-shortcuts version of main, retaining both shortcut rows, key recording/release handling, panel recall/focus behavior and Command-Shift-C copying. Both screens use the shared 720×500pt panel and support its 640×420pt minimum.
+- Portable CMake configuration and build succeeded after integration. Both copy_gesture and shortcuts CTests passed (2/2) on Linux. This does not exercise AppKit.
+- `git diff --check` passes.
 
-## Required fidelity surfaces
+## Native automated acceptance checks
 
-| Surface | Assessment |
-| --- | --- |
-| Fonts and typography | Native system fonts; equal 16pt body sizes, matching hierarchy and readable Japanese fallback. Fixture wrapping matches the selected sample. Raster antialiasing differences from Image Gen are expected. |
-| Spacing and layout rhythm | Language row fully removed; text starts 24pt below the header divider. Equal panes, consistent insets, central square swap button and interrupted divider. Footer actions remain aligned beneath their panes. |
-| Colors and tokens | Existing dynamic light/dark palette retained. The native swap button uses the same neutral button token as the footer instead of the generated image's slightly lighter face; intentional consistency with existing controls. |
-| Image and icon quality | Existing native SF Symbols remain sharp; swap uses a system two-arrow symbol. Its arrow stacking differs from the generated illustration without changing meaning. No raster UI or generated assets are embedded in the app. |
-| Copy and content | No JP/EN labels, direction caption or language selector. Sample text and action labels match; tooltip and accessibility names describe the swap action. Conditional permission/error messages remain available. |
+- Both themes, initial and minimum sizes, paper-background repainting after appearance changes, header and footer bounds, loaded images, wrapping and separate text scrolling.
+- AUTO/— before direction resolution, both EN/JA directions, forced reverse translation, source editing during streaming, and reset for a new request.
+- Copy/Copied/reset behavior, native close, Esc, Command-W, cancellation, and 20 reuse cycles without rebuilding app-owned views/constraints.
+- Settings callbacks, permission/login states, long error scrolling, theme changes, and 20 navigation/reuse cycles in the same native window.
+- CI explicitly builds both panel_smoke and settings_smoke and retains their captures.
 
-## Functional verification
+## Component consistency follow-up
 
-- Release arm64 app build, strict signature verification, and `ctest --test-dir build --output-on-failure` pass (2/2).
-- Panel checks cover automatic new input, reverse/repeated swap, retained reverse direction on retranslation, mixed-script output, automatic reset after editing/selection, and disabled swap while busy/unavailable/empty.
-- Twenty lifecycle cycles retain the same panel, 21 app views and 63 explicit constraints; existing pointer, keyboard, copy/reset and cleanup checks pass.
-- Real-model `engine_smoke` passes both automatic directions, resolved direction metadata, UTF-8/input limits, streaming, cancellation and KV reset.
-- Actual app: Japanese→English, two successive swaps, fresh English editing→Japanese, and Copy Translation→Copied verified through native UI interaction. App left running.
+- Primary pressed color is a fixed darker vermilion in both themes; bitmap-based tests require at least 4.5:1 text contrast.
+- Translate/Cancel, Copy and Swap share the primary action's 3pt hard shadow while enabled, using each face's own rounded or cut-corner silhouette. Disabled actions have no shadow; settings inputs and icon-only buttons remain flat. Existing light/dark captures cover the enabled actions.
+- Both mastheads share 80pt height, 64pt mascot, 48pt wordmark, 80pt leading inset and 12pt brand gap. Settings place their subtitle beside the wordmark.
+- Key recorder and press-count controls retain AppKit tracking, menus and focus while sharing a 28pt face, 13pt type, warm background and dark border. Tests read the rendered face to detect native bezel overpainting.
+- Gold headings and the swap button share clipped corners. Reset and section icons share explicit Medium symbol sizing.
+- Informational, warning and error messages receive explicit semantic roles. Recording, paused and key-release-wait states replace the misleading ready status while listening is suspended.
+- Command-Return invokes the same primary action as clicking: translate while idle and cancel while busy. Tests require cancellation without starting a new translation.
+- Input faces and primary-button contrast are sampled using the capture's own ICC color space before converting to sRGB. AppKit's generic color wrapper must not reinterpret the raw display samples.
+- Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
+- Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Settings cannot undo hidden translator edits; a newly selected passage returns to the translator before clearing the previous editing session. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
+- The latest follow-up macOS results and native captures are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
 
-## Limits and follow-up
+## Lightweight usability follow-up
 
-- Local OS Reduce Motion and Increase Contrast were both off; this is not verification of the actual Increase Contrast toggle or all accessibility settings.
-- Whole-app CPU/memory comparison, Instruments retained-object measurements and comprehensive motion-under-load checks remain separate, as documented in the README.
-- No unresolved implementation decision or P0/P1/P2 visual issue blocks this change.
+- The initial footer hint is shown only before input/output and is hidden during translation.
+- Prefix-preserving streaming updates append only the new tail to the existing text store. Output follows the end only when the reader is already within one line of it; native layout is resolved before following. Reading positions use document coordinates and temporary geometry, without retaining an old translation or adding scroll observers, timers or layout polling.
+- Settings expose shortcut editing and press-count labels, show permission instructions only when needed, and move detailed guidance to an on-demand native help dialog. Input Monitoring and Accessibility remain optional for manual typing/pasting.
+- Newly displayed settings errors are brought into view by the product, rather than by the smoke-test fixture. Settings entry has an explicit initial focus and keeps keyboard traversal inside the current screen.
+- A shared native scroll configuration uses the paper palette and grain in Settings and both translation panes, including legacy scroller gutters.
+- Existing views and image caches are reused. No background observer, timer or animation is added for this follow-up. Whole-app RAM/CPU measurements remain a separate manual check below.
+- Copy Translation/Copied and copying partial output remain unchanged, as requested by the user.
+
+## Blocking verification
+
+This execution workspace is Linux. Native arm64 builds, signature validation and AppKit smoke checks run in macOS CI; the baseline run for commit 8e556e2 completed successfully, and follow-up runs are linked from PR #5. The AppKit content-view captures support component comparisons but omit native titlebar overlays and interactive operation in other apps. Full-window visual QA and real-app focus/permission/resource checks remain unverified, so the overall report stays blocked on those checks.
+
+On an Apple Silicon Mac:
+
+```sh
+./scripts/build.sh -DLORE_BUILD_TESTS=ON
+cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke --parallel 3
+codesign --verify --strict build/Lore.app
+ctest --test-dir build --output-on-failure
+```
+
+Compare native captures in `build/panel-smoke/` and `build/settings-smoke/` with the selected reference using the same sample text and viewport. Content-view captures omit OS titlebar overlays: inspect a real window screenshot for the traffic lights, their spacing from the medallion, and native focus/drag/close behavior. Check the actual OS Reduce Motion and Increase Contrast settings, selection translation without taking focus, and both language directions in the running app.
+
+Do not change this report to passed until the native build, tests, full-window review and reference comparison pass. Whole-app resource measurements remain separately documented in README.

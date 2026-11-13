@@ -4,11 +4,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface SettingsWindow : NSWindowController
+@interface SettingsViewController : NSViewController
+@property(nonatomic, copy, nullable) void (^onBack)(void);
 @property(nonatomic, copy, nullable) void (^onLoginSettings)(void);
 @property(nonatomic, copy, nullable) void (^onLoginChanged)(BOOL enabled);
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
-- (void)showSettings;
+// The host owns window focus; active means this screen is visible and key.
+- (void)setActive:(BOOL)active;
+- (void)focusInitialControl;
 - (void)refresh;
 - (void)showError:(NSString *)message;
 - (void)setLoginStatus:(SMAppServiceStatus)status message:(nullable NSString *)message error:(BOOL)error;
