@@ -330,11 +330,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     // autoresize adds the initial document width and silently clips long lines.
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     scroll.borderType = NSNoBorder;
-    scroll.hasVerticalScroller = YES;
-    scroll.autohidesScrollers = YES;
-    scroll.scrollerStyle = NSScrollerStyleOverlay;
-    scroll.drawsBackground = NO;
-    scroll.contentView.drawsBackground = NO;
+    LoreConfigurePaperScrollView(scroll);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     LoreTextView *text = [[LoreTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     text.identifier = identifier;

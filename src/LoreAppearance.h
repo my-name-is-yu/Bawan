@@ -1,6 +1,8 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
+void LoreConfigurePaperScrollView(NSScrollView *scroll);
+
 static constexpr CGFloat LoreHeaderHeight = 80;
 static constexpr CGFloat LoreBrandMarkSize = 64;
 static constexpr CGFloat LoreBrandLogoSize = 48;
@@ -20,7 +22,8 @@ static inline NSColor *LoreRGB(unsigned value) {
                                blue:(value & 255) / 255.0 alpha:1];
 }
 
-static inline NSColor *LoreColor(LoreColorRole role) {
+// External inline linkage shares this palette across the app's view files.
+inline NSColor *LoreColor(LoreColorRole role) {
     static NSArray<NSColor *> *palette;
     static dispatch_once_t once;
     dispatch_once(&once, ^{

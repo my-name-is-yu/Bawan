@@ -71,7 +71,7 @@ set(LORE_UI_RESOURCES resources/LoreMascot.png resources/PaperGrain.png)
 
 if(LORE_BUILD_APP)
     add_executable(Lore MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm
+        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm src/LoreAppearance.mm
         src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
         ${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
     set_source_files_properties(${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
@@ -112,7 +112,7 @@ if(LORE_BUILD_TESTS)
             get_filename_component(resource_name "${resource}" NAME)
             configure_file("${resource}" "${CMAKE_BINARY_DIR}/test-resources/${resource_name}" COPYONLY)
         endforeach()
-        add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm)
+        add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm src/LoreAppearance.mm)
         target_include_directories(panel_smoke PRIVATE src)
         target_compile_definitions(panel_smoke PRIVATE
             LORE_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
@@ -121,7 +121,7 @@ if(LORE_BUILD_TESTS)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
-        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsViewController.mm src/TranslationPanel.mm
+        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsViewController.mm src/TranslationPanel.mm src/LoreAppearance.mm
             src/ShortcutPreferences.mm src/ShortcutMonitor.mm)
         target_include_directories(settings_smoke PRIVATE src)
         target_compile_definitions(settings_smoke PRIVATE

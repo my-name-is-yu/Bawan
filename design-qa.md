@@ -48,7 +48,7 @@ final result: blocked
 ## Lightweight usability follow-up
 
 - The initial footer hint is shown only before input/output and is hidden during translation.
-- Streaming output follows the end only when the reader is already within one line of it. Reading positions use temporary geometry, without retaining an old translation or adding scroll observers, timers or layout polling.
+- Prefix-preserving streaming updates append only the new tail to the existing text store. Output follows the end only when the reader is already within one line of it; native layout is resolved before following. Reading positions use document coordinates and temporary geometry, without retaining an old translation or adding scroll observers, timers or layout polling.
 - Settings expose shortcut editing and press-count labels, show permission instructions only when needed, and move detailed guidance to an on-demand native help dialog. Input Monitoring and Accessibility remain optional for manual typing/pasting.
 - Newly displayed settings errors are brought into view by the product, rather than by the smoke-test fixture. Settings entry has an explicit initial focus and keeps keyboard traversal inside the current screen.
 - The native settings scroll area uses the paper palette in both appearances, including a legacy scroller gutter.
