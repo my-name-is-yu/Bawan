@@ -105,7 +105,7 @@ if(LORE_BUILD_TESTS)
     add_executable(engine_lifecycle tests/engine_lifecycle.cpp)
     target_link_libraries(engine_lifecycle PRIVATE lore_engine)
     add_test(NAME engine_lifecycle COMMAND engine_lifecycle)
-    set_tests_properties(engine_lifecycle PROPERTIES TIMEOUT 40)
+    set_tests_properties(engine_lifecycle PROPERTIES TIMEOUT 120)
     if(APPLE)
         add_executable(shortcut_preferences_tests tests/shortcut_preferences_tests.mm src/ShortcutPreferences.mm)
         target_link_libraries(shortcut_preferences_tests PRIVATE lore_gesture

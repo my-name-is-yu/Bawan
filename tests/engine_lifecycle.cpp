@@ -6,6 +6,7 @@
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -30,14 +31,28 @@ public:
 
     void requireEvent(lore::EngineEvent::Kind kind, std::uint64_t id, std::size_t after) {
         std::unique_lock<std::mutex> lock(mutex_);
-        if (!changed_.wait_for(lock, 10s, [&] {
+        // A cold Metal backend may compile its embedded libraries on first use.
+        if (!changed_.wait_for(lock, 60s, [&] {
             for (std::size_t i = after; i < events_.size(); ++i) {
                 if (events_[i].requestId == id && events_[i].kind == kind) {
                     return kind != lore::EngineEvent::Kind::Error || !events_[i].text.empty();
                 }
             }
             return false;
-        })) { throw std::runtime_error("An expected engine lifecycle event did not arrive"); }
+        })) {
+            const char *kindName = "unknown";
+            switch (kind) {
+                case lore::EngineEvent::Kind::Loading: kindName = "Loading"; break;
+                case lore::EngineEvent::Kind::Ready: kindName = "Ready"; break;
+                case lore::EngineEvent::Kind::Idle: kindName = "Idle"; break;
+                case lore::EngineEvent::Kind::Text: kindName = "Text"; break;
+                case lore::EngineEvent::Kind::Complete: kindName = "Complete"; break;
+                case lore::EngineEvent::Kind::Cancelled: kindName = "Cancelled"; break;
+                case lore::EngineEvent::Kind::Error: kindName = "Error"; break;
+            }
+            throw std::runtime_error(std::string("Timed out after 60s waiting for ") + kindName +
+                                     " (requestId=" + std::to_string(id) + ")");
+        }
     }
 
     void requireQuietFor(std::chrono::milliseconds duration) {

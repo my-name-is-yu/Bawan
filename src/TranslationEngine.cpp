@@ -189,9 +189,13 @@ private:
     bool load(std::uint64_t cancellation) {
         if (model_) { return true; }
         if (stopping_ || cancellation_.load() != cancellation) { return false; }
+        emit(EngineEvent::Kind::Loading, 0, "Loading the model…");
+        if (stopping_ || cancellation_.load() != cancellation) {
+            emit(EngineEvent::Kind::Cancelled);
+            return false;
+        }
         llama_backend_init();
         backendInitialized_ = true;
-        emit(EngineEvent::Kind::Loading, 0, "Loading the model…");
         if (stopping_ || cancellation_.load() != cancellation) {
             unload();
             emit(EngineEvent::Kind::Cancelled);
