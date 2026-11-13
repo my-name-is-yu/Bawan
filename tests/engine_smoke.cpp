@@ -111,9 +111,8 @@ int main(int argc, char ** argv) {
         }
         const auto idiom = completed(events, engine.translate("on the fence", lore::Direction::Automatic),
                                      lore::Direction::EnglishToJapanese);
-        // Quantized inference on CI's paravirtual GPU can choose a different
-        // sense. Semantic quality is assessed by the recorded hardware-specific
-        // evaluation; this smoke check covers the completed request path.
+        // Quantized inference can vary by GPU backend; check completion and
+        // direction here, and the exact prompt format in short_input_tests.
         if (!hasNonASCII(idiom)) throw std::runtime_error("Short idiom did not produce Japanese: " + idiom);
         completed(events, engine.translate("Please do not leave just yet.", lore::Direction::Automatic),
                   lore::Direction::EnglishToJapanese);

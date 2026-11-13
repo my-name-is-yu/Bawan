@@ -34,29 +34,21 @@ int main() {
         }
     }
     const std::string ordinary = "<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:msg|>";
-    if (lore::detail::promptPrefix({}) != ordinary ||
-        lore::detail::promptPrefix(lore::detail::productionPrompt("one two three four five six", false)) != ordinary ||
-        lore::detail::promptPrefix(lore::detail::productionPrompt(u8"日本語", true)) != ordinary ||
-        lore::detail::promptPrefix(lore::detail::productionPrompt("Hello", true)) != ordinary ||
-        lore::detail::promptPrefix(lore::detail::productionPrompt(u8"Hello 日本語", false)) != ordinary) {
+    if (lore::detail::translationPromptPrefix("one two three four five six", false) != ordinary ||
+        lore::detail::translationPromptPrefix(u8"日本語", true) != ordinary ||
+        lore::detail::translationPromptPrefix("Hello", true) != ordinary ||
+        lore::detail::translationPromptPrefix(u8"Hello 日本語", false) != ordinary) {
         std::cerr << "An out-of-scope request changed its prompt\n";
         return EXIT_FAILURE;
     }
-    const auto single = lore::detail::productionPrompt("ephemeral", false);
-    const auto phrase = lore::detail::productionPrompt("on the fence", false);
-    if (!single.sourceEnglish || !single.context.empty() || !single.examples.empty() ||
-        phrase.sourceEnglish || phrase.context != "英語から日本語への翻訳です。" || !phrase.examples.empty()) {
-        std::cerr << "The frozen short-input policy changed\n";
-        return EXIT_FAILURE;
-    }
-    if (lore::detail::promptPrefix(single) !=
+    if (lore::detail::translationPromptPrefix("ephemeral", false) !=
             "<|plamo:tag|>dataset<|plamo:msg|>translation"
             "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>" ||
-        lore::detail::promptPrefix(phrase) !=
+        lore::detail::translationPromptPrefix("on the fence", false) !=
             "<|plamo:tag|>dataset<|plamo:msg|>translation"
             "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
             "<|plamo:tag|>input<|plamo:msg|>") {
-        std::cerr << "The selected PFML3 language/context fields were not serialized\n";
+        std::cerr << "The short-input PFML3 language/context fields were not serialized\n";
         return EXIT_FAILURE;
     }
     std::cout << "PASS: " << std::size(cases) << " word boundaries and ordinary-prompt preservation\n";

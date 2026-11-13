@@ -1,10 +1,6 @@
 #include "TranslationEngine.h"
 #include "TranslationPrompt.h"
 
-#ifdef LORE_EVALUATE_PROMPTS
-#include "EvaluationPrompt.h"
-#endif
-
 #include "llama.h"
 
 #include <algorithm>
@@ -239,12 +235,7 @@ private:
         const auto bos = llama_vocab_bos(vocab);
         if (bos == LLAMA_TOKEN_NULL) { throw std::runtime_error("This PLaMo model is not supported."); }
         std::vector<llama_token> result{bos};
-#ifdef LORE_EVALUATE_PROMPTS
-        const auto options = detail::evaluationPrompt(request.text, toEnglish);
-#else
-        const auto options = detail::productionPrompt(request.text, toEnglish);
-#endif
-        const auto prefix = tokenize(vocab, detail::promptPrefix(options), true);
+        const auto prefix = tokenize(vocab, detail::translationPromptPrefix(request.text, toEnglish), true);
         // Parse only the application's PFML3 delimiters as special tokens.
         const auto source = tokenize(vocab, request.text, false);
         const auto suffix = tokenize(vocab, std::string("<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>") +
