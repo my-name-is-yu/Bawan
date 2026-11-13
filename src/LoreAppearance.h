@@ -5,9 +5,6 @@ void LoreConfigurePaperScrollView(NSScrollView *scroll);
 
 static constexpr CGFloat LoreHeaderHeight = 80;
 static constexpr CGFloat LoreBrandMarkSize = 64;
-static constexpr CGFloat LoreBrandLogoSize = 48;
-static constexpr CGFloat LoreBrandLeading = 80;
-static constexpr CGFloat LoreBrandGap = 12;
 static constexpr CGFloat LoreInputHeight = 28;
 static constexpr CGFloat LoreInputFontSize = 13;
 
@@ -113,9 +110,6 @@ static inline NSFont *LoreSerifFont(CGFloat size, BOOL bold) {
 
 static inline NSFont *LoreBodyFont(CGFloat size) { return LoreSerifFont(size, NO); }
 static inline NSFont *LoreLabelFont(CGFloat size) { return LoreSerifFont(size, YES); }
-static inline NSFont *LoreLogoFont(CGFloat size) {
-    return [NSFont fontWithName:@"Georgia-BoldItalic" size:size] ?: LoreLabelFont(size);
-}
 
 // Smoke tests are command-line executables. Give them the same staged resources
 // as the app, without an environment-variable override in the shipped product.
