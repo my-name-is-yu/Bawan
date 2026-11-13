@@ -1,4 +1,4 @@
-# Lore
+# Bawan
 
 Apple Silicon・macOS 14以降向けの、英語↔日本語の常駐翻訳アプリです。
 文章を選択して⌘Cを400ms以内に2回押すと、カーソル付近に原文と訳文を表示します。
@@ -35,7 +35,7 @@ Apple SiliconのMacに、AppleのCommand Line ToolsとCMakeを用意してくだ
 xcode-select --install
 cmake --version
 ./scripts/build.sh
-open build/Lore.app
+open build/Bawan.app
 ```
 
 初回のビルドでは、固定版llama.cpp b12307のソースを取得してSHA256を確認します。
@@ -46,14 +46,14 @@ open build/Lore.app
 ログイン起動も、アプリを置く場所を決めてから有効にしてください。
 
 ```sh
-ditto build/Lore.app /Applications/Lore.app
-open /Applications/Lore.app
+ditto build/Bawan.app /Applications/Bawan.app
+open /Applications/Bawan.app
 ```
 
 既定では個人用のad-hoc署名を行います。自分の署名IDを使う場合は次のように指定できます。
 
 ```sh
-./scripts/build.sh -DLORE_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
+./scripts/build.sh -DBAWAN_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
 ```
 
 ビルド出力を消す場合は、アプリを終了してからリポジトリのビルドディレクトリを削除してください。
@@ -74,11 +74,11 @@ Application Supportに保存したモデルとmacOSの権限設定は別に保�
 | 選択した文章を翻訳 | ⌘Cを2回 | 入力監視 |
 | 翻訳画面を開く | ⌥Tを2回 | アクセシビリティ |
 
-どちらも初期状態ではオンです。「Settings…」の各行で個別にオン・オフを切り替え、キーの記録欄を押して希望する組み合わせを入力できます。⌘・⌥・⌃のいずれかを含む修飾キーと通常キーを組み合わせ、1回押しか2回押しかを選びます。文字だけ・修飾キーだけの割り当て、Loreの固定操作に使う⌘Return・⌘⇧C・⌘Q・⌘,、有効なもう一方の操作と同じキーの組み合わせは保存できません。押す回数を変えても同じ組み合わせは重複と扱います。各行から初期設定に戻すこともできます。
+どちらも初期状態ではオンです。「Settings…」の各行で個別にオン・オフを切り替え、キーの記録欄を押して希望する組み合わせを入力できます。⌘・⌥・⌃のいずれかを含む修飾キーと通常キーを組み合わせ、1回押しか2回押しかを選びます。文字だけ・修飾キーだけの割り当て、Bawanの固定操作に使う⌘Return・⌘⇧C・⌘Q・⌘,、有効なもう一方の操作と同じキーの組み合わせは保存できません。押す回数を変えても同じ組み合わせは重複と扱います。各行から初期設定に戻すこともできます。
 
 2回押しの間隔は400ms以内で、1回目と2回目の間に通常キーを離す必要があります。長押し、別のキーを挟む操作、前面アプリをまたぐ操作は実行しません。初期設定の⌘C 2回以外は、途中で修飾キーを変えた場合も取り消します。
 
-初期設定の⌘C 2回では通常のコピーがそのまま機能します。それ以外の割り当ては、1回目からLoreがキー操作を受け取り、元のアプリには渡しません。2回押しが成立しなくても1回目の操作を元のアプリに送り直すことはありません。普段使う操作と重ならない組み合わせを選んでください。変更したキーで選択翻訳を行う場合は、キーを離してから元のアプリにコピーを要求し、クリップボードの更新を確認して翻訳します。この操作にはアクセシビリティの許可が必要です。
+初期設定の⌘C 2回では通常のコピーがそのまま機能します。それ以外の割り当ては、1回目からBawanがキー操作を受け取り、元のアプリには渡しません。2回押しが成立しなくても1回目の操作を元のアプリに送り直すことはありません。普段使う操作と重ならない組み合わせを選んでください。変更したキーで選択翻訳を行う場合は、キーを離してから元のアプリにコピーを要求し、クリップボードの更新を確認して翻訳します。この操作にはアクセシビリティの許可が必要です。
 
 入力監視とアクセシビリティの許可は別々です。設定画面には各操作が使えるか、どの許可が必要かを表示します。キーの記録中は翻訳や画面の呼び出しを実行しません。割り当てを変更するとすぐ反映され、次回起動時も保持されます。以前の版で選択翻訳をオフにしていた場合は、その設定を引き継ぎます。
 キー欄の「Shortcut (click)」を押して記録し、「Presses」で押す回数を選びます。詳細な操作やキーの予約に関する説明は、ショートカット欄のHelpから必要なときだけ開けます。権限不足時の案内と、新しく発生した設定エラーは画面内に表示します。
@@ -108,21 +108,23 @@ OSによってクリップボード読み取りの許可が表示される場合
 モデルの保存先：
 
 ```text
-~/Library/Application Support/local.lore.Lore/plamo-3-translate-0.8b-Q4_K_M.gguf
+~/Library/Application Support/local.bawan.Bawan/plamo-3-translate-0.8b-Q4_K_M.gguf
 ```
+
+Bawanは独立したBundle IDと保存先を使います。別のアプリの設定やモデルは移行せず、初回起動時にモデルをダウンロードします。macOSの権限とログイン起動もBawanで設定してください。
 
 ## 検証
 
 通常の製品ビルドにはテストやCLIは含めません。追加する場合も同じビルドディレクトリを使います。
 
 ```sh
-./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
+./scripts/build.sh -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
 cmake --build build --target short_input_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke app_delegate_smoke engine_lifecycle engine_event_mailbox_tests engine_smoke engine_profile --parallel 3
 ctest --test-dir build --output-on-failure
-./build/engine_smoke "$HOME/Library/Application Support/local.lore.Lore/plamo-3-translate-0.8b-Q4_K_M.gguf"
+./build/engine_smoke "$HOME/Library/Application Support/local.bawan.Bawan/plamo-3-translate-0.8b-Q4_K_M.gguf"
 ```
 
-`shortcut_tests`では、実アプリで使う共通の状態機械で従来のダブルコピー操作に加えて、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元と旧設定の移行も確認します。
+`shortcut_tests`では、実アプリで使う共通の状態機械で従来のダブルコピー操作に加えて、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元、不正な値の初期値への復帰、廃止された設定を読み込まないことも確認します。
 `panel_smoke`と`settings_smoke`はAppKitの画面・操作・レイアウト・ウィンドウ再利用を確認し、`build/panel-smoke/`と`build/settings-smoke/`へキャプチャを保存します。これらは実アプリ上のグローバルキーやOS権限の許可・取消を検証するテストではありません。
 `mascot_smoke`は3種類のホバーをそれぞれ1回再生し、クリックでの再生・切り替え、枠の固定、縮小画像の共有、有限時間での終了と離脱時の解除を確認します。キャプチャは`build/mascot-smoke/`へ保存します。
 `engine_event_mailbox_tests`はモデル不要で、UI停止中の途中訳文集約、通知順序、再配送、並行配送を確認します。
@@ -145,7 +147,7 @@ ctest --test-dir build --output-on-failure
 Linuxではアプリを作らず、同じ推論コードをCPUで検証できます。
 
 ```sh
-cmake -S . -B build -DLORE_BUILD_APP=OFF -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
+cmake -S . -B build -DBAWAN_BUILD_APP=OFF -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/engine_smoke /path/to/model.gguf
@@ -175,7 +177,7 @@ GitHub ActionsのCIは使用しません。ビルド・署名確認・実モデ�
 
 変更前後のコミット、Mac機種・メモリ、macOS、Releaseビルド設定、モデルのSHA256、入力文・方向、ウィンドウ寸法、テーマを記録します。
 同じMacで同じ条件を使い、変更前後を順に測定してください。比較用のウィンドウは旧版の最小高も満たす同じ寸法（例：720×640pt）にし、テーマ別に結果を分けます。
-モデルのダウンロード・検証は先に済ませ、別のLoreプロセスを同時に起動しません。入力文には下の固定サンプルを使用し、中止用には同じ文を改行で20回連結した長文を両版で使用します。
+モデルのダウンロード・検証は先に済ませ、別のBawanプロセスを同時に起動しません。入力文には下の固定サンプルを使用し、中止用には同じ文を改行で20回連結した長文を両版で使用します。
 
 ```text
 EN → JP: The meeting has been moved to next Monday. Please review the updated document and send your feedback by Friday.

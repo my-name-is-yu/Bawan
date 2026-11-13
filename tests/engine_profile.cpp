@@ -71,7 +71,7 @@ Usage usage() {
 }
 
 struct Result {
-    lore::EngineEvent event;
+    bawan::EngineEvent event;
     std::optional<Clock::time_point> firstText;
     Clock::time_point completed;
     std::int64_t observedTextRSS = -1;
@@ -81,7 +81,7 @@ struct Result {
 // Keep one model-state event and one translation event, not event history.
 class LatestEvent {
 public:
-    void push(lore::EngineEvent event) {
+    void push(bawan::EngineEvent event) {
         const auto arrived = Clock::now();
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -94,7 +94,7 @@ public:
                     observedTextRSS_ = -1;
                     observedTextFootprint_ = -1;
                 }
-                if (event.kind == lore::EngineEvent::Kind::Text) {
+                if (event.kind == bawan::EngineEvent::Kind::Text) {
                     if (!firstText_) { firstText_ = arrived; }
                     // Capture arrival before sampling so first-text latency excludes
                     // this callback's diagnostic work. These are observations, not
@@ -111,12 +111,12 @@ public:
     }
 
     Result wait(std::uint64_t id,
-                lore::EngineEvent::Kind expected = lore::EngineEvent::Kind::Complete) {
+                bawan::EngineEvent::Kind expected = bawan::EngineEvent::Kind::Complete) {
         std::unique_lock<std::mutex> lock(mutex_);
         const auto & event = id == 0 ? state_ : latest_;
         if (!changed_.wait_for(lock, 60s, [&] {
             if (!event || event->requestId != id) { return false; }
-            using Kind = lore::EngineEvent::Kind;
+            using Kind = bawan::EngineEvent::Kind;
             return event->kind == expected || event->kind == Kind::Error || event->kind == Kind::Cancelled;
         })) { throw std::runtime_error("Inference timed out after 60 seconds"); }
         if (id == 0) { return Result{*state_, std::nullopt, stateTime_}; }
@@ -126,9 +126,9 @@ public:
 private:
     std::mutex mutex_;
     std::condition_variable changed_;
-    std::optional<lore::EngineEvent> state_;
+    std::optional<bawan::EngineEvent> state_;
     Clock::time_point stateTime_;
-    std::optional<lore::EngineEvent> latest_;
+    std::optional<bawan::EngineEvent> latest_;
     std::optional<Clock::time_point> firstText_;
     Clock::time_point latestTime_;
     std::int64_t observedTextRSS_ = -1;
@@ -153,7 +153,7 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
     try {
-        using Kind = lore::EngineEvent::Kind;
+        using Kind = bawan::EngineEvent::Kind;
         std::cout << std::fixed << std::setprecision(3)
                   << "unavailable_metric_value=-1\n"
                   << "memory_note=RSS includes resident mapped pages; macOS physical footprint is separate; do not add them\n"
@@ -161,8 +161,8 @@ int main(int argc, char ** argv) {
                   << "profile_idle_timeout_ms=1000\n";
         memoryMetrics("before_engine", usage());
         LatestEvent events;
-        lore::TranslationEngine engine(argv[1],
-            [&](lore::EngineEvent event) { events.push(std::move(event)); }, 1s);
+        bawan::TranslationEngine engine(argv[1],
+            [&](bawan::EngineEvent event) { events.push(std::move(event)); }, 1s);
         memoryMetrics("after_constructor", usage());
         const auto idleStart = Clock::now();
         const auto beforeIdle = usage();
@@ -206,9 +206,9 @@ int main(int argc, char ** argv) {
         double completionTotal = 0;
         for (std::size_t iteration = 0; iteration < totalRequests; ++iteration) {
             const auto started = Clock::now();
-            const auto id = engine.translate(corpus[iteration % corpus.size()], lore::Direction::Automatic);
+            const auto id = engine.translate(corpus[iteration % corpus.size()], bawan::Direction::Automatic);
             const auto result = events.wait(id);
-            if (result.event.kind != lore::EngineEvent::Kind::Complete ||
+            if (result.event.kind != bawan::EngineEvent::Kind::Complete ||
                 result.event.truncated || result.event.text.empty() || !result.firstText) {
                 throw std::runtime_error("Request " + std::to_string(iteration + 1) + " did not complete normally");
             }
@@ -250,7 +250,7 @@ int main(int argc, char ** argv) {
         memoryMetrics("after_idle_unload", usage());
 
         const auto reloadStarted = Clock::now();
-        const auto reloadId = engine.translate(corpus.front(), lore::Direction::Automatic);
+        const auto reloadId = engine.translate(corpus.front(), bawan::Direction::Automatic);
         const auto reloaded = events.wait(reloadId);
         if (reloaded.event.kind != Kind::Complete || reloaded.event.truncated ||
             reloaded.event.text.empty() || !reloaded.firstText) {

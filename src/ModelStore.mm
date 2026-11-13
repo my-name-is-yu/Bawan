@@ -92,7 +92,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     self = [super init];
     if (self) {
         _generation.store(0);
-        _verificationQueue = dispatch_queue_create("local.lore.model-verification",
+        _verificationQueue = dispatch_queue_create("local.bawan.model-verification",
             dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
     }
     return self;
@@ -117,7 +117,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSURL *support = [files URLForDirectory:NSApplicationSupportDirectory
                                  inDomain:NSUserDomainMask
                         appropriateForURL:nil create:YES error:&error];
-    NSURL *directory = [support URLByAppendingPathComponent:@"local.lore.Lore" isDirectory:YES];
+    NSURL *directory = [support URLByAppendingPathComponent:@"local.bawan.Bawan" isDirectory:YES];
     if (!support || ![files createDirectoryAtURL:directory withIntermediateDirectories:YES
                                      attributes:nil error:&error]) {
         [self reportError:@"Unable to create the model folder." generation:generation];

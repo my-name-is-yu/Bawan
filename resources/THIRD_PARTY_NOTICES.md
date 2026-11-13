@@ -1,6 +1,6 @@
 # Third-party notices
 
-Lore uses llama.cpp (MIT License). The pinned source release is b12307:
+Bawan uses llama.cpp (MIT License). The pinned source release is b12307:
 https://github.com/ggml-org/llama.cpp/tree/b12307
 Its complete LICENSE is included alongside this notice in the app bundle.
 

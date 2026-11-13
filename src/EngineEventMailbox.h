@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace lore {
+namespace bawan {
 // Worker-to-UI handoff. Text contains a full snapshot, not a delta, so only
 // the newest consecutive snapshot for a request needs to wait for the UI.
 // Lifecycle/terminal events remain ordered and are never coalesced.
@@ -38,4 +38,4 @@ private:
     std::vector<EngineEvent> events_;
     bool scheduled_ = false;
 };
-} // namespace lore
+} // namespace bawan

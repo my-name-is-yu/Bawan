@@ -1,7 +1,7 @@
 #import "SettingsViewController.h"
 #import "TranslationPanel.h"
 #import <CoreGraphics/CoreGraphics.h>
-#import "LoreAppearance.h"
+#import "BawanAppearance.h"
 
 #include <cstdlib>
 #include <cmath>
@@ -18,7 +18,7 @@
 @property(nonatomic) ShortcutAvailability panelAvailability;
 @property(nonatomic) NSUInteger permissionRequests;
 @property(nonatomic) NSUInteger refreshCount;
-@property(nonatomic) lore::ShortcutAction lastPermissionAction;
+@property(nonatomic) bawan::ShortcutAction lastPermissionAction;
 @end
 
 @implementation SmokeShortcutMonitor
@@ -38,11 +38,11 @@
 - (void)setSuspended:(BOOL)value { _testSuspended = value; }
 - (BOOL)settingsActive { return _testSettingsActive; }
 - (void)setSettingsActive:(BOOL)value { _testSettingsActive = value; }
-- (ShortcutAvailability)availabilityForAction:(lore::ShortcutAction)action {
+- (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {
     if (![_testPreferences bindingForAction:action].enabled) return ShortcutAvailabilityOff;
-    return action == lore::ShortcutAction::TranslateSelection ? _selectionAvailability : _panelAvailability;
+    return action == bawan::ShortcutAction::TranslateSelection ? _selectionAvailability : _panelAvailability;
 }
-- (void)requestPermissionForAction:(lore::ShortcutAction)action {
+- (void)requestPermissionForAction:(bawan::ShortcutAction)action {
     ++_permissionRequests;
     _lastPermissionAction = action;
 }
@@ -89,7 +89,7 @@ static void RequireOrdinaryWindow(NSWindow *window, NSString *stage) {
         window.level == NSNormalWindowLevel && !window.hidesOnDeactivate &&
         (window.collectionBehavior & pinned) == 0 &&
         (window.collectionBehavior & NSWindowCollectionBehaviorMoveToActiveSpace) != 0,
-        [NSString stringWithFormat:@"The shared Lore window must retain ordinary ordering %@: level=%ld behavior=%lu",
+        [NSString stringWithFormat:@"The shared Bawan window must retain ordinary ordering %@: level=%ld behavior=%lu",
             stage, static_cast<long>(window.level), static_cast<unsigned long>(window.collectionBehavior)]);
 }
 
@@ -134,9 +134,9 @@ static void CheckBounds(NSWindow *window) {
     NSView *back = FindView(root, @"settings-back");
     NSRect backFrame = [back convertRect:back.bounds toView:header];
     Require(FindView(root, @"settings-brand-name") == nil, @"The Settings header must omit the wordmark");
-    Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
-            std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
-            std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
+    Require(std::abs(header.bounds.size.height - BawanHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - BawanBrandMarkSize) < 1 &&
+            std::abs(mascot.bounds.size.height - BawanBrandMarkSize) < 1 &&
             std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
             std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1 &&
             std::abs(NSMinX(subtitleAlignment) - NSMinX(header.bounds) - 24) < 1 &&
@@ -144,8 +144,8 @@ static void CheckBounds(NSWindow *window) {
             [NSString stringWithFormat:
         @"The Settings mascot must retain its size and stay centered, with the label 24pt from the left: "
         @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f labelAlignment=%@",
-        NSStringFromRect(header.bounds), LoreHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), LoreBrandMarkSize, NSStringFromRect(subtitleAlignment)]);
+        NSStringFromRect(header.bounds), BawanHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), BawanBrandMarkSize, NSStringFromRect(subtitleAlignment)]);
     Require(NSContainsRect(header.bounds, mascotFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
             NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(mascotFrame, subtitleFrame) &&
             !NSIntersectsRect(backFrame, subtitleFrame) && !NSIntersectsRect(backFrame, mascotFrame),
@@ -153,8 +153,8 @@ static void CheckBounds(NSWindow *window) {
     for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
                                    @"shortcut-panel-count"]) {
         NSControl *control = (NSControl *)FindView(root, identifier);
-        Require(std::abs(control.bounds.size.height - LoreInputHeight) < 1 &&
-                std::abs(control.font.pointSize - LoreInputFontSize) < 0.1,
+        Require(std::abs(control.bounds.size.height - BawanInputHeight) < 1 &&
+                std::abs(control.font.pointSize - BawanInputFontSize) < 0.1,
                 @"Key recorders and press counts must share the same input height and typography");
     }
     NSView *shortcut = FindView(root, @"shortcut-group");
@@ -269,8 +269,8 @@ static void CheckInputFaces(NSWindow *window) {
             Require([png writeToFile:path atomically:YES], @"Could not save the shortcut input diagnostic");
             // Read empty vertical padding, clear of title glyphs, popup arrows and the border.
             NSInteger y = static_cast<NSInteger>(4 * bitmap.pixelsHigh / control.bounds.size.height);
-            RequireTint(window, BitmapColor(bitmap, bitmap.pixelsWide / 2, y), LoreColor(LoreBackground),
-                [NSString stringWithFormat:@"Native cells must preserve Lore's shared input face: %@; bitmapColorSpace=%@",
+            RequireTint(window, BitmapColor(bitmap, bitmap.pixelsWide / 2, y), BawanColor(BawanBackground),
+                [NSString stringWithFormat:@"Native cells must preserve Bawan's shared input face: %@; bitmapColorSpace=%@",
                     identifier, bitmap.colorSpace]);
         }
     }
@@ -296,9 +296,9 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
         NSClipView *clip = scroll.contentView;
         Require(scroll.drawsBackground && clip.drawsBackground && !scroll.verticalScroller.hidden,
             @"The always-visible native scroller must retain the paper-backed scroll and clip surfaces");
-        RequireTint(window, scroll.backgroundColor, LoreColor(LoreBackground),
+        RequireTint(window, scroll.backgroundColor, BawanColor(BawanBackground),
             @"The legacy scroll gutter must resolve the current paper color");
-        RequireTint(window, clip.backgroundColor, LoreColor(LoreBackground),
+        RequireTint(window, clip.backgroundColor, BawanColor(BawanBackground),
             @"The clip background must resolve the same paper color");
         NSBitmapImageRep *bitmap = [clip bitmapImageRepForCachingDisplayInRect:clip.bounds];
         Require(bitmap != nil, @"Could not capture the legacy scroll background");
@@ -307,14 +307,14 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
             // The document's outer margin contains no text, card border or scroller glyph.
             NSInteger x = static_cast<NSInteger>(4 * bitmap.pixelsWide / clip.bounds.size.width);
             NSColor *actual = [BitmapColor(bitmap, x, bitmap.pixelsHigh / 2) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-            NSColor *expected = [LoreColor(LoreBackground) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-            // LoreDrawPaper composites grain at 0.035 opacity. This rendered sample
+            NSColor *expected = [BawanColor(BawanBackground) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+            // BawanDrawPaper composites grain at 0.035 opacity. This rendered sample
             // includes that texture; the flat color tokens above retain 0.01 checks.
             Require(actual != nil && expected != nil &&
                 std::abs(actual.redComponent - expected.redComponent) < 0.04 &&
                 std::abs(actual.greenComponent - expected.greenComponent) < 0.04 &&
                 std::abs(actual.blueComponent - expected.blueComponent) < 0.04,
-                [NSString stringWithFormat:@"The rendered clip margin must stay paper-colored: actual=%@ expected=%@ profile=%@",
+                [NSString stringWithFormat:@"The rendered clip margin must stay paper-cobawand: actual=%@ expected=%@ profile=%@",
                     actual, expected, bitmap.colorSpace]);
         }];
         NSScroller *scroller = scroll.verticalScroller;
@@ -353,8 +353,8 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
         [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
             [scroller cacheDisplayInRect:sampleRect toBitmapImageRep:sample];
             // The slot is a flat fill; only the separate clip sample includes paper grain.
-            RequireTint(window, BitmapColor(sample, sample.pixelsWide / 2, sample.pixelsHigh / 2), LoreColor(LoreBackground),
-                [NSString stringWithFormat:@"The actual native scroller slot must be paper-colored: slot=%@ knob=%@ sample=%@ profile=%@",
+            RequireTint(window, BitmapColor(sample, sample.pixelsWide / 2, sample.pixelsHigh / 2), BawanColor(BawanBackground),
+                [NSString stringWithFormat:@"The actual native scroller slot must be paper-cobawand: slot=%@ knob=%@ sample=%@ profile=%@",
                     NSStringFromRect(slot), NSStringFromRect(knob), NSStringFromRect(sampleRect), sample.colorSpace]);
         }];
         Capture(window, dark ? @"legacy-scroller-dark" : @"legacy-scroller-light");
@@ -381,7 +381,7 @@ static void SendControlAction(NSControl *control) {
 static void RunSmoke(void) {
     [NSFileManager.defaultManager createDirectoryAtPath:@"settings-smoke"
         withIntermediateDirectories:YES attributes:nil error:nil];
-    NSString *suite = [@"local.lore.settings-smoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSString *suite = [@"local.bawan.settings-smoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
     [defaults removePersistentDomainForName:suite];
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
@@ -391,7 +391,7 @@ static void RunSmoke(void) {
     // subscription. Returning to the screen must still retry monitor access.
     const NSUInteger initialSettingsRefreshes = settings.refreshCount;
     const NSUInteger initialMonitorRefreshes = monitor.refreshCount;
-    [NSNotificationCenter.defaultCenter postNotificationName:LoreShortcutsDidChangeNotification object:preferences];
+    [NSNotificationCenter.defaultCenter postNotificationName:BawanShortcutsDidChangeNotification object:preferences];
     [NSNotificationCenter.defaultCenter postNotificationName:NSApplicationDidBecomeActiveNotification object:NSApp];
     Require(settings.refreshCount == initialSettingsRefreshes && monitor.refreshCount == initialMonitorRefreshes,
         @"Settings must not independently duplicate external notification refreshes");
@@ -401,7 +401,7 @@ static void RunSmoke(void) {
     [settings setActive:NO];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0;
-    panel.onTranslate = ^(NSString *__unused text, lore::Direction __unused direction) { ++translations; };
+    panel.onTranslate = ^(NSString *__unused text, bawan::Direction __unused direction) { ++translations; };
     panel.onCancel = ^{ ++cancellations; };
     panel.onClose = ^{ ++closes; };
     __weak TranslationPanel *weakPanel = panel;
@@ -410,7 +410,7 @@ static void RunSmoke(void) {
     [panel showForManualInput];
     NSWindow *window = nil;
     for (NSWindow *candidate in NSApp.windows) {
-        if ([candidate.contentView.identifier isEqualToString:@"lore-panel"]) window = candidate;
+        if ([candidate.contentView.identifier isEqualToString:@"bawan-panel"]) window = candidate;
     }
     Require(window != nil, @"The translator must provide the only settings host window");
     RequireOrdinaryWindow(window, @"after manual entry");
@@ -422,7 +422,7 @@ static void RunSmoke(void) {
     [panel showForSelection:original];
     RequireOrdinaryWindow(window, @"after selection entry");
     [panel showForManualInput];
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
     [source.undoManager beginUndoGrouping];
     [source insertText:@" Please review the document." replacementRange:NSMakeRange(source.string.length, 0)];
     [source.undoManager endUndoGrouping];
@@ -431,7 +431,7 @@ static void RunSmoke(void) {
         @"The navigation fixture must establish a real editable undo operation");
     [source setSelectedRange:NSMakeRange(4, 7)];
     NSRange selection = source.selectedRange;
-    [panel setOutput:@"会議は来週の月曜日に変更されました。" direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:@"会議は来週の月曜日に変更されました。" direction:bawan::Direction::EnglishToJapanese];
     [(NSButton *)FindView(translationRoot, @"copy") performClick:nil];
     NSRect hostFrame = window.frame;
     [gear performClick:nil];
@@ -443,9 +443,9 @@ static void RunSmoke(void) {
     NSUInteger ownedWindows = 0;
     for (NSWindow *candidate in NSApp.windows) {
         NSString *identifier = candidate.contentView.identifier;
-        if ([identifier isEqualToString:@"lore-panel"] || [identifier isEqualToString:@"lore-settings"]) ++ownedWindows;
+        if ([identifier isEqualToString:@"bawan-panel"] || [identifier isEqualToString:@"bawan-settings"]) ++ownedWindows;
     }
-    Require(ownedWindows == 1, @"Settings must not create a second Lore window");
+    Require(ownedWindows == 1, @"Settings must not create a second Bawan window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
     Capture(window, @"entry");
     Require(window.firstResponder == back,
@@ -479,18 +479,18 @@ static void RunSmoke(void) {
     Require([source.string isEqualToString:original], @"The source edit must remain undoable after returning from Settings");
     [source.undoManager redo];
     Require([source.string isEqualToString:edited], @"Navigation must preserve the redo history too");
-    [panel setAvailable:YES busy:YES status:@"Translating…" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:YES status:@"Translating…" kind:BawanStatusInformation];
     [gear performClick:nil];
-    [panel setOutput:@"Hidden streaming update" direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:@"Hidden streaming update" direction:bawan::Direction::EnglishToJapanese];
     [back performClick:nil];
     Require([output.string isEqualToString:@"Hidden streaming update"] &&
         [[(NSButton *)FindView(translationRoot, @"translate") title] isEqualToString:@"Cancel  ⌘↵"] &&
         cancellations == 0 && closes == 0,
         @"Settings navigation must retain streaming updates without cancelling the translation");
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
     [gear performClick:nil];
     CheckBounds(window);
-    Require(LoreMascotImage() != nil && LorePaperImage() != nil,
+    Require(BawanMascotImage() != nil && BawanPaperImage() != nil,
             @"Settings captures must load the real mascot and paper assets");
     NSView *root = window.contentView;
     NSSwitch *login = (NSSwitch *)FindView(root, @"launch-at-login");
@@ -512,8 +512,8 @@ static void RunSmoke(void) {
     NSString *privacyText = privacy.stringValue;
     Require(selectionEnabled.state == NSControlStateValueOn && panelEnabled.state == NSControlStateValueOn &&
         selectionCount.indexOfSelectedItem == 1 &&
-        [selectionKey.title isEqualToString:ShortcutKeyLabel(lore::defaultShortcuts()[0])] &&
-        [panelKey.title isEqualToString:ShortcutKeyLabel(lore::defaultShortcuts()[1])],
+        [selectionKey.title isEqualToString:ShortcutKeyLabel(bawan::defaultShortcuts()[0])] &&
+        [panelKey.title isEqualToString:ShortcutKeyLabel(bawan::defaultShortcuts()[1])],
         @"Both shortcuts must show their enabled defaults and separate press counts");
     Require([keyHeading.stringValue containsString:@"click"] &&
         [pressesHeading.stringValue isEqualToString:@"Presses"] && help != nil && window.attachedSheet == nil,
@@ -551,10 +551,10 @@ static void RunSmoke(void) {
     settings.onLoginSettings = ^{ ++loginSettings; };
     settings.onLoginChanged = ^(BOOL enabled) { ++loginChanges; requestedLogin = enabled; };
     [(NSButton *)FindView(root, @"shortcut-selection-permission") performClick:nil];
-    Require(monitor.permissionRequests == 1 && monitor.lastPermissionAction == lore::ShortcutAction::TranslateSelection,
+    Require(monitor.permissionRequests == 1 && monitor.lastPermissionAction == bawan::ShortcutAction::TranslateSelection,
         @"Selection permission action must reach its own monitor action");
     [(NSButton *)FindView(root, @"shortcut-panel-permission") performClick:nil];
-    Require(monitor.permissionRequests == 2 && monitor.lastPermissionAction == lore::ShortcutAction::OpenPanel,
+    Require(monitor.permissionRequests == 2 && monitor.lastPermissionAction == bawan::ShortcutAction::OpenPanel,
         @"Panel permission action must reach its own monitor action");
     [(NSButton *)FindView(root, @"login-items") performClick:nil];
     login.state = NSControlStateValueOn;
@@ -569,9 +569,9 @@ static void RunSmoke(void) {
     Require([selectionStatus.stringValue isEqualToString:@"Input Monitoring required"] &&
         [panelStatus.stringValue isEqualToString:@"Accessibility required"],
         @"Each shortcut must explain its own missing permission");
-    RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreWarning),
+    RequireTintInBothAppearances(window, selectionStatus.textColor, BawanColor(BawanWarning),
         @"Input Monitoring permission must use the shared warning color");
-    RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreWarning),
+    RequireTintInBothAppearances(window, panelStatus.textColor, BawanColor(BawanWarning),
         @"Accessibility permission must use the same warning color");
     Capture(window, @"light");
     CheckInputFaces(window);
@@ -593,7 +593,7 @@ static void RunSmoke(void) {
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcuts must show ready");
     Require(permissionHelp.hidden && reservation.hidden,
         @"Ready default shortcuts must remove setup-only explanations");
-    RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreSuccess),
+    RequireTintInBothAppearances(window, selectionStatus.textColor, BawanColor(BawanSuccess),
         @"Ready shortcuts must use the shared success color");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
@@ -606,7 +606,7 @@ static void RunSmoke(void) {
     Require([panelStatus.stringValue isEqualToString:@"Could not start monitoring"] &&
         !FindView(root, @"shortcut-panel-permission").hidden,
         @"A failed shortcut needs its own status and retry action");
-    RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreError),
+    RequireTintInBothAppearances(window, panelStatus.textColor, BawanColor(BawanError),
         @"Failed shortcuts must use the same error color as translation failures");
     monitor.panelAvailability = ShortcutAvailabilityAvailable;
     [settings refresh];
@@ -617,12 +617,12 @@ static void RunSmoke(void) {
     [scroll reflectScrolledClipView:scroll.contentView];
     CGFloat errorBaseHeight = document.bounds.size.height;
     NSRect errorFrame = window.frame;
-    NSString *longError = @"Lore could not change the launch-at-login setting. The operating system returned an error while updating this application’s registration. Open Login Items in System Settings, review the current permissions, and try again.";
+    NSString *longError = @"Bawan could not change the launch-at-login setting. The operating system returned an error while updating this application’s registration. Open Login Items in System Settings, review the current permissions, and try again.";
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:longError error:YES];
     CheckBounds(window);
     Require(login.state == NSControlStateValueOff && !hint.hidden && [hint.stringValue isEqualToString:longError],
         @"Failed changes must restore the actual login state and retain the full error");
-    RequireTintInBothAppearances(window, hint.textColor, LoreColor(LoreError),
+    RequireTintInBothAppearances(window, hint.textColor, BawanColor(BawanError),
         @"Login failures must use the common error color");
     NSRect textBounds = [hint.attributedStringValue boundingRectWithSize:NSMakeSize(hint.bounds.size.width, CGFLOAT_MAX)
         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
@@ -664,14 +664,14 @@ static void RunSmoke(void) {
 
     selectionEnabled.state = NSControlStateValueOff;
     SendControlAction(selectionEnabled);
-    Require(![preferences bindingForAction:lore::ShortcutAction::TranslateSelection].enabled &&
-        [preferences bindingForAction:lore::ShortcutAction::OpenPanel].enabled &&
+    Require(![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
+        [preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled &&
         [selectionStatus.stringValue isEqualToString:@"Off"], @"Disabling one action must preserve the other");
-    RequireTintInBothAppearances(window, feedback.textColor, LoreColor(LoreSecondaryText),
+    RequireTintInBothAppearances(window, feedback.textColor, BawanColor(BawanSecondaryText),
         @"Saved settings must use informational feedback rather than error styling");
     [selectionCount selectItemAtIndex:0];
     SendControlAction(selectionCount);
-    Require([preferences bindingForAction:lore::ShortcutAction::TranslateSelection].pressCount == 1,
+    Require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].pressCount == 1,
         @"A disabled action must still allow changing its press count");
 
     [panelKey performClick:nil];
@@ -687,13 +687,13 @@ static void RunSmoke(void) {
     Require([selectionStatus.stringValue isEqualToString:@"Recording shortcut…"] &&
         [panelStatus.stringValue isEqualToString:@"Paused while recording"],
         @"Recording and paused rows must not claim that shortcuts are ready");
-    RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreSecondaryText),
+    RequireTintInBothAppearances(window, selectionStatus.textColor, BawanColor(BawanSecondaryText),
         @"Recording status must use neutral feedback rather than success green");
-    RequireTintInBothAppearances(window, panelStatus.textColor, LoreColor(LoreSecondaryText),
+    RequireTintInBothAppearances(window, panelStatus.textColor, BawanColor(BawanSecondaryText),
         @"Paused shortcuts must use neutral feedback rather than success green");
     Capture(window, @"recording");
     SendKey(settings, window, 17, NSEventModifierFlagOption, YES, @"t");
-    Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 17,
+    Require(monitor.suspended && [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].keyCode == 17,
         @"Recording must save the requested physical key but wait for its release");
     Require([selectionStatus.stringValue isEqualToString:@"Waiting for key release…"] &&
         [panelStatus.stringValue isEqualToString:@"Paused while recording"],
@@ -706,7 +706,7 @@ static void RunSmoke(void) {
         @"Key release must restore each row's actual enabled and ready state");
     selectionEnabled.state = NSControlStateValueOn;
     SendControlAction(selectionEnabled);
-    Require(![preferences bindingForAction:lore::ShortcutAction::TranslateSelection].enabled &&
+    Require(![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
         selectionEnabled.state == NSControlStateValueOff && !feedback.hidden,
         @"A conflicting single/double assignment must reject enabling without changing the old setting");
 
@@ -717,14 +717,14 @@ static void RunSmoke(void) {
     SendKey(settings, window, 40, customModifiers, NO, @"k");
     selectionEnabled.state = NSControlStateValueOn;
     SendControlAction(selectionEnabled);
-    lore::ShortcutBinding custom = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
-    Require(custom.enabled && custom.keyCode == 40 && custom.modifiers == (lore::Control | lore::Option) &&
+    bawan::ShortcutBinding custom = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+    Require(custom.enabled && custom.keyCode == 40 && custom.modifiers == (bawan::Control | bawan::Option) &&
         custom.pressCount == 1 && [selectionKey.title isEqualToString:ShortcutKeyLabel(custom)],
         @"Custom key, press count, enabled state, and visible label must agree");
     Require(!reservation.hidden && [reservation.stringValue containsString:@"reserve"],
         @"An enabled custom shortcut must explain that its key is reserved");
     ShortcutPreferences *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-    lore::ShortcutBinding persisted = [reloaded bindingForAction:lore::ShortcutAction::TranslateSelection];
+    bawan::ShortcutBinding persisted = [reloaded bindingForAction:bawan::ShortcutAction::TranslateSelection];
     Require(persisted.enabled && persisted.keyCode == custom.keyCode && persisted.modifiers == custom.modifiers &&
         persisted.pressCount == custom.pressCount, @"Recorded settings must survive reloading preferences");
     Capture(window, @"custom-shortcut");
@@ -732,13 +732,13 @@ static void RunSmoke(void) {
     [selectionKey performClick:nil];
     SendKey(settings, window, 12, NSEventModifierFlagCommand, YES, @"q");
     SendKey(settings, window, 12, NSEventModifierFlagCommand, NO, @"q");
-    Require(monitor.suspended && [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
+    Require(monitor.suspended && [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].keyCode == 40,
         @"Reserved commands must be consumed without quitting or replacing the old key");
     SendKey(settings, window, 53, 0, YES, @"\x1b");
     Require(monitor.suspended && window.visible, @"Esc cancels recording without closing or resuming before key-up");
     SendKey(settings, window, 53, 0, NO, @"\x1b");
     Require(!monitor.suspended && window.visible &&
-        [preferences bindingForAction:lore::ShortcutAction::TranslateSelection].keyCode == 40,
+        [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].keyCode == 40,
         @"Canceling recording must preserve the old assignment and the settings window");
 
     // Hosted runners can dispatch programmatic control actions without ever
@@ -765,8 +765,8 @@ static void RunSmoke(void) {
         @(window.keyWindow), @(monitor.settingsActive), @(selectionKey.enabled), feedback.stringValue]);
     [gear performClick:nil];
     [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
-    lore::ShortcutBinding restored = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
-    Require(restored.enabled && lore::isPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
+    bawan::ShortcutBinding restored = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+    Require(restored.enabled && bawan::isPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
         @"Reset restores the default key, press count, and enabled state");
     Require(reservation.hidden, @"Restoring the default assignments must remove the custom-key reservation warning");
     [settings showError:@""];

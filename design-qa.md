@@ -1,6 +1,17 @@
-# Lore vintage UI QA — 2026-11-13
+# Bawan vintage UI QA — 2026-11-13
 
 final result: blocked
+
+## Bawan rename verification — local MacBook, 2026-11-13
+
+- A clean Release build succeeded with `BAWAN_BUILD_TESTS=ON` and `BAWAN_BUILD_SMOKE=ON`; all 9 CTests passed in 13.88 seconds. `codesign --verify --strict build/Bawan.app` passed.
+- Bundle executable/name/display name are Bawan; Bundle ID is `local.bawan.Bawan`. The packaged mascot, paper and icons match the existing artwork byte for byte.
+- Reviewed newly generated translation and Settings captures in light and dark appearances and replaced the four PNGs in `design/screenshots/`. Their local provenance is documented beside them.
+- Obsolete shortcut-setting fallback was removed. The preferences test verifies that obsolete settings do not override current defaults.
+- No old product-name references remain in current source text or filenames. The repository's local directory name and Git history are intentionally retained.
+- The previous installed app was normally quit after unregistering launch at login. The old installed bundle, preferences, model directory and build outputs were removed. macOS retains a disabled historical login-item record; no system-wide login-item database reset was performed.
+- Custom untracked UI-validation scripts and previews from the old build directory were preserved outside the checkout before cleaning it.
+- No model was downloaded for this verification; the app was not installed in Applications. Real-model inference was not rerun. The broader historical UI acceptance status below remains separate from this rename check.
 
 ## Selected visual target
 
@@ -46,7 +57,7 @@ final result: blocked
 - Input faces and primary-button contrast are sampled using the capture's own ICC color space before converting to sRGB. AppKit's generic color wrapper must not reinterpret the raw display samples.
 - Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
 - Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Settings cannot undo hidden translator edits; a newly selected passage returns to the translator before clearing the previous editing session. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
-- The original vintage implementation and earlier consistency results are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
+- The original vintage implementation and earlier consistency results are available from [PR #5](https://github.com/my-name-is-yu/Bawan/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
 
 ## Lightweight usability follow-up
 
@@ -60,14 +71,14 @@ final result: blocked
 
 ## Blocking verification
 
-This execution workspace is Linux. Native arm64 builds, signature validation and AppKit smoke checks run in macOS CI; the baseline run for commit 8e556e2 completed successfully, and follow-up runs are linked from PR #5. The AppKit content-view captures support component comparisons but omit native titlebar overlays and interactive operation in other apps. Full-window visual QA and real-app focus/permission/resource checks remain unverified, so the overall report stays blocked on those checks.
+The original UI implementation workspace was Linux. Native arm64 builds, signature validation and AppKit smoke checks run in macOS CI; the baseline run for commit 8e556e2 completed successfully, and follow-up runs are linked from PR #5. The AppKit content-view captures support component comparisons but omit native titlebar overlays and interactive operation in other apps. Full-window visual QA and real-app focus/permission/resource checks remain unverified, so the overall report stays blocked on those checks.
 
 On an Apple Silicon Mac:
 
 ```sh
-./scripts/build.sh -DLORE_BUILD_TESTS=ON
+./scripts/build.sh -DBAWAN_BUILD_TESTS=ON
 cmake --build build --target shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke --parallel 3
-codesign --verify --strict build/Lore.app
+codesign --verify --strict build/Bawan.app
 ctest --test-dir build --output-on-failure
 ```
 
@@ -77,6 +88,6 @@ Do not change this report to passed until the native build, tests, full-window r
 
 ## Expanded text-area verification
 
-- [Native CI run 43360514233](https://github.com/my-name-is-yu/Lore/actions/runs/43360514233) for implementation commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c` passed arm64 build/signature checks, all five CTests, pointer feedback and official-model translation.
+- [Native CI run 43360514233](https://github.com/my-name-is-yu/Bawan/actions/runs/43360514233) for implementation commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c` passed arm64 build/signature checks, all five CTests, pointer feedback and official-model translation.
 - Inspected the new light and minimum-size dark captures. Both pane tops are 24pt below the masthead, and native smoke tests retain direction, reverse-translation, long-text scrolling and accessible source/translation roles.
 - The deleted bands and rules, their constraints and display-only language state are removed rather than hidden.

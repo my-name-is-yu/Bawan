@@ -2,6 +2,6 @@
 #import <AppKit/AppKit.h>
 
 // The fixed medallion and both screens share one small dog bitmap.
-@interface LoreMascotView : NSImageView
+@interface BawanMascotView : NSImageView
 - (void)resetHoverAnimation;
 @end

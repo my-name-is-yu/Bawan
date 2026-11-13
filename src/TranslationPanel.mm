@@ -1,7 +1,7 @@
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
-#import "LoreAppearance.h"
-#import "LoreMascotView.h"
+#import "BawanAppearance.h"
+#import "BawanMascotView.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
 #import <QuartzCore/CAMediaTimingFunction.h>
@@ -11,12 +11,12 @@
 
 namespace {
 void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL enabled) {
-    NSColor *fill = primary ? LorePrimaryButtonFill(highlighted) : LoreColor(gold ? LoreGold : LoreBackground);
+    NSColor *fill = primary ? BawanPrimaryButtonFill(highlighted) : BawanColor(gold ? BawanGold : BawanBackground);
     if (!enabled) fill = [fill colorWithAlphaComponent:0.4];
-    else if (highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:LoreColor(LoreText)];
+    else if (highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
     NSRect face = NSInsetRect(frame, 1, 1);
     face.size.height -= 3;
-    NSBezierPath *path = gold ? LoreCutCornerPath(face) :
+    NSBezierPath *path = gold ? BawanCutCornerPath(face) :
         [NSBezierPath bezierPathWithRoundedRect:face xRadius:8 yRadius:8];
     if (enabled) {
         // Every framed action shares the same hard shadow, including cut corners.
@@ -24,19 +24,19 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
         NSAffineTransform *offset = [NSAffineTransform transform];
         [offset translateXBy:0 yBy:3];
         [shadow transformUsingAffineTransform:offset];
-        [LoreColor(LoreBorder) setFill];
+        [BawanColor(BawanBorder) setFill];
         [shadow fill];
     }
     [fill setFill];
     [path fill];
-    [LoreColor(LoreBorder) setStroke];
+    [BawanColor(BawanBorder) setStroke];
     path.lineWidth = 1.5;
     [path stroke];
 }
 
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = weight >= NSFontWeightMedium ? LoreLabelFont(size) : LoreBodyFont(size);
+    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
     label.textColor = color;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
@@ -44,18 +44,18 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 
 } // namespace
 
-@interface LorePanel : NSPanel
+@interface BawanPanel : NSPanel
 @property(nonatomic, copy) void (^onTranslateKey)(void);
 @property(nonatomic, copy) void (^onCopyKey)(void);
 @property(nonatomic, copy) void (^onEscape)(void);
 @end
 
-@implementation LorePanel
+@implementation BawanPanel
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return NO; }
 - (NSUndoManager *)undoManager {
     // Keep the translator's history while Settings owns the responder chain.
-    if ([self.contentView.identifier isEqualToString:@"lore-settings"]) return nil;
+    if ([self.contentView.identifier isEqualToString:@"bawan-settings"]) return nil;
     return [super undoManager];
 }
 - (void)cancelOperation:(id)sender { if (self.onEscape) self.onEscape(); }
@@ -83,7 +83,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 @end
 
 // Appearance changes reuse the same surfaces, constraints and static art.
-@interface LoreSurfaceView : NSView
+@interface BawanSurfaceView : NSView
 @property(nonatomic, strong) NSColor *fillColor;
 @property(nonatomic, strong) NSColor *borderColor;
 @property(nonatomic) CGFloat cornerRadius;
@@ -92,7 +92,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 @property(nonatomic) BOOL masthead;
 @end
 
-@implementation LoreSurfaceView
+@implementation BawanSurfaceView
 - (BOOL)isFlipped { return YES; }
 - (BOOL)mouseDownCanMoveWindow { return self.draggable; }
 - (void)viewDidChangeEffectiveAppearance {
@@ -100,7 +100,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    if (self.masthead) { LoreDrawHeader(self.bounds); return; }
+    if (self.masthead) { BawanDrawHeader(self.bounds); return; }
     NSRect frame = self.borderColor ? NSInsetRect(self.bounds, 0.75, 0.75) : self.bounds;
     NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:frame xRadius:self.cornerRadius yRadius:self.cornerRadius];
     [self.fillColor setFill];
@@ -108,7 +108,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     if (self.textured) {
         [NSGraphicsContext saveGraphicsState];
         [path addClip];
-        LoreDrawPaper(self.bounds);
+        BawanDrawPaper(self.bounds);
         [NSGraphicsContext restoreGraphicsState];
     }
     if (self.borderColor) {
@@ -119,7 +119,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 }
 @end
 
-@interface LoreActionButton : NSButton {
+@interface BawanActionButton : NSButton {
     BOOL _trackingPointer;
 }
 @property(nonatomic) BOOL primary;
@@ -129,13 +129,13 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 - (void)resetPressFeedback;
 @end
 
-@implementation LoreActionButton
+@implementation BawanActionButton
 // Our bezel fills the bounds; native button ornament insets must not enlarge it.
 - (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
 - (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (void)resetPressFeedback {
     _trackingPointer = NO;
-    [self.layer removeAnimationForKey:@"lore.press"];
+    [self.layer removeAnimationForKey:@"bawan.press"];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     self.layer.transform = CATransform3DIdentity;
@@ -164,7 +164,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer.transform = target;
-    [layer addAnimation:animation forKey:@"lore.press"];
+    [layer addAnimation:animation forKey:@"bawan.press"];
     [CATransaction commit];
 }
 - (void)mouseDown:(NSEvent *)event {
@@ -201,18 +201,18 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     if (!self.plain) {
         DrawButton(self.bounds, self.primary, self.gold, highlighted, self.enabled);
     } else if (highlighted) {
-        [[LoreColor(LoreHeaderText) colorWithAlphaComponent:0.12] setFill];
+        [[BawanColor(BawanHeaderText) colorWithAlphaComponent:0.12] setFill];
         [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:6 yRadius:6] fill];
     }
     [super drawRect:dirtyRect];
 }
 @end
 
-@interface LoreTextView : NSTextView
+@interface BawanTextView : NSTextView
 @property(nonatomic, copy) NSString *placeholder;
 @end
 
-@implementation LoreTextView
+@implementation BawanTextView
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
@@ -221,28 +221,28 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     [super drawRect:dirtyRect];
     if (self.string.length == 0) {
         [self.placeholder drawInRect:NSInsetRect(self.bounds, 1, 1) withAttributes:
-            @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:LoreColor(LoreSecondaryText)}];
+            @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:BawanColor(BawanSecondaryText)}];
     }
 }
 @end
 
 @interface TranslationPanel () <NSWindowDelegate, NSTextViewDelegate> {
-    LorePanel *_panel;
+    BawanPanel *_panel;
     NSView *_translationContent;
-    LoreMascotView *_mascot;
+    BawanMascotView *_mascot;
     SettingsViewController *_settings;
     __weak NSResponder *_translationResponder;
-    LoreTextView *_source;
-    LoreTextView *_output;
-    LoreActionButton *_swap;
-    lore::Direction _inputDirection;
-    lore::Direction _outputDirection;
+    BawanTextView *_source;
+    BawanTextView *_output;
+    BawanActionButton *_swap;
+    bawan::Direction _inputDirection;
+    bawan::Direction _outputDirection;
     NSTextField *_status;
     NSTextField *_instructions;
     NSTextField *_shortcutHint;
     NSLayoutConstraint *_messageSpacing;
-    LoreActionButton *_translate;
-    LoreActionButton *_copy;
+    BawanActionButton *_translate;
+    BawanActionButton *_copy;
     NSImage *_copyIcon;
     NSImage *_copiedIcon;
     BOOL _available;
@@ -252,29 +252,29 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 
 @implementation TranslationPanel
 
-static LoreSurfaceView *SurfaceView(NSView *parent, NSString *identifier, LoreColorRole role) {
-    LoreSurfaceView *view = [[LoreSurfaceView alloc] initWithFrame:NSZeroRect];
+static BawanSurfaceView *SurfaceView(NSView *parent, NSString *identifier, BawanColorRole role) {
+    BawanSurfaceView *view = [[BawanSurfaceView alloc] initWithFrame:NSZeroRect];
     view.identifier = identifier;
-    view.fillColor = LoreColor(role);
+    view.fillColor = BawanColor(role);
     view.translatesAutoresizingMaskIntoConstraints = NO;
     [parent addSubview:view];
     return view;
 }
 
 static void AddConstraints(NSArray<NSLayoutConstraint *> *constraints) {
-    for (NSLayoutConstraint *constraint in constraints) constraint.identifier = @"lore.layout";
+    for (NSLayoutConstraint *constraint in constraints) constraint.identifier = @"bawan.layout";
     [NSLayoutConstraint activateConstraints:constraints];
 }
 
-static LoreActionButton *ButtonView(NSView *parent, NSString *identifier, NSString *title,
+static BawanActionButton *ButtonView(NSView *parent, NSString *identifier, NSString *title,
                                id target, SEL action, BOOL primary, BOOL plain) {
-    LoreActionButton *button = [[LoreActionButton alloc] initWithFrame:NSZeroRect];
+    BawanActionButton *button = [[BawanActionButton alloc] initWithFrame:NSZeroRect];
     button.identifier = identifier;
     [button setButtonType:NSButtonTypeMomentaryPushIn];
     button.bordered = NO;
     button.title = title;
-    button.font = LoreLabelFont(14);
-    button.contentTintColor = LoreColor(primary ? LoreHeaderText : LoreText);
+    button.font = BawanLabelFont(14);
+    button.contentTintColor = BawanColor(primary ? BawanHeaderText : BawanText);
     button.primary = primary;
     button.plain = plain;
     button.target = target;
@@ -285,25 +285,25 @@ static LoreActionButton *ButtonView(NSView *parent, NSString *identifier, NSStri
     return button;
 }
 
-static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, BOOL editable,
+static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView, BOOL editable,
                                NSString *identifier, NSString *label, NSString *placeholder) {
     // Start the clip view and document at the same width. Otherwise the first
     // autoresize adds the initial document width and silently clips long lines.
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     scroll.borderType = NSNoBorder;
-    LoreConfigurePaperScrollView(scroll);
+    BawanConfigurePaperScrollView(scroll);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
-    LoreTextView *text = [[LoreTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
+    BawanTextView *text = [[BawanTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     text.identifier = identifier;
     text.placeholder = placeholder;
     text.editable = editable;
     text.selectable = YES;
     text.richText = NO;
-    text.font = LoreBodyFont(18);
-    text.textColor = LoreColor(LoreText);
-    text.insertionPointColor = LoreAccentColor();
+    text.font = BawanBodyFont(18);
+    text.textColor = BawanColor(BawanText);
+    text.insertionPointColor = BawanAccentColor();
     text.selectedTextAttributes = @{
-        NSBackgroundColorAttributeName: [LoreAccentColor() colorWithAlphaComponent:0.22],
+        NSBackgroundColorAttributeName: [BawanAccentColor() colorWithAlphaComponent:0.22],
         NSForegroundColorAttributeName: text.textColor
     };
     text.drawsBackground = NO;
@@ -337,12 +337,12 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 - (instancetype)init {
     self = [super init];
     if (!self) return nil;
-    _panel = [[LorePanel alloc] initWithContentRect:NSMakeRect(0, 0, 720, 500)
+    _panel = [[BawanPanel alloc] initWithContentRect:NSMakeRect(0, 0, 720, 500)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable |
                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskNonactivatingPanel |
                   NSWindowStyleMaskFullSizeContentView
         backing:NSBackingStoreBuffered defer:NO];
-    _panel.title = @"Lore";
+    _panel.title = @"Bawan";
     _panel.titleVisibility = NSWindowTitleHidden;
     _panel.titlebarAppearsTransparent = YES;
     _panel.backgroundColor = NSColor.clearColor;
@@ -370,10 +370,10 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         else [owner close];
     };
 
-    LoreSurfaceView *content = [[LoreSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
-    content.identifier = @"lore-panel";
-    content.fillColor = LoreColor(LoreBackground);
-    content.borderColor = LoreColor(LoreBorder);
+    BawanSurfaceView *content = [[BawanSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
+    content.identifier = @"bawan-panel";
+    content.fillColor = BawanColor(BawanBackground);
+    content.borderColor = BawanColor(BawanBorder);
     content.textured = YES;
     content.cornerRadius = 16;
     content.wantsLayer = YES;
@@ -382,32 +382,32 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _panel.contentView = content;
     _translationContent = content;
 
-    LoreSurfaceView *header = SurfaceView(content, @"header", LoreHeader);
+    BawanSurfaceView *header = SurfaceView(content, @"header", BawanHeader);
     header.masthead = YES;
     header.draggable = YES;
-    LoreSurfaceView *footer = SurfaceView(content, @"footer", LoreBackground);
+    BawanSurfaceView *footer = SurfaceView(content, @"footer", BawanBackground);
     footer.textured = YES;
-    LoreSurfaceView *footerLine = SurfaceView(content, @"footer-divider", LoreBorder);
-    LoreSurfaceView *dividerTop = SurfaceView(content, @"pane-divider-top", LoreBorder);
-    LoreSurfaceView *dividerBottom = SurfaceView(content, @"pane-divider-bottom", LoreBorder);
+    BawanSurfaceView *footerLine = SurfaceView(content, @"footer-divider", BawanBorder);
+    BawanSurfaceView *dividerTop = SurfaceView(content, @"pane-divider-top", BawanBorder);
+    BawanSurfaceView *dividerBottom = SurfaceView(content, @"pane-divider-bottom", BawanBorder);
 
-    LoreMascotView *mascot = [[LoreMascotView alloc] init];
+    BawanMascotView *mascot = [[BawanMascotView alloc] init];
     _mascot = mascot;
     mascot.identifier = @"mascot";
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [header addSubview:mascot];
-    LoreActionButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
-    settings.image = LoreSymbol(@"gearshape", @"Settings", 20);
-    settings.contentTintColor = LoreColor(LoreHeaderText);
+    BawanActionButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
+    settings.image = BawanSymbol(@"gearshape", @"Settings", 20);
+    settings.contentTintColor = BawanColor(BawanHeaderText);
     settings.imagePosition = NSImageOnly;
     settings.toolTip = @"Settings";
     [settings setAccessibilityLabel:@"Settings"];
 
     _swap = ButtonView(content, @"swap", @"", self, @selector(swapText:), NO, NO);
     _swap.gold = YES;
-    _swap.contentTintColor = LoreColor(LoreGoldText);
-    _swap.image = LoreSymbol(@"arrow.right.arrow.left", @"", 17);
+    _swap.contentTintColor = BawanColor(BawanGoldText);
+    _swap.image = BawanSymbol(@"arrow.right.arrow.left", @"", 17);
     _swap.imagePosition = NSImageOnly;
     _swap.toolTip = @"Swap text and translate back";
     [_swap setAccessibilityLabel:@"Swap text and translate back"];
@@ -417,10 +417,10 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     NSScrollView *outputScroll = TextArea(content, &_output, NO, @"output", @"Translation", @"");
     _source.delegate = self;
 
-    _instructions = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _instructions = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _instructions.identifier = @"instructions";
     _instructions.maximumNumberOfLines = 2;
-    _status = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _status = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _status.identifier = @"status";
     _status.maximumNumberOfLines = 3;
     [_status setAccessibilityLabel:@"Translation status"];
@@ -439,18 +439,18 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     _translate.toolTip = @"Translate or cancel (⌘Return)";
     _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), NO, NO);
     _copy.toolTip = @"Copy Translation (⇧⌘C)";
-    _copyIcon = LoreSymbol(@"doc.on.doc", @"", 13);
-    _copiedIcon = LoreSymbol(@"checkmark", @"", 13);
+    _copyIcon = BawanSymbol(@"doc.on.doc", @"", 13);
+    _copiedIcon = BawanSymbol(@"checkmark", @"", 13);
     _copy.image = _copyIcon;
     _copy.imagePosition = NSImageLeft;
     _copy.imageHugsTitle = YES;
-    _shortcutHint = Label(@"Type or paste text to translate", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _shortcutHint = Label(@"Type or paste text to translate", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-hint";
     _shortcutHint.alignment = NSTextAlignmentCenter;
     _shortcutHint.maximumNumberOfLines = 2;
     [footer addSubview:_shortcutHint];
     // Only the two footer actions need their own composited press feedback.
-    for (LoreActionButton *button in @[_translate, _copy]) {
+    for (BawanActionButton *button in @[_translate, _copy]) {
         button.wantsLayer = YES;
         button.pressFeedback = YES;
     }
@@ -459,11 +459,11 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         [header.topAnchor constraintEqualToAnchor:content.topAnchor],
         [header.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [header.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [header.heightAnchor constraintEqualToConstant:LoreHeaderHeight],
+        [header.heightAnchor constraintEqualToConstant:BawanHeaderHeight],
         [mascot.centerXAnchor constraintEqualToAnchor:header.centerXAnchor],
         [mascot.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [mascot.widthAnchor constraintEqualToConstant:LoreBrandMarkSize],
-        [mascot.heightAnchor constraintEqualToConstant:LoreBrandMarkSize],
+        [mascot.widthAnchor constraintEqualToConstant:BawanBrandMarkSize],
+        [mascot.heightAnchor constraintEqualToConstant:BawanBrandMarkSize],
         [settings.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
         [settings.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
         [settings.widthAnchor constraintEqualToConstant:36],
@@ -537,12 +537,12 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
 - (void)showForSelection:(NSString *)text {
     [self showTranslation];
-    _inputDirection = lore::Direction::Automatic;
+    _inputDirection = bawan::Direction::Automatic;
     _source.string = text;
     // A newly selected passage starts a new editing session, not an undo history
     // of every passage translated since the resident panel was first created.
     [_source.undoManager removeAllActions];
-    [self setOutput:@"" direction:lore::Direction::Automatic];
+    [self setOutput:@"" direction:bawan::Direction::Automatic];
     [self showWithoutChangingInput];
 }
 
@@ -575,7 +575,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
         view.layer.cornerRadius = 16;
         view.layer.masksToBounds = YES;
         _panel.contentView = view;
-        _panel.title = @"Lore Settings";
+        _panel.title = @"Bawan Settings";
     }
     if (!_panel.visible) [self positionNearPointer];
     [settings refresh];
@@ -592,7 +592,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;
-    _panel.title = @"Lore";
+    _panel.title = @"Bawan";
     if (![_panel makeFirstResponder:_translationResponder ?: _source]) {
         [_panel makeFirstResponder:_source];
     }
@@ -622,18 +622,18 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [_panel makeFirstResponder:_source];
 }
 
-- (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(LoreStatusKind)kind {
+- (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(BawanStatusKind)kind {
     _available = available;
     _busy = busy;
     _status.stringValue = status;
-    _status.textColor = LoreColor(kind == LoreStatusError ? LoreError :
-                                 kind == LoreStatusWarning ? LoreWarning : LoreSecondaryText);
+    _status.textColor = BawanColor(kind == BawanStatusError ? BawanError :
+                                 kind == BawanStatusWarning ? BawanWarning : BawanSecondaryText);
     _status.hidden = status.length == 0;
     [self updateMessageSpacing];
     [self updateButtons];
 }
 
-- (void)setOutput:(NSString *)output direction:(lore::Direction)direction {
+- (void)setOutput:(NSString *)output direction:(bawan::Direction)direction {
     _outputDirection = direction;
     if (![_output.string isEqualToString:output]) {
         NSScrollView *scroll = _output.enclosingScrollView;
@@ -674,11 +674,11 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     BOOL hasOutput = _output.string.length > 0;
     _shortcutHint.hidden = hasInput || hasOutput || _busy;
     _translate.enabled = _busy || (_available && hasInput);
-    _translate.contentTintColor = _translate.enabled ? LoreColor(LoreHeaderText) : nil;
+    _translate.contentTintColor = _translate.enabled ? BawanColor(BawanHeaderText) : nil;
     _translate.title = _busy ? @"Cancel  ⌘↵" : (hasOutput ? @"Retranslate  ⌘↵" : @"Translate  ⌘↵");
     _copy.enabled = hasOutput;
-    _copy.contentTintColor = _copy.enabled ? LoreColor(LoreText) : nil;
-    _swap.enabled = _available && !_busy && hasOutput && _outputDirection != lore::Direction::Automatic;
+    _copy.contentTintColor = _copy.enabled ? BawanColor(BawanText) : nil;
+    _swap.enabled = _available && !_busy && hasOutput && _outputDirection != bawan::Direction::Automatic;
 }
 
 - (void)translate:(id)sender {
@@ -688,12 +688,12 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 
 - (void)swapText:(id)sender {
     if (!_swap.enabled) return;
-    _inputDirection = _outputDirection == lore::Direction::EnglishToJapanese ?
-        lore::Direction::JapaneseToEnglish : lore::Direction::EnglishToJapanese;
+    _inputDirection = _outputDirection == bawan::Direction::EnglishToJapanese ?
+        bawan::Direction::JapaneseToEnglish : bawan::Direction::EnglishToJapanese;
     _source.string = _output.string;
     [_source.undoManager removeAllActions];
     [_source scrollRangeToVisible:NSMakeRange(0, 0)];
-    [self setOutput:@"" direction:lore::Direction::Automatic];
+    [self setOutput:@"" direction:bawan::Direction::Automatic];
     [self translate:nil];
 }
 
@@ -726,7 +726,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)textDidChange:(NSNotification *)notification {
-    _inputDirection = lore::Direction::Automatic;
+    _inputDirection = bawan::Direction::Automatic;
     _source.needsDisplay = YES;
     [self updateButtons];
 }

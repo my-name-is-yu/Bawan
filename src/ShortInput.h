@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace lore {
+namespace bawan {
 
 // Zero means this is outside the short-English policy. Count words, not model
 // tokens; unsupported scripts must not accidentally count as ASCII fragments.
@@ -62,4 +62,4 @@ inline std::size_t shortEnglishWordCount(std::string_view text) {
     return hasLetter ? words : 0;
 }
 
-} // namespace lore
+} // namespace bawan

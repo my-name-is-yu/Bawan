@@ -6,15 +6,15 @@
 #include <array>
 
 namespace {
-constexpr int64_t copyEventTag = 0x4c6f7265436f7079; // "LoreCopy"
-constexpr unsigned selectionIndex = static_cast<unsigned>(lore::ShortcutAction::TranslateSelection);
-constexpr unsigned panelIndex = static_cast<unsigned>(lore::ShortcutAction::OpenPanel);
+constexpr int64_t copyEventTag = 0x426177616e437079; // "BawanCpy"
+constexpr unsigned selectionIndex = static_cast<unsigned>(bawan::ShortcutAction::TranslateSelection);
+constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::OpenPanel);
 }
 
 @interface ShortcutMonitor () {
     ShortcutPreferences *_preferences;
-    lore::ShortcutBindings _bindings;
-    std::array<lore::ShortcutGesture, 2> _gestures;
+    bawan::ShortcutBindings _bindings;
+    std::array<bawan::ShortcutGesture, 2> _gestures;
     std::array<ShortcutAvailability, 2> _availability;
     // Keep ownership through configuration changes, including modifier release
     // before key-up. A draining tap does not reserve any new key presses.
@@ -81,7 +81,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 - (void)configureGestures {
     ++_gestureRevision;
     for (unsigned i = 0; i < _gestures.size(); ++i) {
-        _gestures[i].configure(_bindings[i], !(i == selectionIndex && lore::isPassiveCopy(_bindings[i])));
+        _gestures[i].configure(_bindings[i], !(i == selectionIndex && bawan::isPassiveCopy(_bindings[i])));
     }
 }
 
@@ -134,7 +134,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self refresh];
     }]];
     _preferencesObserver = [NSNotificationCenter.defaultCenter
-        addObserverForName:LoreShortcutsDidChangeNotification object:_preferences
+        addObserverForName:BawanShortcutsDidChangeNotification object:_preferences
         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) { [weakSelf applyPreferences]; }];
     [self applyPreferences];
 }
@@ -230,7 +230,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     bool wantsActive = false;
     for (unsigned i = 0; i < _bindings.size(); ++i) {
         if (!_bindings[i].enabled) continue;
-        if (i == selectionIndex && lore::isPassiveCopy(_bindings[i])) wantsPassive = true;
+        if (i == selectionIndex && bawan::isPassiveCopy(_bindings[i])) wantsPassive = true;
         else wantsActive = true;
     }
     const bool running = _started && !_asleep && !_suspended;
@@ -253,7 +253,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     for (unsigned i = 0; i < _bindings.size(); ++i) {
         ShortcutAvailability state = ShortcutAvailabilityOff;
         if (_started && _bindings[i].enabled) {
-            const bool passive = i == selectionIndex && lore::isPassiveCopy(_bindings[i]);
+            const bool passive = i == selectionIndex && bawan::isPassiveCopy(_bindings[i]);
             if (passive && !inputAllowed) state = ShortcutAvailabilityNeedsInputMonitoring;
             else if (!passive && !accessibilityAllowed) state = ShortcutAvailabilityNeedsAccessibility;
             else if (_suspended || _asleep) state = _availability[i];
@@ -268,14 +268,14 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (changed && self.onAvailabilityChanged) self.onAvailabilityChanged();
 }
 
-- (ShortcutAvailability)availabilityForAction:(lore::ShortcutAction)action {
+- (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {
     return _availability[static_cast<unsigned>(action)];
 }
 
-- (void)requestPermissionForAction:(lore::ShortcutAction)action {
+- (void)requestPermissionForAction:(bawan::ShortcutAction)action {
     const auto binding = [_preferences bindingForAction:action];
     NSString *pane = nil;
-    if (action == lore::ShortcutAction::TranslateSelection && lore::isPassiveCopy(binding)) {
+    if (action == bawan::ShortcutAction::TranslateSelection && bawan::isPassiveCopy(binding)) {
         if (!CGPreflightListenEventAccess()) {
             CGRequestListenEventAccess();
             pane = @"Privacy_ListenEvent";
@@ -318,9 +318,9 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     }
 
     const pid_t application = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
-    const lore::ShortcutEvent input = {
-        type == kCGEventKeyDown ? lore::ShortcutEvent::Kind::KeyDown :
-            type == kCGEventKeyUp ? lore::ShortcutEvent::Kind::KeyUp : lore::ShortcutEvent::Kind::FlagsChanged,
+    const bawan::ShortcutEvent input = {
+        type == kCGEventKeyDown ? bawan::ShortcutEvent::Kind::KeyDown :
+            type == kCGEventKeyUp ? bawan::ShortcutEvent::Kind::KeyUp : bawan::ShortcutEvent::Kind::FlagsChanged,
         key, ShortcutModifiersFromFlags(static_cast<NSEventModifierFlags>(CGEventGetFlags(event)), key),
         repeat, application, CGEventGetTimestamp(event)
     };
@@ -328,7 +328,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self cancelPending];
     }
     for (unsigned i = 0; i < _bindings.size(); ++i) {
-        const bool passive = i == selectionIndex && lore::isPassiveCopy(_bindings[i]);
+        const bool passive = i == selectionIndex && bawan::isPassiveCopy(_bindings[i]);
         if (!_bindings[i].enabled || passive == static_cast<bool>(active)) continue;
         // A held key from an old configuration must not become a new gesture.
         if (owned && type == kCGEventKeyDown && _swallowedRevision[key] != _gestureRevision) continue;
@@ -371,7 +371,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     }
     // The active tap is installed ahead of the passive tap. Swallowed keys
     // never reach that tap, but must still break an unfinished copy pair.
-    if (active && consumed && type == kCGEventKeyDown && lore::isPassiveCopy(_bindings[selectionIndex])) {
+    if (active && consumed && type == kCGEventKeyDown && bawan::isPassiveCopy(_bindings[selectionIndex])) {
         _gestures[selectionIndex].cancel();
     }
     if (active && _awaitingCopyRelease && type == kCGEventKeyUp && key == _copyReleaseKey) {
@@ -433,7 +433,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (@available(macOS 15.4, *)) {
         if (pasteboard.accessBehavior == NSPasteboardAccessBehaviorAlwaysDeny) {
             ++_generation;
-            if (self.onProblem) self.onProblem(@"Clipboard access was denied. Allow Lore to read the clipboard in System Settings, or type or paste text.");
+            if (self.onProblem) self.onProblem(@"Clipboard access was denied. Allow Bawan to read the clipboard in System Settings, or type or paste text.");
             return;
         }
     }

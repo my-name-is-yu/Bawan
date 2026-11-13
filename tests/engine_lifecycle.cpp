@@ -16,7 +16,7 @@ namespace {
 
 class Events {
 public:
-    void push(lore::EngineEvent event) {
+    void push(bawan::EngineEvent event) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             events_.push_back(std::move(event));
@@ -29,26 +29,26 @@ public:
         return events_.size();
     }
 
-    void requireEvent(lore::EngineEvent::Kind kind, std::uint64_t id, std::size_t after) {
+    void requireEvent(bawan::EngineEvent::Kind kind, std::uint64_t id, std::size_t after) {
         std::unique_lock<std::mutex> lock(mutex_);
         // A cold Metal backend may compile its embedded libraries on first use.
         if (!changed_.wait_for(lock, 60s, [&] {
             for (std::size_t i = after; i < events_.size(); ++i) {
                 if (events_[i].requestId == id && events_[i].kind == kind) {
-                    return kind != lore::EngineEvent::Kind::Error || !events_[i].text.empty();
+                    return kind != bawan::EngineEvent::Kind::Error || !events_[i].text.empty();
                 }
             }
             return false;
         })) {
             const char *kindName = "unknown";
             switch (kind) {
-                case lore::EngineEvent::Kind::Loading: kindName = "Loading"; break;
-                case lore::EngineEvent::Kind::Ready: kindName = "Ready"; break;
-                case lore::EngineEvent::Kind::Idle: kindName = "Idle"; break;
-                case lore::EngineEvent::Kind::Text: kindName = "Text"; break;
-                case lore::EngineEvent::Kind::Complete: kindName = "Complete"; break;
-                case lore::EngineEvent::Kind::Cancelled: kindName = "Cancelled"; break;
-                case lore::EngineEvent::Kind::Error: kindName = "Error"; break;
+                case bawan::EngineEvent::Kind::Loading: kindName = "Loading"; break;
+                case bawan::EngineEvent::Kind::Ready: kindName = "Ready"; break;
+                case bawan::EngineEvent::Kind::Idle: kindName = "Idle"; break;
+                case bawan::EngineEvent::Kind::Text: kindName = "Text"; break;
+                case bawan::EngineEvent::Kind::Complete: kindName = "Complete"; break;
+                case bawan::EngineEvent::Kind::Cancelled: kindName = "Cancelled"; break;
+                case bawan::EngineEvent::Kind::Error: kindName = "Error"; break;
             }
             throw std::runtime_error(std::string("Timed out after 60s waiting for ") + kindName +
                                      " (requestId=" + std::to_string(id) + ")");
@@ -66,18 +66,18 @@ public:
 private:
     std::mutex mutex_;
     std::condition_variable changed_;
-    std::vector<lore::EngineEvent> events_;
+    std::vector<bawan::EngineEvent> events_;
 };
 
 } // namespace
 
 int main() {
     try {
-        using Kind = lore::EngineEvent::Kind;
+        using Kind = bawan::EngineEvent::Kind;
         Events events;
         // An unavailable file must not produce a loading/error event until use.
-        lore::TranslationEngine engine("/__lore_tests__/missing-model.gguf",
-            [&](lore::EngineEvent event) { events.push(std::move(event)); }, 25ms);
+        bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
+            [&](bawan::EngineEvent event) { events.push(std::move(event)); }, 25ms);
         events.requireQuietFor(50ms);
         if (events.mark() != 0) { throw std::runtime_error("Construction touched an unavailable model before first use"); }
 
@@ -97,15 +97,15 @@ int main() {
         events.requireQuietFor(50ms);
 
         Events unusedEvents;
-        lore::TranslationEngine unused("/__lore_tests__/missing-model.gguf",
-            [&](lore::EngineEvent event) { unusedEvents.push(std::move(event)); });
+        bawan::TranslationEngine unused("/__bawan_tests__/missing-model.gguf",
+            [&](bawan::EngineEvent event) { unusedEvents.push(std::move(event)); });
         unused.shutdown();
         unusedEvents.requireQuietFor(50ms);
         if (unusedEvents.mark() != 0) { throw std::runtime_error("An unused engine emitted a lifecycle event"); }
 
         Events cancelledEvents;
-        lore::TranslationEngine *cancelledEngine = nullptr;
-        lore::TranslationEngine cancelled("/__lore_tests__/missing-model.gguf", [&](lore::EngineEvent event) {
+        bawan::TranslationEngine *cancelledEngine = nullptr;
+        bawan::TranslationEngine cancelled("/__bawan_tests__/missing-model.gguf", [&](bawan::EngineEvent event) {
             if (event.kind == Kind::Loading) cancelledEngine->cancel();
             cancelledEvents.push(std::move(event));
         }, 25ms);

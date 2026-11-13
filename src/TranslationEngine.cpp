@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace lore {
+namespace bawan {
 namespace {
 
 constexpr std::size_t kMaximumPrompt = 4096;
@@ -433,4 +433,4 @@ std::uint64_t TranslationEngine::translate(std::string text, Direction direction
 void TranslationEngine::cancel() { impl_->cancel(); }
 void TranslationEngine::shutdown() { impl_->shutdown(); }
 
-} // namespace lore
+} // namespace bawan

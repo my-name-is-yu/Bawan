@@ -23,8 +23,8 @@ typedef NS_ENUM(NSInteger, ShortcutAvailability) {
 - (void)start;
 - (void)stop;
 - (void)refresh;
-- (ShortcutAvailability)availabilityForAction:(lore::ShortcutAction)action;
-- (void)requestPermissionForAction:(lore::ShortcutAction)action;
+- (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action;
+- (void)requestPermissionForAction:(bawan::ShortcutAction)action;
 @end
 
 NS_ASSUME_NONNULL_END

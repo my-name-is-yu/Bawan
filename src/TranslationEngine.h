@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace lore {
+namespace bawan {
 
 enum class Direction { Automatic, EnglishToJapanese, JapaneseToEnglish };
 
@@ -48,4 +48,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace lore
+} // namespace bawan

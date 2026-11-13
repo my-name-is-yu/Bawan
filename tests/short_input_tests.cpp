@@ -28,23 +28,23 @@ int main() {
         {"Apple", 1}, {"OpenAI GPT-4", 2}, {"don't", 1}, {"state-of-the-art", 1},
     };
     for (const auto & test : cases) {
-        if (lore::shortEnglishWordCount(test.text) != test.words) {
+        if (bawan::shortEnglishWordCount(test.text) != test.words) {
             std::cerr << "Incorrect short-input word count: " << test.text << '\n';
             return EXIT_FAILURE;
         }
     }
     const std::string ordinary = "<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:msg|>";
-    if (lore::detail::translationPromptPrefix("one two three four five six", false) != ordinary ||
-        lore::detail::translationPromptPrefix(u8"日本語", true) != ordinary ||
-        lore::detail::translationPromptPrefix("Hello", true) != ordinary ||
-        lore::detail::translationPromptPrefix(u8"Hello 日本語", false) != ordinary) {
+    if (bawan::detail::translationPromptPrefix("one two three four five six", false) != ordinary ||
+        bawan::detail::translationPromptPrefix(u8"日本語", true) != ordinary ||
+        bawan::detail::translationPromptPrefix("Hello", true) != ordinary ||
+        bawan::detail::translationPromptPrefix(u8"Hello 日本語", false) != ordinary) {
         std::cerr << "An out-of-scope request changed its prompt\n";
         return EXIT_FAILURE;
     }
-    if (lore::detail::translationPromptPrefix("ephemeral", false) !=
+    if (bawan::detail::translationPromptPrefix("ephemeral", false) !=
             "<|plamo:tag|>dataset<|plamo:msg|>translation"
             "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>" ||
-        lore::detail::translationPromptPrefix("on the fence", false) !=
+        bawan::detail::translationPromptPrefix("on the fence", false) !=
             "<|plamo:tag|>dataset<|plamo:msg|>translation"
             "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
             "<|plamo:tag|>input<|plamo:msg|>") {

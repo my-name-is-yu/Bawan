@@ -1,5 +1,5 @@
 #import "TranslationPanel.h"
-#import "LoreAppearance.h"
+#import "BawanAppearance.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -29,7 +29,7 @@ static NSWindow *PanelWindow(void) {
     NSWindow *result = nil;
     NSUInteger count = 0;
     for (NSWindow *window in NSApp.windows) {
-        if ([window.contentView.identifier isEqualToString:@"lore-panel"]) {
+        if ([window.contentView.identifier isEqualToString:@"bawan-panel"]) {
             result = window;
             ++count;
         }
@@ -50,7 +50,7 @@ static void RequireOrdinaryWindow(NSWindow *window, NSString *stage) {
         window.level == NSNormalWindowLevel && !window.hidesOnDeactivate &&
         (window.collectionBehavior & pinned) == 0 &&
         (window.collectionBehavior & NSWindowCollectionBehaviorMoveToActiveSpace) != 0,
-        [NSString stringWithFormat:@"Lore must retain ordinary window ordering %@: level=%ld behavior=%lu",
+        [NSString stringWithFormat:@"Bawan must retain ordinary window ordering %@: level=%ld behavior=%lu",
             stage, static_cast<long>(window.level), static_cast<unsigned long>(window.collectionBehavior)]);
 }
 
@@ -67,15 +67,15 @@ static void CheckOrdinaryWindowOrdering(TranslationPanel *panel, NSWindow *windo
         // native window-number list includes them in active-Space z-order.
         NSArray<NSNumber *> *ordered = [NSWindow windowNumbersWithOptions:0];
         NSUInteger coverIndex = [ordered indexOfObject:@(cover.windowNumber)];
-        NSUInteger loreIndex = [ordered indexOfObject:@(window.windowNumber)];
-        Require(coverIndex != NSNotFound && loreIndex != NSNotFound && coverIndex < loreIndex,
+        NSUInteger bawanIndex = [ordered indexOfObject:@(window.windowNumber)];
+        Require(coverIndex != NSNotFound && bawanIndex != NSNotFound && coverIndex < bawanIndex,
             @"Another normal window must be able to cover the translator");
         [panel showForManualInput];
         Settle(window);
         ordered = [NSWindow windowNumbersWithOptions:0];
         coverIndex = [ordered indexOfObject:@(cover.windowNumber)];
-        loreIndex = [ordered indexOfObject:@(window.windowNumber)];
-        Require(coverIndex != NSNotFound && loreIndex != NSNotFound && loreIndex < coverIndex,
+        bawanIndex = [ordered indexOfObject:@(window.windowNumber)];
+        Require(coverIndex != NSNotFound && bawanIndex != NSNotFound && bawanIndex < coverIndex,
             @"Summoning the translator must bring it forward again");
         RequireOrdinaryWindow(window, @"after recalling it from behind another normal window");
     } @finally {
@@ -100,16 +100,16 @@ static void CheckBounds(NSWindow *window) {
     NSView *mascot = Control(window, @"mascot", NSView.class);
     NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
     Require(FindView(root, @"brand-name") == nil, @"The translator header must omit the wordmark");
-    Require(std::abs(header.bounds.size.height - LoreHeaderHeight) < 1 &&
-            std::abs(mascot.bounds.size.width - LoreBrandMarkSize) < 1 &&
-            std::abs(mascot.bounds.size.height - LoreBrandMarkSize) < 1 &&
+    Require(std::abs(header.bounds.size.height - BawanHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - BawanBrandMarkSize) < 1 &&
+            std::abs(mascot.bounds.size.height - BawanBrandMarkSize) < 1 &&
             std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
             std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1,
             [NSString stringWithFormat:
         @"The translator mascot must retain its size and stay centered in the header: "
         @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f",
-        NSStringFromRect(header.bounds), LoreHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), LoreBrandMarkSize]);
+        NSStringFromRect(header.bounds), BawanHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), BawanBrandMarkSize]);
     NSView *settings = Control(window, @"settings", NSButton.class);
     NSRect settingsFrame = [settings convertRect:settings.bounds toView:header];
     Require(NSContainsRect(header.bounds, mascotFrame) && !NSIntersectsRect(mascotFrame, settingsFrame),
@@ -236,11 +236,11 @@ static void CheckLongTranslationScrolling(TranslationPanel *panel, NSWindow *win
     NSAppearance *previousAppearance = window.appearance;
     [window setContentSize:NSMakeSize(640, 420)];
     [panel setShortcutAvailable:YES];
-    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
     for (NSUInteger language = 0; language < 2; ++language) {
         NSString *input = language == 0 ? english : japanese;
         NSString *result = language == 0 ? japanese : english;
-        lore::Direction direction = language == 0 ? lore::Direction::EnglishToJapanese : lore::Direction::JapaneseToEnglish;
+        bawan::Direction direction = language == 0 ? bawan::Direction::EnglishToJapanese : bawan::Direction::JapaneseToEnglish;
         [panel showForSelection:input];
         [panel setOutput:result direction:direction];
         Settle(window);
@@ -292,7 +292,7 @@ static void CheckLongTranslationScrolling(TranslationPanel *panel, NSWindow *win
     }
     [window setFrame:previousFrame display:NO];
     window.appearance = previousAppearance;
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
 }
 
 static void RequireTint(NSWindow *window, NSColor *actual, NSColor *expected, NSString *message) {
@@ -350,7 +350,7 @@ static void CheckPressedPrimaryContrast(NSWindow *window, NSButton *button) {
         Capture(window, i == 0 ? @"pressed-light" : @"pressed-dark");
         [button highlight:NO];
         button.needsDisplay = YES;
-        Require(CATransform3DIsIdentity(button.layer.transform) && [button.layer animationForKey:@"lore.press"] == nil,
+        Require(CATransform3DIsIdentity(button.layer.transform) && [button.layer animationForKey:@"bawan.press"] == nil,
                 @"Programmatic pressed-color capture must not add motion");
     }
     window.appearance = previous;
@@ -368,9 +368,9 @@ static BOOL PressMotionIsSettled(NSButton *button) {
     CALayer *layer = button.layer;
     if (!CATransform3DIsIdentity(layer.transform)) return NO;
     for (NSString *key in layer.animationKeys) {
-        if ([key hasPrefix:@"lore."] && ![key isEqualToString:@"lore.press"]) return NO;
+        if ([key hasPrefix:@"bawan."] && ![key isEqualToString:@"bawan.press"]) return NO;
     }
-    CAAnimation *animation = [layer animationForKey:@"lore.press"];
+    CAAnimation *animation = [layer animationForKey:@"bawan.press"];
     if (!animation) return YES;
     CALayer *presentation = layer.presentationLayer;
     // AppKit may retain one completed client-side record. Check its actual
@@ -384,7 +384,7 @@ static BOOL PressMotionIsSettled(NSButton *button) {
 
 static void RequireNoPressMotion(NSButton *button, NSString *stage) {
     CALayer *layer = button.layer;
-    CAAnimation *animation = [layer animationForKey:@"lore.press"];
+    CAAnimation *animation = [layer animationForKey:@"bawan.press"];
     CATransform3D transform = layer.transform;
     if (PressMotionIsSettled(button)) return;
     CATransform3D presented = layer.presentationLayer.transform;
@@ -463,7 +463,7 @@ static void CheckPointerFeedback(NSButton *copy) {
         Require(probe.count == 3 && probe.releasedBeforeAction,
                 @"Pointer actions must run once per click and release before forwarding");
         Require(NSEqualRects(frame, copy.frame), @"Press feedback must not change layout or hit testing");
-        CAAnimation *animation = [copy.layer animationForKey:@"lore.press"];
+        CAAnimation *animation = [copy.layer animationForKey:@"bawan.press"];
         if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
             Require(animation == nil, @"Reduce Motion must keep pointer feedback immediate");
         } else {
@@ -496,7 +496,7 @@ static void CheckPointerFeedback(NSButton *copy) {
 }
 
 static void RunSmoke(void) {
-    const char *expectedMotion = std::getenv("LORE_EXPECT_REDUCE_MOTION");
+    const char *expectedMotion = std::getenv("BAWAN_EXPECT_REDUCE_MOTION");
     if (expectedMotion) {
         Require(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion ==
                 (std::atoi(expectedMotion) != 0), @"OS Reduce Motion does not match this test run");
@@ -512,9 +512,9 @@ static void RunSmoke(void) {
     NSString *japanese = @"会議は来週の月曜日に変更されました。\n更新された資料を確認してください。";
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0, settings = 0;
-    __block lore::Direction lastDirection = lore::Direction::Automatic;
+    __block bawan::Direction lastDirection = bawan::Direction::Automatic;
     __block NSString *lastInput = nil;
-    panel.onTranslate = ^(NSString *text, lore::Direction direction) {
+    panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
         ++translations;
         lastInput = text;
         lastDirection = direction;
@@ -547,7 +547,7 @@ static void RunSmoke(void) {
                 @"Native window controls must remain visible");
     }
     NSImageView *mascot = (NSImageView *)Control(window, @"mascot", NSImageView.class);
-    Require(mascot.image != nil && LoreMascotImage() != nil && LorePaperImage() != nil,
+    Require(mascot.image != nil && BawanMascotImage() != nil && BawanPaperImage() != nil,
             @"Native captures must load the real mascot and paper assets");
     NSTextField *status = (NSTextField *)Control(window, @"status", NSTextField.class);
     NSTextField *footerHint = (NSTextField *)Control(window, @"shortcut-hint", NSTextField.class);
@@ -559,18 +559,18 @@ static void RunSmoke(void) {
             source.enclosingScrollView.hasVerticalScroller && output.enclosingScrollView.hasVerticalScroller,
             @"Text panes must scroll independently");
 
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
     [panel showForSelection:@" \n"];
     RequireOrdinaryWindow(window, @"after selection entry");
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
     Require(!footerHint.hidden, @"The input hint must be visible while the translator is empty and idle");
-    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
     Require(footerHint.hidden, @"The empty-input hint must not compete with an active translation");
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
-    [panel setOutput:@"Retained translation" direction:lore::Direction::EnglishToJapanese];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
+    [panel setOutput:@"Retained translation" direction:bawan::Direction::EnglishToJapanese];
     Require(footerHint.hidden, @"An existing translation must hide the empty-input hint");
-    [panel setOutput:@"" direction:lore::Direction::Automatic];
+    [panel setOutput:@"" direction:bawan::Direction::Automatic];
     Require(!footerHint.hidden, @"Clearing the last translation must restore the empty-input hint");
     source.string = english;
     [source didChangeText];
@@ -588,17 +588,17 @@ static void RunSmoke(void) {
             @"Nonempty source must enable translation only");
     CheckPressedPrimaryContrast(window, translate);
     [translate performClick:nil];
-    Require(lastDirection == lore::Direction::Automatic && [lastInput isEqualToString:english],
+    Require(lastDirection == bawan::Direction::Automatic && [lastInput isEqualToString:english],
             @"Fresh input must translate automatically");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     NSUInteger beforeSwap = translations;
     [swap performClick:nil];
     Require(translations == beforeSwap + 1 && [source.string isEqualToString:japanese] &&
             output.string.length == 0 && !swap.enabled && !copy.enabled &&
-            [lastInput isEqualToString:japanese] && lastDirection == lore::Direction::JapaneseToEnglish,
+            [lastInput isEqualToString:japanese] && lastDirection == bawan::Direction::JapaneseToEnglish,
             @"Swap must move the translation into source, clear output and translate back once");
-    [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
-    [panel setAvailable:YES busy:YES status:@"Translating…" kind:LoreStatusInformation];
+    [panel setOutput:english direction:bawan::Direction::JapaneseToEnglish];
+    [panel setAvailable:YES busy:YES status:@"Translating…" kind:BawanStatusInformation];
     NSRect recallFrame = window.frame;
     recallFrame.origin.x += 17;
     recallFrame.origin.y += 23;
@@ -614,46 +614,46 @@ static void RunSmoke(void) {
             translations == beforeRecall && cancellations == 0,
             @"Recalling a visible panel must preserve its position, text and busy state while focusing source");
     [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
-    Require(translations == beforeRecall && cancellations == 1 && lastDirection == lore::Direction::JapaneseToEnglish,
+    Require(translations == beforeRecall && cancellations == 1 && lastDirection == bawan::Direction::JapaneseToEnglish,
             @"Command-Return must cancel a recalled busy panel once without losing its swapped direction");
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
     [translate performClick:nil];
-    Require(lastDirection == lore::Direction::JapaneseToEnglish,
+    Require(lastDirection == bawan::Direction::JapaneseToEnglish,
             @"Retranslation must retain the swapped direction");
     [swap performClick:nil];
-    Require([lastInput isEqualToString:english] && lastDirection == lore::Direction::EnglishToJapanese,
+    Require([lastInput isEqualToString:english] && lastDirection == bawan::Direction::EnglishToJapanese,
             @"A second swap must reverse the direction again");
     [panel showForSelection:japanese];
-    [panel setOutput:@"Visit 東京 tomorrow." direction:lore::Direction::JapaneseToEnglish];
+    [panel setOutput:@"Visit 東京 tomorrow." direction:bawan::Direction::JapaneseToEnglish];
     [swap performClick:nil];
     Require([lastInput isEqualToString:@"Visit 東京 tomorrow."] &&
-            lastDirection == lore::Direction::EnglishToJapanese,
+            lastDirection == bawan::Direction::EnglishToJapanese,
             @"Mixed-script output must reverse its actual direction instead of being detected again");
     source.string = japanese;
     [source didChangeText];
-    [panel setOutput:@"Output from the previous request" direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:@"Output from the previous request" direction:bawan::Direction::EnglishToJapanese];
     [translate performClick:nil];
-    Require(lastDirection == lore::Direction::Automatic,
+    Require(lastDirection == bawan::Direction::Automatic,
             @"Editing swapped input must restore automatic direction");
-    [panel setOutput:@"" direction:lore::Direction::Automatic];
-    [panel setOutput:english direction:lore::Direction::JapaneseToEnglish];
-    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
+    [panel setOutput:@"" direction:bawan::Direction::Automatic];
+    [panel setOutput:english direction:bawan::Direction::JapaneseToEnglish];
+    [panel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
     NSUInteger beforeDisabledSwap = translations;
     [swap performClick:nil];
     Require(!swap.enabled && translations == beforeDisabledSwap && [source.string isEqualToString:japanese],
             @"Swap must not move partial text while translation is running");
-    [panel setAvailable:NO busy:NO status:@"Loading the model…" kind:LoreStatusInformation];
+    [panel setAvailable:NO busy:NO status:@"Loading the model…" kind:BawanStatusInformation];
     [swap performClick:nil];
     Require(!swap.enabled && translations == beforeDisabledSwap,
             @"Swap must remain disabled while the model is unavailable");
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
     [panel showForSelection:english];
     [translate performClick:nil];
-    Require(lastDirection == lore::Direction::Automatic && !swap.enabled,
+    Require(lastDirection == bawan::Direction::Automatic && !swap.enabled,
             @"New selected text must reset automatic direction and clear the previous swap result");
     [settingsButton performClick:nil];
     Require(settings == 1, @"Settings callback was not routed");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     Require([source.string isEqualToString:english] && [output.string isEqualToString:japanese],
             @"Source and translation text must remain unmodified");
     [copy performClick:nil];
@@ -662,7 +662,7 @@ static void RunSmoke(void) {
     Require([copy.title isEqualToString:@"Copied"] && copy.image != nil,
             @"Successful copying must confirm without changing the translated content");
     RequireNoPressMotion(copy, @"programmatic copy before pointer input");
-    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:bawan::Direction::EnglishToJapanese];
     [window performKeyEquivalent:KeyEvent(window, @"C",
         NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
     Require([[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString]
@@ -670,7 +670,7 @@ static void RunSmoke(void) {
             [copy.title isEqualToString:@"Copied"],
             @"Command-Shift-C must copy exact output and show the normal copy confirmation");
     RequireNoPressMotion(copy, @"Command-Shift-C before pointer input");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     [window performKeyEquivalent:KeyEvent(window, @"C",
         NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagCapsLock, 8)];
     Require([[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:japanese],
@@ -684,13 +684,13 @@ static void RunSmoke(void) {
             @"Extra modifiers must not trigger accidental translation copying");
     RequireNoPressMotion(copy, @"Command-Shift-C with Caps Lock");
     Capture(window, @"copied");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     Require([copy.title isEqualToString:@"Copied"],
             @"Identical final output must preserve the copy confirmation");
-    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:[japanese stringByAppendingString:@"\n"] direction:bawan::Direction::EnglishToJapanese];
     Require([copy.title isEqualToString:@"Copy Translation"],
             @"New translation output must reset stale copy confirmation");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     CheckPointerFeedback(copy);
     Require([copy.title isEqualToString:@"Copied"] &&
             [[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:japanese],
@@ -698,7 +698,7 @@ static void RunSmoke(void) {
     [panel showForSelection:english];
     Require([copy.title isEqualToString:@"Copy Translation"] && !copy.enabled,
             @"A new selected passage must clear the previous copy confirmation");
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     RequireNoPressMotion(copy, @"new passage and output after pointer input");
     RequireNoPressMotion(translate, @"new passage and output after pointer input");
 
@@ -714,7 +714,7 @@ static void RunSmoke(void) {
 
     [panel setShortcutAvailable:YES];
     [panel showForSelection:english];
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     Capture(window, @"dark");
     CGFloat darkBrightness = BackgroundBrightness(window);
@@ -726,8 +726,8 @@ static void RunSmoke(void) {
     // high-contrast appearance names directly does not exercise Increase Contrast.
     [window setContentSize:NSMakeSize(640, 420)];
     [panel setShortcutAvailable:NO];
-    [panel setAvailable:YES busy:NO status:@"The input exceeds the 4,096-token limit. Select a shorter passage and translate again." kind:LoreStatusWarning];
-    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreWarning),
+    [panel setAvailable:YES busy:NO status:@"The input exceeds the 4,096-token limit. Select a shorter passage and translate again." kind:BawanStatusWarning];
+    RequireTintInBothAppearances(window, status.textColor, BawanColor(BawanWarning),
             @"Input-limit warnings must use the shared warning color");
     Capture(window, @"minimum-permission-error");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
@@ -735,13 +735,13 @@ static void RunSmoke(void) {
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     [window setContentSize:NSMakeSize(720, 500)];
     [panel setShortcutAvailable:YES];
-    [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%" kind:LoreStatusInformation];
+    [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%" kind:BawanStatusInformation];
     Require(!translate.enabled && !swap.enabled, @"Translation and swap must wait for model readiness");
-    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreSecondaryText),
+    RequireTintInBothAppearances(window, status.textColor, BawanColor(BawanSecondaryText),
             @"Model preparation must use the informational status color");
     Capture(window, @"model-setup");
-    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
-    [panel setOutput:@"会議は来週" direction:lore::Direction::EnglishToJapanese];
+    [panel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
+    [panel setOutput:@"会議は来週" direction:bawan::Direction::EnglishToJapanese];
     Require([translate.title isEqualToString:@"Cancel  ⌘↵"] && translate.enabled && copy.enabled &&
             [copy.title isEqualToString:@"Copy Translation"],
             @"Busy state must offer cancellation and partial-output copying");
@@ -767,18 +767,18 @@ static void RunSmoke(void) {
     [translate performClick:nil];
     Require(cancellations == beforeKeyCancellations + 3 && translations == beforeKey,
             @"The busy button must cancel once, matching Command-Return");
-    [panel setAvailable:YES busy:NO status:@"The model could not translate this passage." kind:LoreStatusError];
-    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreError),
+    [panel setAvailable:YES busy:NO status:@"The model could not translate this passage." kind:BawanStatusError];
+    RequireTintInBothAppearances(window, status.textColor, BawanColor(BawanError),
             @"Translation failures must use the same error color as Settings");
     Capture(window, @"translation-error");
-    [panel setAvailable:YES busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
-    RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreSecondaryText),
+    [panel setAvailable:YES busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+    RequireTintInBothAppearances(window, status.textColor, BawanColor(BawanSecondaryText),
             @"Informational messages must clear the previous error styling");
     Capture(window, @"cancelled");
 
     [panel showForSelection:english];
-    [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
-    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
+    [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
     [copy performClick:nil];
     Require([copy.title isEqualToString:@"Copied"], @"Copy confirmation must be available before closing");
     [closeButton performClick:nil];

@@ -4,12 +4,12 @@
 #include <iostream>
 #include <thread>
 
-using lore::EngineEvent;
+using bawan::EngineEvent;
 using Kind = EngineEvent::Kind;
 static void require(bool value) { if (!value) std::abort(); }
 
 int main() {
-    lore::EngineEventMailbox mailbox;
+    bawan::EngineEventMailbox mailbox;
     // Simulate a blocked UI while all 4,096 generated tokens arrive.
     std::size_t oldBytes = 0;
     for (std::size_t n = 1; n <= 4096; ++n) {
@@ -25,7 +25,7 @@ int main() {
     require(!mailbox.push({Kind::Ready, 0, ""}));
     require(!mailbox.push({Kind::Text, 2, "old"}));
     require(!mailbox.push({Kind::Text, 2, "latest"}));
-    EngineEvent complete{Kind::Complete, 2, "final", true, lore::Direction::EnglishToJapanese};
+    EngineEvent complete{Kind::Complete, 2, "final", true, bawan::Direction::EnglishToJapanese};
     require(!mailbox.push(complete));
     require(!mailbox.push({Kind::Text, 3, "next request"}));
     require(!mailbox.push({Kind::Cancelled, 3, ""}));
@@ -36,7 +36,7 @@ int main() {
     require(events[0].kind == Kind::Loading && events[1].kind == Kind::Ready);
     require(events[2].text == "latest");
     require(events[3].kind == Kind::Complete && events[3].text == "final" &&
-            events[3].truncated && events[3].direction == lore::Direction::EnglishToJapanese);
+            events[3].truncated && events[3].direction == bawan::Direction::EnglishToJapanese);
     require(events[4].requestId == 3 && events[5].kind == Kind::Cancelled &&
             events[6].kind == Kind::Error && events[7].kind == Kind::Idle);
 

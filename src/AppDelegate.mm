@@ -20,12 +20,12 @@
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
     ShortcutMonitor *_shortcut;
-    std::unique_ptr<lore::TranslationEngine> _engine;
+    std::unique_ptr<bawan::TranslationEngine> _engine;
     uint64_t _activeRequestId;
     uint64_t _engineGeneration;
     NSURL *_modelURL;
     NSString *_pendingText;
-    lore::Direction _pendingDirection;
+    bawan::Direction _pendingDirection;
     BOOL _warmUpWhenAvailable;
     BOOL _modelAvailable;
     BOOL _busy;
@@ -48,7 +48,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStatus = @"Checking the model…";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
-    _translationPanel.onTranslate = ^(NSString *text, lore::Direction direction) {
+    _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
         [weakSelf translateText:text direction:direction];
     };
     _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
@@ -97,14 +97,14 @@ static NSString *StringFromUTF8(const std::string &text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner->_translationPanel showForSelection:text];
-        [owner translateText:text direction:lore::Direction::Automatic];
+        [owner translateText:text direction:bawan::Direction::Automatic];
     };
     _shortcut.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
         [owner->_translationPanel showWithoutChangingInput];
-        [owner->_translationPanel setAvailable:owner->_modelAvailable busy:owner->_busy status:message kind:LoreStatusWarning];
+        [owner->_translationPanel setAvailable:owner->_modelAvailable busy:owner->_busy status:message kind:BawanStatusWarning];
         owner->_statusItem.button.toolTip = message;
     };
     _shortcut.onOpenPanel = ^{
@@ -117,7 +117,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     };
     [NSNotificationCenter.defaultCenter addObserver:self
         selector:@selector(shortcutPreferencesDidChange:)
-        name:LoreShortcutsDidChangeNotification object:_shortcutPreferences];
+        name:BawanShortcutsDidChangeNotification object:_shortcutPreferences];
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
@@ -138,16 +138,16 @@ static NSString *StringFromUTF8(const std::string &text) {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
     NSURL *iconURL = [NSBundle.mainBundle URLForResource:@"StatusItemTemplate" withExtension:@"pdf"];
     NSImage *image = iconURL ? [[NSImage alloc] initWithContentsOfURL:iconURL] : nil;
-    if (!image) image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Lore Translator"];
+    if (!image) image = [NSImage imageWithSystemSymbolName:@"character.bubble" accessibilityDescription:@"Bawan Translator"];
     if (image) {
         image.size = NSMakeSize(20, 20);
-        image.accessibilityDescription = @"Lore Translator";
+        image.accessibilityDescription = @"Bawan Translator";
         [image setTemplate:YES];
         _statusItem.button.image = image;
     } else {
         _statusItem.button.title = @"L";
     }
-    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Lore"];
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Bawan"];
     menu.autoenablesItems = NO;
     menu.delegate = self;
     _modelItem = [self menuItem:@"Preparing the model…" action:NULL key:@""];
@@ -156,26 +156,26 @@ static NSString *StringFromUTF8(const std::string &text) {
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[self menuItem:@"Open Translator" action:@selector(openTranslation:) key:@""]];
     _shortcutItem = [self menuItem:@"Translate with Double ⌘C" action:@selector(toggleShortcut:) key:@""];
-    _shortcutItem.tag = static_cast<NSInteger>(lore::ShortcutAction::TranslateSelection);
+    _shortcutItem.tag = static_cast<NSInteger>(bawan::ShortcutAction::TranslateSelection);
     [menu addItem:_shortcutItem];
     _panelShortcutItem = [self menuItem:@"Open Translator with Double ⌥T" action:@selector(toggleShortcut:) key:@""];
-    _panelShortcutItem.tag = static_cast<NSInteger>(lore::ShortcutAction::OpenPanel);
+    _panelShortcutItem.tag = static_cast<NSInteger>(bawan::ShortcutAction::OpenPanel);
     [menu addItem:_panelShortcutItem];
     _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(retryModel:) key:@""];
     _retryItem.hidden = YES;
     [menu addItem:_retryItem];
     [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [menu addItem:NSMenuItem.separatorItem];
-    [menu addItem:[self menuItem:@"Quit Lore" action:@selector(quit:) key:@"q"]];
+    [menu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     _statusItem.menu = menu;
 
     // Native editing commands are required when the nonactivating panel becomes key.
     NSMenu *main = [[NSMenu alloc] initWithTitle:@""];
-    NSMenuItem *appItem = [[NSMenuItem alloc] initWithTitle:@"Lore" action:NULL keyEquivalent:@""];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Lore"];
+    NSMenuItem *appItem = [[NSMenuItem alloc] initWithTitle:@"Bawan" action:NULL keyEquivalent:@""];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Bawan"];
     [appMenu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [appMenu addItem:NSMenuItem.separatorItem];
-    [appMenu addItem:[self menuItem:@"Quit Lore" action:@selector(quit:) key:@"q"]];
+    [appMenu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     appItem.submenu = appMenu;
     [main addItem:appItem];
     NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
@@ -198,22 +198,22 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelItem.title = _modelStatus ?: @"Preparing the model…";
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
-    _statusItem.button.toolTip = [@"Lore — " stringByAppendingString:_modelItem.title];
+    _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
     if (!_busy) [_translationPanel setAvailable:_modelAvailable busy:NO status:_modelAvailable ? @"" : _modelItem.title
-                                         kind:_modelFailed ? LoreStatusError : LoreStatusInformation];
+                                         kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
     else if (!_modelAvailable) [_translationPanel setAvailable:NO busy:YES status:_modelItem.title
-                                                        kind:_modelFailed ? LoreStatusError : LoreStatusInformation];
+                                                        kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
 }
 
 - (void)updateShortcutItem {
     NSMutableArray<NSString *> *instructions = [NSMutableArray array];
     BOOL needsPermission = NO;
     for (NSMenuItem *item in @[_shortcutItem, _panelShortcutItem]) {
-        auto action = static_cast<lore::ShortcutAction>(item.tag);
+        auto action = static_cast<bawan::ShortcutAction>(item.tag);
         auto binding = [_shortcutPreferences bindingForAction:action];
         ShortcutAvailability availability = [_shortcut availabilityForAction:action];
         item.state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
-        NSString *verb = action == lore::ShortcutAction::TranslateSelection ? @"Selection Translation" : @"Open Translator";
+        NSString *verb = action == bawan::ShortcutAction::TranslateSelection ? @"Selection Translation" : @"Open Translator";
         NSString *suffix = @"";
         if (binding.enabled && availability != ShortcutAvailabilityAvailable) {
             suffix = availability == ShortcutAvailabilityFailed ? @" (monitoring unavailable)" : @" (permission required)";
@@ -240,9 +240,9 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_engine || !_modelAvailable || !_modelURL || _terminating) return;
     const uint64_t generation = ++_engineGeneration;
     __weak AppDelegate *weakSelf = self;
-    auto mailbox = std::make_shared<lore::EngineEventMailbox>();
-    _engine = std::make_unique<lore::TranslationEngine>(
-        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](lore::EngineEvent event) {
+    auto mailbox = std::make_shared<bawan::EngineEventMailbox>();
+    _engine = std::make_unique<bawan::TranslationEngine>(
+        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
             if (!mailbox->push(std::move(event))) return;
             @autoreleasepool {
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -263,7 +263,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_engine) _engine->warmUp();
 }
 
-- (void)translateText:(NSString *)text direction:(lore::Direction)direction {
+- (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
     if (_terminating) return;
     if (!_modelAvailable) {
         if (_modelFailed) { [self updateStatus]; return; }
@@ -273,7 +273,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _pendingDirection = direction;
         _activeRequestId = 0;
         _busy = YES;
-        [_translationPanel setOutput:@"" direction:lore::Direction::Automatic];
+        [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
         [self updateStatus];
         return;
     }
@@ -284,12 +284,12 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (!utf8) return;
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
-    [_translationPanel setOutput:@"" direction:lore::Direction::Automatic];
-    [_translationPanel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
+    [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
+    [_translationPanel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
 }
 
-- (void)handleEngineEvent:(const lore::EngineEvent &)event {
-    using Kind = lore::EngineEvent::Kind;
+- (void)handleEngineEvent:(const bawan::EngineEvent &)event {
+    using Kind = bawan::EngineEvent::Kind;
     if (event.requestId == 0) {
         // Availability describes the verified file, independently of whether
         // inference resources are currently loaded or have expired after idle.
@@ -307,7 +307,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self updateStatus];
         [_translationPanel setAvailable:_modelAvailable busy:_busy
             status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _modelStatus
-            kind:event.kind == Kind::Error ? LoreStatusError : LoreStatusInformation];
+            kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;
     }
     if (event.requestId != _activeRequestId) return;
@@ -321,17 +321,17 @@ static NSString *StringFromUTF8(const std::string &text) {
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             [_translationPanel setAvailable:_modelAvailable busy:NO status:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
-                                      kind:event.truncated ? LoreStatusWarning : LoreStatusInformation];
+                                      kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
+            [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:StringFromUTF8(event.text) kind:LoreStatusError];
+            [_translationPanel setAvailable:_modelAvailable busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
             break;
         default: break;
     }
@@ -346,7 +346,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = NO;
     [self updateStatus];
-    [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:LoreStatusInformation];
+    [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
 }
 
 - (void)openTranslation:(id)sender {
@@ -355,7 +355,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
-    auto action = static_cast<lore::ShortcutAction>(sender.tag);
+    auto action = static_cast<bawan::ShortcutAction>(sender.tag);
     auto binding = [_shortcutPreferences bindingForAction:action];
     binding.enabled = !binding.enabled;
     NSString *error = nil;

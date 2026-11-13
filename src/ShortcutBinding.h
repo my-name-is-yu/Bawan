@@ -2,7 +2,7 @@
 #include <array>
 #include <cstdint>
 
-namespace lore {
+namespace bawan {
 enum class ShortcutAction : unsigned { TranslateSelection = 0, OpenPanel = 1 };
 enum ShortcutModifier : std::uint8_t { Command = 1, Option = 2, Control = 4, Shift = 8, Function = 16 };
 struct ShortcutBinding {
@@ -50,4 +50,4 @@ private:
     std::int64_t application_ = 0;
     std::uint64_t firstTime_ = 0;
 };
-} // namespace lore
+} // namespace bawan

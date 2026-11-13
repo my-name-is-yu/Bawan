@@ -1,89 +1,89 @@
 #import "SettingsViewController.h"
-#import "LoreAppearance.h"
-#import "LoreMascotView.h"
+#import "BawanAppearance.h"
+#import "BawanMascotView.h"
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <set>
 
-@interface LoreSettingsPaper : NSView
+@interface BawanSettingsPaper : NSView
 @end
 
-@interface LoreSettingsDocument : NSView
+@interface BawanSettingsDocument : NSView
 @end
 
-@implementation LoreSettingsDocument
+@implementation BawanSettingsDocument
 - (BOOL)isFlipped { return YES; }
 @end
 
-@implementation LoreSettingsPaper
+@implementation BawanSettingsPaper
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    [LoreColor(LoreBackground) setFill];
+    [BawanColor(BawanBackground) setFill];
     NSRectFill(self.bounds);
-    LoreDrawPaper(self.bounds);
+    BawanDrawPaper(self.bounds);
 }
 @end
 
-@interface LoreSettingsMasthead : LoreSettingsPaper
+@interface BawanSettingsMasthead : BawanSettingsPaper
 @end
 
-@implementation LoreSettingsMasthead
-- (void)drawRect:(NSRect)dirtyRect { LoreDrawHeader(self.bounds); }
+@implementation BawanSettingsMasthead
+- (void)drawRect:(NSRect)dirtyRect { BawanDrawHeader(self.bounds); }
 @end
 
-@interface LoreSettingsGroup : NSBox
+@interface BawanSettingsGroup : NSBox
 @end
 
-@implementation LoreSettingsGroup
+@implementation BawanSettingsGroup
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
-    self.borderColor = LoreColor(LoreBorder);
-    self.fillColor = LoreColor(LoreSurface);
+    self.borderColor = BawanColor(BawanBorder);
+    self.fillColor = BawanColor(BawanSurface);
     self.needsDisplay = YES;
 }
 @end
 
 // AppKit still owns event tracking, key equivalents, menus and focus. Only the
-// input face is shared with Lore's other controls.
-@interface LoreShortcutButton : NSButton
+// input face is shared with Bawan's other controls.
+@interface BawanShortcutButton : NSButton
 @end
 
-@implementation LoreShortcutButton
+@implementation BawanShortcutButton
 - (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
 - (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return LoreInputPath(self.bounds).bounds; }
+- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
 - (void)drawFocusRingMask {
-    [LoreInputPath(self.bounds) fill];
+    [BawanInputPath(self.bounds) fill];
 }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    LoreDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
+    BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
 }
 @end
 
-@interface LoreShortcutPressCount : NSPopUpButton
+@interface BawanShortcutPressCount : NSPopUpButton
 @end
 
-@implementation LoreShortcutPressCount
+@implementation BawanShortcutPressCount
 - (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
 - (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return LoreInputPath(self.bounds).bounds; }
+- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
 - (void)drawFocusRingMask {
-    [LoreInputPath(self.bounds) fill];
+    [BawanInputPath(self.bounds) fill];
 }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    LoreDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
+    BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
 }
 @end
@@ -91,7 +91,7 @@
 namespace {
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = weight >= NSFontWeightMedium ? LoreLabelFont(size) : LoreBodyFont(size);
+    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
     label.textColor = color;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
@@ -110,8 +110,8 @@ NSStackView *Stack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation or
 
 NSImageView *Icon(NSString *name) {
     NSImageView *icon = [[NSImageView alloc] init];
-    icon.image = LoreSymbol(name, nil, 17);
-    icon.contentTintColor = LoreAccentColor();
+    icon.image = BawanSymbol(name, nil, 17);
+    icon.contentTintColor = BawanAccentColor();
     icon.translatesAutoresizingMaskIntoConstraints = NO;
     [icon.widthAnchor constraintEqualToConstant:22].active = YES;
     [icon.heightAnchor constraintEqualToConstant:22].active = YES;
@@ -120,12 +120,12 @@ NSImageView *Icon(NSString *name) {
 }
 
 NSBox *Group(NSView *content) {
-    NSBox *box = [[LoreSettingsGroup alloc] init];
+    NSBox *box = [[BawanSettingsGroup alloc] init];
     box.boxType = NSBoxCustom;
     box.titlePosition = NSNoTitle;
     box.borderWidth = 1.5;
-    box.borderColor = LoreColor(LoreBorder);
-    box.fillColor = LoreColor(LoreSurface);
+    box.borderColor = BawanColor(BawanBorder);
+    box.fillColor = BawanColor(BawanSurface);
     box.cornerRadius = 8;
     box.contentViewMargins = NSZeroSize;
     box.translatesAutoresizingMaskIntoConstraints = NO;
@@ -159,7 +159,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *_loginHint;
     NSSwitch *_loginSwitch;
     NSButton *_back;
-    LoreMascotView *_mascot;
+    BawanMascotView *_mascot;
     id _eventMonitor;
     NSTimer *_releaseTimer;
     NSInteger _recordingAction;
@@ -189,22 +189,22 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _restoreButtons = [NSMutableArray array];
     _statuses = [NSMutableArray array];
     _permissionButtons = [NSMutableArray array];
-    NSView *root = [[LoreSettingsPaper alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
+    NSView *root = [[BawanSettingsPaper alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
     self.view = root;
-    root.identifier = @"lore-settings";
+    root.identifier = @"bawan-settings";
 
-    LoreSettingsMasthead *masthead = [[LoreSettingsMasthead alloc] init];
+    BawanSettingsMasthead *masthead = [[BawanSettingsMasthead alloc] init];
     masthead.identifier = @"settings-header";
     masthead.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:masthead];
-    LoreMascotView *mascot = [[LoreMascotView alloc] init];
+    BawanMascotView *mascot = [[BawanMascotView alloc] init];
     _mascot = mascot;
     mascot.identifier = @"settings-mascot";
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [masthead addSubview:mascot];
     NSTextField *subtitle = Label(@"Settings", 12, NSFontWeightRegular,
-                                  LoreColor(LoreHeaderText));
+                                  BawanColor(BawanHeaderText));
     subtitle.identifier = @"settings-subtitle";
     subtitle.alignment = NSTextAlignmentLeft;
     [masthead addSubview:subtitle];
@@ -213,9 +213,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _back = back;
     back.identifier = @"settings-back";
     back.bordered = NO;
-    back.font = LoreLabelFont(13);
-    back.contentTintColor = LoreColor(LoreHeaderText);
-    back.image = LoreSymbol(@"chevron.left", nil, 13);
+    back.font = BawanLabelFont(13);
+    back.contentTintColor = BawanColor(BawanHeaderText);
+    back.image = BawanSymbol(@"chevron.left", nil, 13);
     back.imagePosition = NSImageLeft;
     back.imageHugsTitle = YES;
     back.translatesAutoresizingMaskIntoConstraints = NO;
@@ -226,10 +226,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     scroll.identifier = @"settings-scroll";
     scroll.borderType = NSNoBorder;
-    LoreConfigurePaperScrollView(scroll);
+    BawanConfigurePaperScrollView(scroll);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
-    NSView *document = [[LoreSettingsDocument alloc] initWithFrame:NSZeroRect];
+    NSView *document = [[BawanSettingsDocument alloc] initWithFrame:NSZeroRect];
     document.identifier = @"settings-document";
     document.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.documentView = document;
@@ -237,16 +237,16 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSView *shortcutTitle = [[NSView alloc] init];
     shortcutTitle.translatesAutoresizingMaskIntoConstraints = NO;
     NSImageView *keyboard = Icon(@"keyboard");
-    NSTextField *shortcutName = Label(@"Global shortcuts", 14, NSFontWeightSemibold, LoreColor(LoreText));
-    NSTextField *keyHeading = Label(@"Shortcut (click)", 12, NSFontWeightSemibold, LoreColor(LoreSecondaryText));
+    NSTextField *shortcutName = Label(@"Global shortcuts", 14, NSFontWeightSemibold, BawanColor(BawanText));
+    NSTextField *keyHeading = Label(@"Shortcut (click)", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
     keyHeading.identifier = @"shortcut-key-heading";
-    NSTextField *pressesHeading = Label(@"Presses", 12, NSFontWeightSemibold, LoreColor(LoreSecondaryText));
+    NSTextField *pressesHeading = Label(@"Presses", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
     pressesHeading.identifier = @"shortcut-presses-heading";
-    NSButton *help = [NSButton buttonWithImage:LoreSymbol(@"questionmark.circle", nil, 17)
+    NSButton *help = [NSButton buttonWithImage:BawanSymbol(@"questionmark.circle", nil, 17)
         target:self action:@selector(showShortcutHelp:)];
     help.identifier = @"shortcut-help";
     help.bordered = NO;
-    help.contentTintColor = LoreAccentColor();
+    help.contentTintColor = BawanAccentColor();
     help.translatesAutoresizingMaskIntoConstraints = NO;
     help.toolTip = @"Shortcut help";
     [help setAccessibilityLabel:@"Shortcut help"];
@@ -270,8 +270,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [help.heightAnchor constraintEqualToConstant:22]
     ]];
     for (NSUInteger i = 0; i < 2; ++i) {
-        lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
-        NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, LoreColor(LoreText));
+        bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(i);
+        NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, BawanColor(BawanText));
         name.maximumNumberOfLines = 1;
         [name.widthAnchor constraintEqualToConstant:152].active = YES;
         NSSwitch *enabled = [[NSSwitch alloc] init];
@@ -280,28 +280,28 @@ NSString *RowID(NSUInteger index, NSString *control) {
         enabled.tag = i;
         enabled.identifier = RowID(i, @"enabled");
         [enabled setAccessibilityLabel:[@"Enable " stringByAppendingString:ShortcutActionTitle(action)]];
-        NSButton *record = [[LoreShortcutButton alloc] initWithFrame:NSZeroRect];
+        NSButton *record = [[BawanShortcutButton alloc] initWithFrame:NSZeroRect];
         record.target = self;
         record.action = @selector(beginRecording:);
         [record setButtonType:NSButtonTypeMomentaryPushIn];
         record.title = @"";
         record.bordered = NO;
         record.focusRingType = NSFocusRingTypeExterior;
-        record.font = LoreLabelFont(LoreInputFontSize);
-        record.contentTintColor = LoreColor(LoreText);
+        record.font = BawanLabelFont(BawanInputFontSize);
+        record.contentTintColor = BawanColor(BawanText);
         record.translatesAutoresizingMaskIntoConstraints = NO;
         record.tag = i;
         record.identifier = RowID(i, @"key");
         record.toolTip = @"Click, then press a new key combination once. Set Once or Twice separately. Esc cancels.";
         [record.widthAnchor constraintEqualToConstant:128].active = YES;
-        [record.heightAnchor constraintEqualToConstant:LoreInputHeight].active = YES;
+        [record.heightAnchor constraintEqualToConstant:BawanInputHeight].active = YES;
         [record setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" shortcut key"]];
-        NSPopUpButton *count = [[LoreShortcutPressCount alloc] initWithFrame:NSZeroRect pullsDown:NO];
+        NSPopUpButton *count = [[BawanShortcutPressCount alloc] initWithFrame:NSZeroRect pullsDown:NO];
         [count addItemsWithTitles:@[@"Once", @"Twice"]];
         count.bordered = NO;
         count.focusRingType = NSFocusRingTypeExterior;
-        count.font = LoreLabelFont(LoreInputFontSize);
-        count.contentTintColor = LoreColor(LoreText);
+        count.font = BawanLabelFont(BawanInputFontSize);
+        count.contentTintColor = BawanColor(BawanText);
         count.translatesAutoresizingMaskIntoConstraints = NO;
         count.target = self;
         count.action = @selector(changePressCount:);
@@ -309,19 +309,19 @@ NSString *RowID(NSUInteger index, NSString *control) {
         count.identifier = RowID(i, @"count");
         count.toolTip = @"For Twice, release the key between presses and press again within 400 ms.";
         [count.widthAnchor constraintEqualToConstant:80].active = YES;
-        [count.heightAnchor constraintEqualToConstant:LoreInputHeight].active = YES;
+        [count.heightAnchor constraintEqualToConstant:BawanInputHeight].active = YES;
         [count setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" press count"]];
-        NSImage *restoreImage = LoreSymbol(@"arrow.counterclockwise", nil, 17);
+        NSImage *restoreImage = BawanSymbol(@"arrow.counterclockwise", nil, 17);
         NSButton *restore = [NSButton buttonWithImage:restoreImage target:self action:@selector(restoreShortcut:)];
         restore.tag = i;
         restore.identifier = RowID(i, @"reset");
         restore.bordered = NO;
-        restore.contentTintColor = LoreAccentColor();
+        restore.contentTintColor = BawanAccentColor();
         restore.toolTip = @"Restore the default key, press count, and enabled state.";
         [restore.widthAnchor constraintEqualToConstant:28].active = YES;
         [restore setAccessibilityLabel:[@"Restore defaults for " stringByAppendingString:ShortcutActionTitle(action)]];
         NSStackView *controls = Stack(@[name, enabled, record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 6);
-        NSTextField *status = Label(@"", 12, NSFontWeightMedium, LoreColor(LoreSecondaryText));
+        NSTextField *status = Label(@"", 12, NSFontWeightMedium, BawanColor(BawanSecondaryText));
         status.identifier = RowID(i, @"status");
         [status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                        forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -329,8 +329,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
         permission.tag = i;
         permission.identifier = RowID(i, @"permission");
         permission.bordered = NO;
-        permission.font = LoreLabelFont(12);
-        permission.contentTintColor = LoreAccentColor();
+        permission.font = BawanLabelFont(12);
+        permission.contentTintColor = BawanAccentColor();
         NSView *spacer = [[NSView alloc] init];
         NSStackView *state = Stack(@[status, spacer, permission], NSUserInterfaceLayoutOrientationHorizontal, 10);
         NSStackView *row = Stack(@[controls, state], NSUserInterfaceLayoutOrientationVertical, 4);
@@ -353,15 +353,15 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [_statuses addObject:status];
         [_permissionButtons addObject:permission];
     }
-    _permissionHint = Label(@"Allow Lore in System Settings. Typing and pasting work without permissions.",
-        12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _permissionHint = Label(@"Allow Bawan in System Settings. Typing and pasting work without permissions.",
+        12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _permissionHint.identifier = @"shortcut-permission-help";
     _permissionHint.hidden = YES;
     _reservation = Label(@"Custom shortcuts reserve their keys in other apps.",
-        12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+        12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _reservation.identifier = @"shortcut-reservation";
     _reservation.hidden = YES;
-    _shortcutHint = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _shortcutHint = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-feedback";
     _shortcutHint.hidden = YES;
     for (NSTextField *label in @[_permissionHint, _reservation, _shortcutHint]) {
@@ -375,21 +375,21 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _loginSwitch.target = self;
     _loginSwitch.action = @selector(changeLogin:);
     _loginSwitch.identifier = @"launch-at-login";
-    [_loginSwitch setAccessibilityLabel:@"Launch Lore at login"];
+    [_loginSwitch setAccessibilityLabel:@"Launch Bawan at login"];
     NSView *loginSpacer = [[NSView alloc] init];
     NSStackView *loginTitle = Stack(@[Icon(@"power"),
-        Label(@"Launch at login", 14, NSFontWeightSemibold, LoreColor(LoreText)), loginSpacer, _loginSwitch],
+        Label(@"Launch at login", 14, NSFontWeightSemibold, BawanColor(BawanText)), loginSpacer, _loginSwitch],
         NSUserInterfaceLayoutOrientationHorizontal, 10);
-    NSTextField *loginDescription = Label(@"Open Lore automatically when you sign in.",
-        13, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    NSTextField *loginDescription = Label(@"Open Bawan automatically when you sign in.",
+        13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     NSButton *loginSettings = [NSButton buttonWithTitle:@"Login Items…" target:self action:@selector(openLoginSettings:)];
     loginSettings.identifier = @"login-items";
     loginSettings.bordered = NO;
-    loginSettings.font = LoreLabelFont(12);
-    loginSettings.contentTintColor = LoreAccentColor();
+    loginSettings.font = BawanLabelFont(12);
+    loginSettings.contentTintColor = BawanAccentColor();
     loginSettings.alignment = NSTextAlignmentLeft;
     [loginSettings setAccessibilityLabel:@"Open Login Items settings"];
-    _loginHint = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+    _loginHint = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _loginHint.identifier = @"login-hint";
     _loginHint.hidden = YES;
     NSStackView *loginContent = Stack(@[loginTitle, loginDescription, loginSettings, _loginHint],
@@ -400,9 +400,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [view.widthAnchor constraintEqualToAnchor:loginContent.widthAnchor].active = YES;
     }
     NSImageView *privacyIcon = Icon(@"lock.shield");
-    privacyIcon.contentTintColor = LoreColor(LoreSecondaryText);
+    privacyIcon.contentTintColor = BawanColor(BawanSecondaryText);
     NSTextField *privacy = Label(@"Translation runs locally on your Mac.",
-        12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
+        12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     privacy.identifier = @"local-processing";
     NSStackView *footer = Stack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
     NSStackView *content = Stack(@[shortcutGroup, loginGroup, footer],
@@ -412,11 +412,11 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [masthead.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
         [masthead.topAnchor constraintEqualToAnchor:root.topAnchor],
-        [masthead.heightAnchor constraintEqualToConstant:LoreHeaderHeight],
+        [masthead.heightAnchor constraintEqualToConstant:BawanHeaderHeight],
         [mascot.centerXAnchor constraintEqualToAnchor:masthead.centerXAnchor],
         [mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [mascot.widthAnchor constraintEqualToConstant:LoreBrandMarkSize],
-        [mascot.heightAnchor constraintEqualToConstant:LoreBrandMarkSize],
+        [mascot.widthAnchor constraintEqualToConstant:BawanBrandMarkSize],
+        [mascot.heightAnchor constraintEqualToConstant:BawanBrandMarkSize],
         [subtitle.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:24],
         [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:mascot.leadingAnchor constant:-24],
         [subtitle.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
@@ -470,10 +470,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
     BOOL recording = _eventMonitor != nil;
     BOOL needsPermission = NO;
     BOOL reservesCustomKeys = NO;
-    const auto defaults = lore::defaultShortcuts();
+    const auto defaults = bawan::defaultShortcuts();
     for (NSUInteger i = 0; i < 2; ++i) {
-        lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
-        lore::ShortcutBinding binding = [_preferences bindingForAction:action];
+        bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(i);
+        bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
         BOOL recordingRow = recording && _recordingAction == static_cast<NSInteger>(i);
         _enabledSwitches[i].state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
         _enabledSwitches[i].enabled = !recording;
@@ -488,28 +488,28 @@ NSString *RowID(NSUInteger index, NSString *control) {
         BOOL custom = binding.keyCode != defaults[i].keyCode || binding.modifiers != defaults[i].modifiers ||
                       binding.pressCount != defaults[i].pressCount;
         reservesCustomKeys |= binding.enabled && custom &&
-            (action != lore::ShortcutAction::TranslateSelection || !lore::isPassiveCopy(binding));
+            (action != bawan::ShortcutAction::TranslateSelection || !bawan::isPassiveCopy(binding));
         NSString *status = @"Off";
         NSString *permission = @"Retry";
-        LoreColorRole statusRole = LoreSecondaryText;
+        BawanColorRole statusRole = BawanSecondaryText;
         switch (availability) {
             case ShortcutAvailabilityOff: break;
             case ShortcutAvailabilityAvailable:
-                status = @"Shortcut ready"; statusRole = LoreSuccess; break;
+                status = @"Shortcut ready"; statusRole = BawanSuccess; break;
             case ShortcutAvailabilityNeedsInputMonitoring:
-                status = @"Input Monitoring required"; permission = @"Open Input Monitoring…"; statusRole = LoreWarning; break;
+                status = @"Input Monitoring required"; permission = @"Open Input Monitoring…"; statusRole = BawanWarning; break;
             case ShortcutAvailabilityNeedsAccessibility:
-                status = @"Accessibility required"; permission = @"Open Accessibility…"; statusRole = LoreWarning; break;
+                status = @"Accessibility required"; permission = @"Open Accessibility…"; statusRole = BawanWarning; break;
             case ShortcutAvailabilityFailed:
-                status = @"Could not start monitoring"; statusRole = LoreError; break;
+                status = @"Could not start monitoring"; statusRole = BawanError; break;
         }
         if (recording) {
             status = recordingRow ? (_finishingRecording ? @"Waiting for key release…" : @"Recording shortcut…") :
                 (binding.enabled ? @"Paused while recording" : @"Off");
-            statusRole = LoreSecondaryText;
+            statusRole = BawanSecondaryText;
         }
         _statuses[i].stringValue = status;
-        _statuses[i].textColor = LoreColor(statusRole);
+        _statuses[i].textColor = BawanColor(statusRole);
         _permissionButtons[i].title = permission;
         [_permissionButtons[i] setAccessibilityLabel:[permission stringByAppendingFormat:@" for %@", ShortcutActionTitle(action)]];
         _permissionButtons[i].hidden = availability == ShortcutAvailabilityOff || availability == ShortcutAvailabilityAvailable;
@@ -522,7 +522,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 
 - (void)setShortcutMessage:(NSString *)message error:(BOOL)error {
     _shortcutHint.stringValue = message;
-    _shortcutHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
+    _shortcutHint.textColor = error ? BawanColor(BawanError) : BawanColor(BawanSecondaryText);
     _shortcutHint.hidden = message.length == 0;
     [self updateDocumentLayout];
     if (error && message.length > 0) [self revealMessage:_shortcutHint];
@@ -557,8 +557,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)toggleEnabled:(NSSwitch *)sender {
-    lore::ShortcutAction action = static_cast<lore::ShortcutAction>(sender.tag);
-    lore::ShortcutBinding binding = [_preferences bindingForAction:action];
+    bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
+    bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
     binding.enabled = sender.state == NSControlStateValueOn;
     NSString *error = nil;
     BOOL saved = [_preferences setBinding:binding forAction:action error:&error];
@@ -567,8 +567,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)changePressCount:(NSPopUpButton *)sender {
-    lore::ShortcutAction action = static_cast<lore::ShortcutAction>(sender.tag);
-    lore::ShortcutBinding binding = [_preferences bindingForAction:action];
+    bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
+    bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
     binding.pressCount = sender.indexOfSelectedItem + 1;
     NSString *error = nil;
     BOOL saved = [_preferences setBinding:binding forAction:action error:&error];
@@ -578,14 +578,14 @@ NSString *RowID(NSUInteger index, NSString *control) {
 
 - (void)restoreShortcut:(NSButton *)sender {
     NSString *error = nil;
-    BOOL saved = [_preferences restoreAction:static_cast<lore::ShortcutAction>(sender.tag) error:&error];
+    BOOL saved = [_preferences restoreAction:static_cast<bawan::ShortcutAction>(sender.tag) error:&error];
     [self setShortcutMessage:saved ? @"Default key, press count, and enabled state restored." :
         error ?: @"Could not restore defaults." error:!saved];
     [self refresh];
 }
 
 - (void)requestPermission:(NSButton *)sender {
-    [_monitor requestPermissionForAction:static_cast<lore::ShortcutAction>(sender.tag)];
+    [_monitor requestPermissionForAction:static_cast<bawan::ShortcutAction>(sender.tag)];
     [self refresh];
 }
 
@@ -625,8 +625,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [self finishRecording];
         return nil;
     }
-    lore::ShortcutAction action = static_cast<lore::ShortcutAction>(_recordingAction);
-    lore::ShortcutBinding binding = [_preferences bindingForAction:action];
+    bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(_recordingAction);
+    bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
     binding.keyCode = event.keyCode;
     binding.modifiers = modifiers;
     NSString *error = nil;
@@ -680,10 +680,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _loginSwitch.state = status == SMAppServiceStatusEnabled || status == SMAppServiceStatusRequiresApproval ?
         NSControlStateValueOn : NSControlStateValueOff;
     NSString *hint = message ?: (status == SMAppServiceStatusRequiresApproval ?
-        @"Allow Lore in System Settings → General → Login Items." : @"");
+        @"Allow Bawan in System Settings → General → Login Items." : @"");
     BOOL changed = _loginHint.hidden || ![_loginHint.stringValue isEqualToString:hint];
     _loginHint.stringValue = hint;
-    _loginHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
+    _loginHint.textColor = error ? BawanColor(BawanError) : BawanColor(BawanSecondaryText);
     _loginHint.hidden = hint.length == 0;
     [self updateDocumentLayout];
     if (hint.length > 0 && (error || (changed && status == SMAppServiceStatusRequiresApproval))) {

@@ -1,26 +1,26 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
-void LoreConfigurePaperScrollView(NSScrollView *scroll);
+void BawanConfigurePaperScrollView(NSScrollView *scroll);
 
-static constexpr CGFloat LoreHeaderHeight = 80;
-static constexpr CGFloat LoreBrandMarkSize = 72;
-static constexpr CGFloat LoreInputHeight = 28;
-static constexpr CGFloat LoreInputFontSize = 13;
+static constexpr CGFloat BawanHeaderHeight = 80;
+static constexpr CGFloat BawanBrandMarkSize = 72;
+static constexpr CGFloat BawanInputHeight = 28;
+static constexpr CGFloat BawanInputFontSize = 13;
 
-typedef NS_ENUM(NSInteger, LoreColorRole) {
-    LoreBackground, LoreSurface, LoreText, LoreSecondaryText, LoreBorder,
-    LoreButton, LoreHeader, LoreHeaderText, LoreGold, LoreGoldText, LoreSuccess, LoreError, LoreWarning
+typedef NS_ENUM(NSInteger, BawanColorRole) {
+    BawanBackground, BawanSurface, BawanText, BawanSecondaryText, BawanBorder,
+    BawanButton, BawanHeader, BawanHeaderText, BawanGold, BawanGoldText, BawanSuccess, BawanError, BawanWarning
 };
 
-static inline NSColor *LoreRGB(unsigned value) {
+static inline NSColor *BawanRGB(unsigned value) {
     return [NSColor colorWithSRGBRed:((value >> 16) & 255) / 255.0
                               green:((value >> 8) & 255) / 255.0
                                blue:(value & 255) / 255.0 alpha:1];
 }
 
 // External inline linkage shares this palette across the app's view files.
-inline NSColor *LoreColor(LoreColorRole role) {
+inline NSColor *BawanColor(BawanColorRole role) {
     static NSArray<NSColor *> *palette;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -34,12 +34,12 @@ inline NSColor *LoreColor(LoreColorRole role) {
         };
         NSMutableArray<NSColor *> *colors = [NSMutableArray array];
         for (NSUInteger i = 0; i < sizeof(light) / sizeof(light[0]); ++i) {
-            NSColor *lightColor = LoreRGB(light[i]);
-            NSColor *darkColor = LoreRGB(dark[i]);
-            NSColor *contrastLight = (i == LoreBorder || i == LoreSecondaryText) ?
-                LoreRGB(0x443024) : lightColor;
-            NSColor *contrastDark = (i == LoreBorder || i == LoreSecondaryText) ?
-                LoreRGB(0xF5E6C8) : darkColor;
+            NSColor *lightColor = BawanRGB(light[i]);
+            NSColor *darkColor = BawanRGB(dark[i]);
+            NSColor *contrastLight = (i == BawanBorder || i == BawanSecondaryText) ?
+                BawanRGB(0x443024) : lightColor;
+            NSColor *contrastDark = (i == BawanBorder || i == BawanSecondaryText) ?
+                BawanRGB(0xF5E6C8) : darkColor;
             [colors addObject:[NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *appearance) {
                 NSString *match = [appearance bestMatchFromAppearancesWithNames:@[
                     NSAppearanceNameAccessibilityHighContrastAqua,
@@ -55,22 +55,22 @@ inline NSColor *LoreColor(LoreColorRole role) {
     return palette[role];
 }
 
-static inline NSColor *LoreAccentFillColor(void) { return LoreRGB(0xB53B28); }
-static inline NSColor *LoreAccentColor(void) { return LoreColor(LoreError); }
+static inline NSColor *BawanAccentFillColor(void) { return BawanRGB(0xB53B28); }
+static inline NSColor *BawanAccentColor(void) { return BawanColor(BawanError); }
 
 // A pressed primary action darkens in both appearances; its ivory label keeps
 // at least 4.5:1 contrast instead of blending the red toward light text in dark mode.
-static inline NSColor *LorePrimaryButtonFill(BOOL highlighted) {
-    return highlighted ? LoreRGB(0x943020) : LoreAccentFillColor();
+static inline NSColor *BawanPrimaryButtonFill(BOOL highlighted) {
+    return highlighted ? BawanRGB(0x943020) : BawanAccentFillColor();
 }
 
-static inline NSImage *LoreSymbol(NSString *name, NSString *description, CGFloat size) {
+static inline NSImage *BawanSymbol(NSString *name, NSString *description, CGFloat size) {
     NSImage *image = [NSImage imageWithSystemSymbolName:name accessibilityDescription:description];
     return [image imageWithSymbolConfiguration:
         [NSImageSymbolConfiguration configurationWithPointSize:size weight:NSFontWeightMedium]];
 }
 
-static inline NSBezierPath *LoreCutCornerPath(NSRect rect) {
+static inline NSBezierPath *BawanCutCornerPath(NSRect rect) {
     NSBezierPath *path = [NSBezierPath bezierPath];
     [path moveToPoint:NSMakePoint(NSMinX(rect) + 5, NSMinY(rect))];
     [path lineToPoint:NSMakePoint(NSMaxX(rect) - 5, NSMinY(rect))];
@@ -84,21 +84,21 @@ static inline NSBezierPath *LoreCutCornerPath(NSRect rect) {
     return path;
 }
 
-static inline NSBezierPath *LoreInputPath(NSRect rect) {
+static inline NSBezierPath *BawanInputPath(NSRect rect) {
     return [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 1, 1) xRadius:6 yRadius:6];
 }
 
-static inline void LoreDrawInputSurface(NSRect rect, BOOL enabled, BOOL highlighted) {
-    NSBezierPath *path = LoreInputPath(rect);
-    NSColor *fill = LoreColor(enabled && highlighted ? LoreButton : LoreBackground);
+static inline void BawanDrawInputSurface(NSRect rect, BOOL enabled, BOOL highlighted) {
+    NSBezierPath *path = BawanInputPath(rect);
+    NSColor *fill = BawanColor(enabled && highlighted ? BawanButton : BawanBackground);
     [(enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
     [path fill];
-    [LoreColor(LoreBorder) setStroke];
+    [BawanColor(BawanBorder) setStroke];
     path.lineWidth = 1.5;
     [path stroke];
 }
 
-static inline NSFont *LoreSerifFont(CGFloat size, BOOL bold) {
+static inline NSFont *BawanSerifFont(CGFloat size, BOOL bold) {
     NSFont *latin = [NSFont fontWithName:bold ? @"Georgia-Bold" : @"Georgia" size:size];
     if (!latin) latin = [NSFont systemFontOfSize:size weight:bold ? NSFontWeightSemibold : NSFontWeightRegular];
     NSFontDescriptor *japanese = [NSFontDescriptor fontDescriptorWithName:
@@ -108,14 +108,14 @@ static inline NSFont *LoreSerifFont(CGFloat size, BOOL bold) {
     return [NSFont fontWithDescriptor:descriptor size:size] ?: latin;
 }
 
-static inline NSFont *LoreBodyFont(CGFloat size) { return LoreSerifFont(size, NO); }
-static inline NSFont *LoreLabelFont(CGFloat size) { return LoreSerifFont(size, YES); }
+static inline NSFont *BawanBodyFont(CGFloat size) { return BawanSerifFont(size, NO); }
+static inline NSFont *BawanLabelFont(CGFloat size) { return BawanSerifFont(size, YES); }
 
 // Smoke tests are command-line executables. Give them the same staged resources
 // as the app, without an environment-variable override in the shipped product.
-inline NSImage *LoreLoadImage(NSString *name) {
-#ifdef LORE_TEST_RESOURCE_DIR
-    NSString *path = [@LORE_TEST_RESOURCE_DIR stringByAppendingPathComponent:
+inline NSImage *BawanLoadImage(NSString *name) {
+#ifdef BAWAN_TEST_RESOURCE_DIR
+    NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:
         [name stringByAppendingPathExtension:@"png"]];
 #else
     NSString *path = [NSBundle.mainBundle pathForResource:name ofType:@"png"];
@@ -124,18 +124,18 @@ inline NSImage *LoreLoadImage(NSString *name) {
 }
 
 // External inline linkage shares these two caches across the app's view files.
-NSImage *LoreMascotImage(void);
+NSImage *BawanMascotImage(void);
 
-inline NSImage *LorePaperImage(void) {
+inline NSImage *BawanPaperImage(void) {
     static NSImage *image;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ image = LoreLoadImage(@"PaperGrain"); });
+    dispatch_once(&once, ^{ image = BawanLoadImage(@"PaperGrain"); });
     return image;
 }
 
-static inline void LoreDrawPaper(NSRect rect) {
+static inline void BawanDrawPaper(NSRect rect) {
     if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast) return;
-    NSImage *paper = LorePaperImage();
+    NSImage *paper = BawanPaperImage();
     if (!paper) return;
     [NSGraphicsContext saveGraphicsState];
     NSRectClip(rect);
@@ -149,11 +149,11 @@ static inline void LoreDrawPaper(NSRect rect) {
     [NSGraphicsContext restoreGraphicsState];
 }
 
-static inline void LoreDrawHeader(NSRect rect) {
-    [LoreColor(LoreHeader) setFill];
+static inline void BawanDrawHeader(NSRect rect) {
+    [BawanColor(BawanHeader) setFill];
     NSRectFill(rect);
-    LoreDrawPaper(rect);
-    [LoreColor(LoreHeaderText) setStroke];
+    BawanDrawPaper(rect);
+    [BawanColor(BawanHeaderText) setStroke];
     for (int index = 1; index <= 2; ++index) {
         CGFloat inset = 4 * index;
         NSBezierPath *rule = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, inset, inset)
@@ -163,12 +163,12 @@ static inline void LoreDrawHeader(NSRect rect) {
     }
 }
 
-static inline void LoreDrawMedallionBase(NSRect rect) {
+static inline void BawanDrawMedallionBase(NSRect rect) {
     NSRect circle = NSInsetRect(rect, 1, 1);
     NSBezierPath *path = [NSBezierPath bezierPathWithOvalInRect:circle];
-    [LoreColor(LoreGold) setFill];
+    [BawanColor(BawanGold) setFill];
     [path fill];
-    [LoreColor(LoreGoldText) setStroke];
+    [BawanColor(BawanGoldText) setStroke];
     path.lineWidth = 1.5;
     [path stroke];
 }

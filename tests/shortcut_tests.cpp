@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 
-using namespace lore;
+using namespace bawan;
 using Kind = ShortcutEvent::Kind;
 
 static void require(bool condition, const char *message) {
@@ -54,7 +54,7 @@ static void testBindings() {
     }
     for (std::uint16_t key : {36, 76, 12, 43}) {
         ShortcutBinding binding{true, key, Command, 2};
-        require(validateShortcut(binding) == ShortcutError::Reserved, "Lore's fixed commands cannot be shadowed by a prefix");
+        require(validateShortcut(binding) == ShortcutError::Reserved, "Bawan's fixed commands cannot be shadowed by a prefix");
     }
     require(validateShortcut({true, 8, std::uint8_t(Command | Shift), 1}) == ShortcutError::Reserved,
             "copy-result command is reserved");

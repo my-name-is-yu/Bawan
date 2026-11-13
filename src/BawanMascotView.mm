@@ -1,10 +1,10 @@
-#import "LoreMascotView.h"
-#import "LoreAppearance.h"
+#import "BawanMascotView.h"
+#import "BawanAppearance.h"
 #import <QuartzCore/QuartzCore.h>
 
 namespace {
 constexpr CFTimeInterval HoverDuration = 0.28;
-NSString *const HoverKey = @"lore.hover";
+NSString *const HoverKey = @"bawan.hover";
 
 // Paths use the original artwork's normalized coordinates, with y pointing down.
 CGPathRef EarPath(BOOL right, CGSize size, BOOL bodyCutout) {
@@ -77,7 +77,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
 }
 }
 
-@interface LoreMascotView () {
+@interface BawanMascotView () {
     NSTrackingArea *_hoverArea;
     CALayer *_clip;
     CALayer *_dog;
@@ -92,25 +92,25 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
 }
 @end
 
-@implementation LoreMascotView
+@implementation BawanMascotView
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 - (BOOL)mouseDownCanMoveWindow { return NO; }
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
     if (!self) return nil;
-    self.image = LoreMascotImage();
+    self.image = BawanMascotImage();
     self.wantsLayer = YES;
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
     CGImageRef bitmap = [self.image CGImageForProposedRect:nullptr context:nil hints:nil];
     _clip = [CALayer layer];
-    _clip.name = @"lore.mascot.clip";
+    _clip.name = @"bawan.mascot.clip";
     _dog = [CALayer layer];
-    _dog.name = @"lore.mascot.dog";
+    _dog.name = @"bawan.mascot.dog";
     [self.layer addSublayer:_clip];
     [_clip addSublayer:_dog];
     NSMutableArray<CALayer *> *parts = [NSMutableArray array];
-    for (NSString *name in @[@"lore.mascot.left-ear", @"lore.mascot.right-ear", @"lore.mascot.face"]) {
+    for (NSString *name in @[@"bawan.mascot.left-ear", @"bawan.mascot.right-ear", @"bawan.mascot.face"]) {
         CALayer *part = [CALayer layer];
         part.name = name;
         part.contents = (__bridge id)bitmap;
@@ -136,13 +136,13 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
 
 - (CALayer *)eyelid:(BOOL)right {
     CALayer *lid = [CALayer layer];
-    lid.name = right ? @"lore.mascot.right-lid" : @"lore.mascot.left-lid";
+    lid.name = right ? @"bawan.mascot.right-lid" : @"bawan.mascot.left-lid";
     lid.opacity = 0;
     CAShapeLayer *skin = [CAShapeLayer layer];
-    skin.fillColor = LoreRGB(0xFFBA43).CGColor;
+    skin.fillColor = BawanRGB(0xFFBA43).CGColor;
     CAShapeLayer *crease = [CAShapeLayer layer];
     crease.fillColor = nil;
-    crease.strokeColor = LoreRGB(0x38271C).CGColor;
+    crease.strokeColor = BawanRGB(0x38271C).CGColor;
     crease.lineWidth = 0.7;
     crease.lineCap = kCALineCapRound;
     [lid addSublayer:skin];
@@ -199,7 +199,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     [CATransaction commit];
 }
 
-- (void)drawRect:(NSRect)dirtyRect { LoreDrawMedallionBase(self.bounds); }
+- (void)drawRect:(NSRect)dirtyRect { BawanDrawMedallionBase(self.bounds); }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
@@ -232,11 +232,11 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     float leftOpacity = (_leftLid.presentationLayer ?: _leftLid).opacity;
     float rightOpacity = (_rightLid.presentationLayer ?: _rightLid).opacity;
     NSUInteger generation = ++_hoverGeneration;
-    __weak LoreMascotView *weakSelf = self;
+    __weak BawanMascotView *weakSelf = self;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [CATransaction setCompletionBlock:^{
-        LoreMascotView *view = weakSelf;
+        BawanMascotView *view = weakSelf;
         // An earlier completion must not cancel a later hover or click.
         if (view && view->_hoverGeneration == generation) [view clearHoverAnimations];
     }];
@@ -258,7 +258,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
             break;
     }
     CAKeyframeAnimation *motion = Motion(values);
-    [motion setValue:name forKey:@"lore.motion"];
+    [motion setValue:name forKey:@"bawan.motion"];
     [_dog addAnimation:motion forKey:HoverKey];
     [_leftEar addAnimation:Motion(@[leftStart, Transform(-0.07, 0, 0, 0.94), Transform(0.025), Transform(-0.01), rest]) forKey:HoverKey];
     [_rightEar addAnimation:Motion(@[rightStart, Transform(0.06, 0, 0, 0.95), Transform(-0.03), Transform(0.01), rest]) forKey:HoverKey];

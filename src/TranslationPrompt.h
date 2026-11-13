@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace lore::detail {
+namespace bawan::detail {
 
 inline std::string translationPromptPrefix(std::string_view text, bool toEnglish) {
     const auto words = toEnglish ? 0 : shortEnglishWordCount(text);
@@ -19,4 +19,4 @@ inline std::string translationPromptPrefix(std::string_view text, bool toEnglish
     return prefix;
 }
 
-} // namespace lore::detail
+} // namespace bawan::detail

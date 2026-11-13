@@ -1,6 +1,6 @@
 #include "ShortcutBinding.h"
 
-namespace lore {
+namespace bawan {
 
 ShortcutBindings defaultShortcuts() {
     return {{{true, 8, Command, 2}, {true, 17, Option, 2}}};
@@ -142,4 +142,4 @@ void ShortcutGesture::reset() {
     cancel();
 }
 
-} // namespace lore
+} // namespace bawan

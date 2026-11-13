@@ -1,5 +1,5 @@
-#import "LoreAppearance.h"
-#import "LoreMascotView.h"
+#import "BawanAppearance.h"
+#import "BawanMascotView.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cstdlib>
@@ -64,19 +64,19 @@ static void ServiceAppKit(NSTimeInterval duration) {
     } while (deadline.timeIntervalSinceNow > 0);
 }
 
-static void RequireReset(LoreMascotView *view, NSString *stage) {
+static void RequireReset(BawanMascotView *view, NSString *stage) {
     if (AnimationCount(view.layer) > 0) {
         std::cerr << "Unremoved hover animation " << stage.UTF8String << '\n';
         DumpAnimations(view.layer);
     }
     Require(AnimationCount(view.layer) == 0,
         [@"Hover animations must be removed " stringByAppendingString:stage]);
-    for (NSString *name in @[@"lore.mascot.dog", @"lore.mascot.left-ear", @"lore.mascot.right-ear"]) {
+    for (NSString *name in @[@"bawan.mascot.dog", @"bawan.mascot.left-ear", @"bawan.mascot.right-ear"]) {
         CALayer *layer = NamedLayer(view.layer, name);
         Require(layer != nil && CATransform3DIsIdentity(layer.transform),
             [NSString stringWithFormat:@"%@ must return to its resting transform %@", name, stage]);
     }
-    for (NSString *name in @[@"lore.mascot.left-lid", @"lore.mascot.right-lid"]) {
+    for (NSString *name in @[@"bawan.mascot.left-lid", @"bawan.mascot.right-lid"]) {
         CALayer *layer = NamedLayer(view.layer, name);
         Require(layer != nil && layer.opacity == 0,
             [NSString stringWithFormat:@"%@ must return to open eyes %@", name, stage]);
@@ -85,16 +85,16 @@ static void RequireReset(LoreMascotView *view, NSString *stage) {
 
 static void RequireFinite(CALayer *layer) {
     NSArray<NSString *> *keys = layer.animationKeys;
-    Require(keys.count == 1 && [keys.firstObject isEqualToString:@"lore.hover"],
+    Require(keys.count == 1 && [keys.firstObject isEqualToString:@"bawan.hover"],
         [NSString stringWithFormat:@"%@ must own one replaceable hover animation", layer.name]);
-    CAAnimation *animation = [layer animationForKey:@"lore.hover"];
+    CAAnimation *animation = [layer animationForKey:@"bawan.hover"];
     Require(animation.duration > 0 && animation.duration <= 0.28 + 0.0001 &&
         animation.repeatCount == 0 && animation.repeatDuration == 0 && !animation.autoreverses &&
         animation.removedOnCompletion,
         [NSString stringWithFormat:@"%@ must use one finite, automatically removed animation", layer.name]);
 }
 
-static void CapturePresentation(LoreMascotView *view, NSString *motion) {
+static void CapturePresentation(BawanMascotView *view, NSString *motion) {
     // These are compositor-layer samples, not an AppKit cacheDisplay snapshot of
     // the resting model. The owning test window stays the same for every preset.
     CALayer *presentation = view.layer.presentationLayer;
@@ -124,8 +124,8 @@ static void RunSmoke(void) {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 184, 96)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
     window.releasedWhenClosed = NO;
-    LoreMascotView *first = [[LoreMascotView alloc] initWithFrame:NSMakeRect(8, 8, LoreBrandMarkSize, LoreBrandMarkSize)];
-    LoreMascotView *second = [[LoreMascotView alloc] initWithFrame:NSMakeRect(100, 8, LoreBrandMarkSize, LoreBrandMarkSize)];
+    BawanMascotView *first = [[BawanMascotView alloc] initWithFrame:NSMakeRect(8, 8, BawanBrandMarkSize, BawanBrandMarkSize)];
+    BawanMascotView *second = [[BawanMascotView alloc] initWithFrame:NSMakeRect(100, 8, BawanBrandMarkSize, BawanBrandMarkSize)];
     [window.contentView addSubview:first];
     [window.contentView addSubview:second];
     [window makeKeyAndOrderFront:nil];
@@ -152,10 +152,10 @@ static void RunSmoke(void) {
     Require([first acceptsFirstMouse:clicked] && ![first mouseDownCanMoveWindow],
         @"A mascot click must work in an inactive window without dragging it");
 
-    Require(first.image != nil && first.image == second.image && first.image == LoreMascotImage(),
+    Require(first.image != nil && first.image == second.image && first.image == BawanMascotImage(),
         @"Both mascot views must share the cached display-sized image");
-    CALayer *face = NamedLayer(first.layer, @"lore.mascot.face");
-    CALayer *otherFace = NamedLayer(second.layer, @"lore.mascot.face");
+    CALayer *face = NamedLayer(first.layer, @"bawan.mascot.face");
+    CALayer *otherFace = NamedLayer(second.layer, @"bawan.mascot.face");
     Require(face != nil && face.contents != nil && face.contents == otherFace.contents,
         @"Both mascot faces must share decoded image contents");
     CFTypeRef contents = (__bridge CFTypeRef)face.contents;
@@ -186,14 +186,14 @@ static void RunSmoke(void) {
         // window opening or a lifecycle stress loop.
         for (NSUInteger choice = 0; choice < 3; ++choice) {
             [first mouseEntered:entered];
-            CALayer *dog = NamedLayer(first.layer, @"lore.mascot.dog");
+            CALayer *dog = NamedLayer(first.layer, @"bawan.mascot.dog");
             RequireFinite(dog);
-            NSString *motion = [[dog animationForKey:@"lore.hover"] valueForKey:@"lore.motion"];
+            NSString *motion = [[dog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
             Require([motion isKindOfClass:NSString.class] && motion.length > 0,
                 @"Each hover must identify the motion selected for this playback");
             [motions addObject:motion];
-            for (NSString *name in @[@"lore.mascot.left-ear", @"lore.mascot.right-ear",
-                @"lore.mascot.left-lid", @"lore.mascot.right-lid"]) {
+            for (NSString *name in @[@"bawan.mascot.left-ear", @"bawan.mascot.right-ear",
+                @"bawan.mascot.left-lid", @"bawan.mascot.right-lid"]) {
                 CALayer *part = NamedLayer(first.layer, name);
                 Require(part != nil, [@"Missing expressive mascot part: " stringByAppendingString:name]);
                 RequireFinite(part);
@@ -204,7 +204,7 @@ static void RunSmoke(void) {
                 CGPointEqualToPoint(first.layer.position, fixedPosition),
                 @"Hovering must leave the round medallion, its frame and hit area fixed");
             [first mouseEntered:entered];
-            Require([[[dog animationForKey:@"lore.hover"] valueForKey:@"lore.motion"] isEqual:motion],
+            Require([[[dog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"] isEqual:motion],
                 @"A duplicate entry while already inside must not start another preset");
             RequireFinite(dog);
             [window displayIfNeeded];
@@ -214,7 +214,7 @@ static void RunSmoke(void) {
             NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
             while (AnimationCount(first.layer) > 0 && deadline.timeIntervalSinceNow > 0) ServiceAppKit(0.01);
             RequireReset(first, @"after a hover finishes");
-            Require(NamedLayer(first.layer, @"lore.mascot.face").contents == sharedContents,
+            Require(NamedLayer(first.layer, @"bawan.mascot.face").contents == sharedContents,
                 @"Playback must reuse the decoded image");
             [first mouseExited:exited];
         }
@@ -227,15 +227,15 @@ static void RunSmoke(void) {
         ServiceAppKit(0.05);
         [first mouseExited:exited];
         [first mouseEntered:entered];
-        CALayer *replacementDog = NamedLayer(first.layer, @"lore.mascot.dog");
-        NSString *replacementMotion = [[replacementDog animationForKey:@"lore.hover"] valueForKey:@"lore.motion"];
+        CALayer *replacementDog = NamedLayer(first.layer, @"bawan.mascot.dog");
+        NSString *replacementMotion = [[replacementDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
         RequireFinite(replacementDog);
         [window displayIfNeeded];
         [CATransaction flush];
         // Drain the canceled playback's completion with ample time left on
         // the replacement, rather than sampling near its natural end.
         ServiceAppKit(0.03);
-        Require([[[replacementDog animationForKey:@"lore.hover"] valueForKey:@"lore.motion"]
+        Require([[[replacementDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"]
                     isEqual:replacementMotion],
             @"An interrupted hover's completion must not remove its replacement playback");
         RequireFinite(replacementDog);
@@ -251,9 +251,9 @@ static void RunSmoke(void) {
         while (AnimationCount(first.layer) > 0 && clickReadyDeadline.timeIntervalSinceNow > 0) ServiceAppKit(0.01);
         RequireReset(first, @"after hovering finishes while the pointer stays inside");
         [first mouseDown:clicked];
-        RequireFinite(NamedLayer(first.layer, @"lore.mascot.dog"));
+        RequireFinite(NamedLayer(first.layer, @"bawan.mascot.dog"));
         Require(first.image == second.image &&
-            NamedLayer(first.layer, @"lore.mascot.face").contents == sharedContents &&
+            NamedLayer(first.layer, @"bawan.mascot.face").contents == sharedContents &&
             NSEqualRects(first.frame, fixedFrame) && CGRectEqualToRect(first.layer.bounds, fixedBounds) &&
             CGPointEqualToPoint(first.layer.position, fixedPosition) && first.layer.animationKeys.count == 0,
             @"Clicking from inside must reuse the image and keep the medallion fixed");
@@ -261,17 +261,17 @@ static void RunSmoke(void) {
         RequireReset(first, @"after leaving during click playback");
 
         [first mouseEntered:entered];
-        CALayer *clickedDog = NamedLayer(first.layer, @"lore.mascot.dog");
-        NSString *hoverMotion = [[clickedDog animationForKey:@"lore.hover"] valueForKey:@"lore.motion"];
+        CALayer *clickedDog = NamedLayer(first.layer, @"bawan.mascot.dog");
+        NSString *hoverMotion = [[clickedDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
         [first mouseDown:clickedAgain];
-        NSString *clickMotion = [[clickedDog animationForKey:@"lore.hover"] valueForKey:@"lore.motion"];
+        NSString *clickMotion = [[clickedDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
         Require(clickMotion != nil && ![clickMotion isEqual:hoverMotion],
             @"Clicking during a running hover must replace it with the next preset");
-        for (NSString *name in @[@"lore.mascot.dog", @"lore.mascot.left-ear", @"lore.mascot.right-ear",
-            @"lore.mascot.left-lid", @"lore.mascot.right-lid"]) {
+        for (NSString *name in @[@"bawan.mascot.dog", @"bawan.mascot.left-ear", @"bawan.mascot.right-ear",
+            @"bawan.mascot.left-lid", @"bawan.mascot.right-lid"]) {
             RequireFinite(NamedLayer(first.layer, name));
         }
-        Require(NamedLayer(first.layer, @"lore.mascot.face").contents == sharedContents &&
+        Require(NamedLayer(first.layer, @"bawan.mascot.face").contents == sharedContents &&
             NSEqualRects(first.frame, fixedFrame) && first.layer.animationKeys.count == 0,
             @"Replacing hover playback with a click must not duplicate images or move the medallion");
         [first mouseExited:exited];

@@ -1,16 +1,16 @@
 # Implemented UI captures
 
-These unmodified PNGs are AppKit content-view captures from the macOS CI run for
-implementation commit `b9fb0569df8a855dca9c71c1668263dff6e0ec6c`:
-[run 43360514233](https://github.com/my-name-is-yu/Lore/actions/runs/43360514233),
-artifact `panel-view-captures` (ID `14006949909`).
+These unmodified PNGs are AppKit content-view captures generated locally on
+an Apple Silicon MacBook on 2026-11-13 from the Bawan working tree, using the
+`BAWAN_BUILD_TESTS=ON` Release build and the `translation_panel` and
+`settings_navigation` CTests. They are not captures from the earlier CI run.
 
-| File | Artifact source |
+| File | Local test output |
 | --- | --- |
-| `translation-light.png` | `panel-smoke/light.png` |
-| `translation-dark.png` | `panel-smoke/dark.png` |
-| `settings-light.png` | `settings-smoke/light.png` |
-| `settings-dark.png` | `settings-smoke/dark.png` |
+| `translation-light.png` | `build/panel-smoke/light.png` |
+| `translation-dark.png` | `build/panel-smoke/dark.png` |
+| `settings-light.png` | `build/settings-smoke/light.png` |
+| `settings-dark.png` | `build/settings-smoke/dark.png` |
 
 The translation captures include the shared hard shadows on Translate, Copy and
 Swap. These are model-free smoke-test views, not full desktop screenshots; OS

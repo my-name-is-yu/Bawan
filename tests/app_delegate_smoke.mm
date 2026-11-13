@@ -10,11 +10,11 @@
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
 - (void)updateStatus;
-- (void)translateText:(NSString *)text direction:(lore::Direction)direction;
+- (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
-- (void)handleEngineEvent:(const lore::EngineEvent &)event;
+- (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 @end
 
 static void Require(BOOL condition, NSString *message) {
@@ -35,7 +35,7 @@ static void WaitFor(Predicate predicate, NSString *message) {
 }
 
 static void SetAvailableModel(AppDelegate *delegate) {
-    [delegate setValue:[NSURL fileURLWithPath:@"/__lore_tests__/missing-model.gguf"] forKey:@"modelURL"];
+    [delegate setValue:[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"] forKey:@"modelURL"];
     [delegate setValue:@YES forKey:@"modelAvailable"];
     [delegate setValue:@NO forKey:@"modelFailed"];
     [delegate setValue:@"Ready to translate · On-device processing" forKey:@"modelStatus"];
@@ -56,8 +56,8 @@ static void RequireModelFailure(AppDelegate *delegate) {
 
 static void CheckPendingSelection(AppDelegate *delegate, TranslationPanel *panel) {
     [panel showForSelection:@"First selection"];
-    [delegate translateText:@"First selection" direction:lore::Direction::Automatic];
-    [delegate translateText:@"Latest selection" direction:lore::Direction::EnglishToJapanese];
+    [delegate translateText:@"First selection" direction:bawan::Direction::Automatic];
+    [delegate translateText:@"Latest selection" direction:bawan::Direction::EnglishToJapanese];
     Require(Flag(delegate, @"busy") &&
         [[delegate valueForKey:@"pendingText"] isEqualToString:@"Latest selection"],
         @"Verification must retain only the latest requested selection");
@@ -74,7 +74,7 @@ static void CheckPendingSelection(AppDelegate *delegate, TranslationPanel *panel
 
 static void CheckColdRequestAndRetry(AppDelegate *delegate) {
     SetAvailableModel(delegate);
-    [delegate translateText:@"Hello" direction:lore::Direction::EnglishToJapanese];
+    [delegate translateText:@"Hello" direction:bawan::Direction::EnglishToJapanese];
     Require(Flag(delegate, @"busy"), @"A cold translation must enter the cancellable busy state");
     WaitFor([&] { return Flag(delegate, @"modelFailed") && !Flag(delegate, @"busy"); },
         @"Cold model loading did not report its failure to the application");
@@ -82,14 +82,14 @@ static void CheckColdRequestAndRetry(AppDelegate *delegate) {
 
     // Start another load, then replace its engine before draining the main
     // queue. Retry must invalidate any callbacks retained by that old engine.
-    [delegate translateText:@"Try again" direction:lore::Direction::EnglishToJapanese];
+    [delegate translateText:@"Try again" direction:bawan::Direction::EnglishToJapanese];
     uint64_t oldGeneration = [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue];
     uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
     [delegate retryModel:nil];
     Require([[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] > oldGeneration,
         @"Retry must invalidate the previous engine's callback generation");
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
-    lore::EngineEvent staleError{lore::EngineEvent::Kind::Error, oldRequest, "Old request failed"};
+    bawan::EngineEvent staleError{bawan::EngineEvent::Kind::Error, oldRequest, "Old request failed"};
     [delegate handleEngineEvent:staleError];
     NSMenuItem *retry = [delegate valueForKey:@"retryItem"];
     Require(!Flag(delegate, @"busy") && !Flag(delegate, @"modelFailed") &&

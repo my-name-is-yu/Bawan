@@ -1,14 +1,14 @@
-#import "LoreAppearance.h"
+#import "BawanAppearance.h"
 #import <ImageIO/ImageIO.h>
 
-NSImage *LoreMascotImage(void) {
+NSImage *BawanMascotImage(void) {
     static NSImage *image;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-#ifdef LORE_TEST_RESOURCE_DIR
-        NSString *path = [@LORE_TEST_RESOURCE_DIR stringByAppendingPathComponent:@"LoreMascot.png"];
+#ifdef BAWAN_TEST_RESOURCE_DIR
+        NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:@"BawanMascot.png"];
 #else
-        NSString *path = [NSBundle.mainBundle pathForResource:@"LoreMascot" ofType:@"png"];
+        NSString *path = [NSBundle.mainBundle pathForResource:@"BawanMascot" ofType:@"png"];
 #endif
         if (!path) return;
         // Decode only the display-size thumbnail; never retain the 1254px original.
@@ -29,30 +29,30 @@ NSImage *LoreMascotImage(void) {
     return image;
 }
 
-@interface LorePaperClipView : NSClipView
+@interface BawanPaperClipView : NSClipView
 @end
 
-@implementation LorePaperClipView
+@implementation BawanPaperClipView
 - (BOOL)isOpaque { return YES; }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
-    self.backgroundColor = LoreColor(LoreBackground);
-    self.enclosingScrollView.backgroundColor = LoreColor(LoreBackground);
+    self.backgroundColor = BawanColor(BawanBackground);
+    self.enclosingScrollView.backgroundColor = BawanColor(BawanBackground);
     self.enclosingScrollView.needsDisplay = YES;
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    [LoreColor(LoreBackground) setFill];
+    [BawanColor(BawanBackground) setFill];
     NSRectFill(dirtyRect);
-    LoreDrawPaper(self.bounds);
+    BawanDrawPaper(self.bounds);
 }
 @end
 
-@interface LorePaperScroller : NSScroller
+@interface BawanPaperScroller : NSScroller
 @end
 
-@implementation LorePaperScroller
-+ (BOOL)isCompatibleWithOverlayScrollers { return self == LorePaperScroller.class; }
+@implementation BawanPaperScroller
++ (BOOL)isCompatibleWithOverlayScrollers { return self == BawanPaperScroller.class; }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
@@ -62,21 +62,21 @@ NSImage *LoreMascotImage(void) {
         [super drawKnobSlotInRect:slotRect highlight:highlight];
     } else {
         // Paint the full legacy gutter; AppKit still draws and tracks its knob.
-        [LoreColor(LoreBackground) setFill];
+        [BawanColor(BawanBackground) setFill];
         NSRectFill(self.bounds);
     }
 }
 @end
 
-void LoreConfigurePaperScrollView(NSScrollView *scroll) {
+void BawanConfigurePaperScrollView(NSScrollView *scroll) {
     scroll.hasVerticalScroller = YES;
-    scroll.verticalScroller = [[LorePaperScroller alloc] initWithFrame:NSMakeRect(0, 0, 16, 100)];
+    scroll.verticalScroller = [[BawanPaperScroller alloc] initWithFrame:NSMakeRect(0, 0, 16, 100)];
     scroll.hasHorizontalScroller = NO;
     scroll.autohidesScrollers = YES;
     scroll.scrollerStyle = NSScrollerStyleOverlay;
     scroll.drawsBackground = YES;
-    scroll.backgroundColor = LoreColor(LoreBackground);
-    scroll.contentView = [[LorePaperClipView alloc] initWithFrame:scroll.contentView.frame];
+    scroll.backgroundColor = BawanColor(BawanBackground);
+    scroll.contentView = [[BawanPaperClipView alloc] initWithFrame:scroll.contentView.frame];
     scroll.contentView.drawsBackground = YES;
-    scroll.contentView.backgroundColor = LoreColor(LoreBackground);
+    scroll.contentView.backgroundColor = BawanColor(BawanBackground);
 }
