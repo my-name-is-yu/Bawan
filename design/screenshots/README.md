@@ -1,9 +1,9 @@
 # Implemented UI captures
 
 These unmodified PNGs are AppKit content-view captures from the macOS CI run for
-implementation commit `4c37cc4cecef332268052715afb9a33883dd0b94`:
-[run 43235555494](https://github.com/my-name-is-yu/Lore/actions/runs/43235555494),
-artifact `panel-view-captures` (ID `13953335272`).
+implementation commit `00da97ae1f1e3e916dcafc49ed8ebfab519af031`:
+[run 43358055863](https://github.com/my-name-is-yu/Lore/actions/runs/43358055863),
+artifact `panel-view-captures` (ID `14006458888`).
 
 | File | Artifact source |
 | --- | --- |
@@ -19,3 +19,8 @@ titlebar overlays and native window buttons are outside the captures.
 Settings captures show the same 720×500pt window after navigating from the
 translator, with the Translator back action in the fixed header and the body
 scrolling below it.
+
+The captures include the compact shortcut headings and setup guidance, shared
+paper scrolling, and the footer hint hidden after input. Long English/Japanese
+scrolling, error reveal, keyboard focus and native help are exercised by the
+same run; their additional PNGs remain in the linked CI artifact.

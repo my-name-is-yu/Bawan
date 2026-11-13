@@ -14,7 +14,7 @@ final result: blocked
 
 - Inspected the actual selected image and generated mascot/paper resources.
 - PNG integrity, real mascot alpha, resource names and CMake packaging were checked. Product and both command-line smoke executables receive the same UI resources.
-- Shared external-inline image caches keep one mascot and one paper image across both screens.
+- Shared external-inline caches keep one palette, one mascot and one paper image across both screens.
 - Source/control inspection confirms native AppKit views, editable source, selectable output, independent scrolling, metadata-based language labels, and one reused panel.
 - The previous regular-app configuration was applied: no LSUIElement agent flag, NSApplicationActivationPolicyRegular at launch.
 - Static color calculations include the actual paper asset's extrema composited at 3.5%. Minimum normal-text contrast is 4.59:1 on the textured light header; primary buttons exceed 4.70:1. Body, language headings, secondary text and settings status colors also exceed 4.5:1. Results are in `build/ui-validation/static-checks.json`.
@@ -51,7 +51,7 @@ final result: blocked
 - Prefix-preserving streaming updates append only the new tail to the existing text store. Output follows the end only when the reader is already within one line of it; native layout is resolved before following. Reading positions use document coordinates and temporary geometry, without retaining an old translation or adding scroll observers, timers or layout polling.
 - Settings expose shortcut editing and press-count labels, show permission instructions only when needed, and move detailed guidance to an on-demand native help dialog. Input Monitoring and Accessibility remain optional for manual typing/pasting.
 - Newly displayed settings errors are brought into view by the product, rather than by the smoke-test fixture. Settings entry has an explicit initial focus and keeps keyboard traversal inside the current screen.
-- The native settings scroll area uses the paper palette in both appearances, including a legacy scroller gutter.
+- A shared native scroll configuration uses the paper palette and grain in Settings and both translation panes, including legacy scroller gutters.
 - Existing views and image caches are reused. No background observer, timer or animation is added for this follow-up. Whole-app RAM/CPU measurements remain a separate manual check below.
 - Copy Translation/Copied and copying partial output remain unchanged, as requested by the user.
 
