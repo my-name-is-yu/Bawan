@@ -70,14 +70,17 @@ target_compile_options(bawan_gesture PRIVATE -Wall -Wextra -Wpedantic)
 set(BAWAN_UI_RESOURCES resources/BawanMascot.png resources/PaperGrain.png)
 
 if(BAWAN_BUILD_APP)
+    configure_file(LICENSE "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" COPYONLY)
+    set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
+        "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
     add_executable(Bawan MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm src/BawanAppearance.mm
         src/BawanMascotView.mm
         src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
-        resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
+        ${BAWAN_LICENSE_RESOURCES})
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
-        resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
+        ${BAWAN_LICENSE_RESOURCES}
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Bawan PRIVATE bawan_engine bawan_gesture
         "-framework AppKit" "-framework Foundation" "-framework QuartzCore"

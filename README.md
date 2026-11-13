@@ -51,7 +51,7 @@ To clean build artifacts, quit Bawan and delete `build/`. The downloaded model i
 
 ## Setup & Usage
 
-1. **Model download:** On first launch, Bawan downloads the official PLaMo model (~573 MB) and verifies its file size and SHA256 checksum. Progress appears in the window and menu bar. If setup fails, choose **Retry Model Setup** from the menu.
+1. **Model download:** Before the first model setup, Bawan shows a summary of the model license with links to the official terms and commercial registration. After you continue, Bawan downloads the official PLaMo model (~573 MB) and verifies its file size and SHA256 checksum. Progress appears in the window and menu bar. If setup fails, choose **Retry Model Setup** from the menu.
 2. **Permissions:** Open **Settings…** from the menu bar (or the gear icon) and grant the permissions shown for your shortcuts:
    - **Input Monitoring** is required for the default `⌘C` ×2 selection translation.
    - **Accessibility** is required for opening the translator (`⌥T` ×2) or using a custom shortcut for selection translation.
@@ -130,6 +130,33 @@ GitHub Actions CI is not used; run builds, signature checks, and real-model test
 
 ## Model & Licenses
 
-Built with PLaMo. Bawan uses the official [PLaMo 3 Translate 0.8B GGUF Q4_K_M](https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF) model unmodified under the **PLaMo Community License** (intended for personal use; check the official model card for other usage terms).
+Bawan's original code and project-owned artwork are released under the
+[MIT License](LICENSE). The dog artwork is a composite based on the author's own
+dog. Third-party libraries and model weights retain their own licenses.
 
-Inference is powered by [llama.cpp](https://github.com/ggml-org/llama.cpp/tree/b12307) under the **MIT License**. License notices are bundled in the app's `Resources` directory.
+- **Inference:** [llama.cpp / ggml b12307](https://github.com/ggml-org/llama.cpp/tree/b12307)
+  is MIT-licensed, including the MIT-licensed llamafile, YaRN and ggllm.cpp code
+  used by the inference library. Full copyright and permission notices are in
+  [THIRD_PARTY_NOTICES.md](resources/THIRD_PARTY_NOTICES.md).
+- **Model:** Built with PLaMo. The official
+  [PLaMo 3 Translate 0.8B GGUF Q4_K_M](https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF)
+  is downloaded separately, unmodified, under the **PLaMo Community License**.
+  It is not covered by the app's MIT License.
+
+Personal and non-commercial use, including academic use, is free without prior
+registration. Commercial use, **including internal business use**, requires prior
+PFN registration when the user or its affiliates' most recent fiscal-year revenue
+or sales does not exceed **JPY 1 billion**; above that threshold, a separate
+commercial agreement is required. Making Bawan free or MIT-licensed does not
+remove those model conditions.
+
+See [Model usage terms](resources/MODEL_USAGE.md) for registration, redistribution
+and translation-output guidance, and the official agreement
+([Japanese](https://plamo.preferredai.jp/info/plamo-community-license-ja),
+[English](https://plamo.preferredai.jp/info/plamo-community-license-en)) for the
+governing terms. This summary reflects the November 9, 2026 revision.
+
+The first model setup shows the usage summary. You can reopen it through
+**Model License…** in the menu bar or application menu. App and library licenses,
+third-party notices and the model usage guide are bundled in the app's
+`Contents/Resources` directory.

@@ -121,6 +121,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
+    if (![NSUserDefaults.standardUserDefaults boolForKey:@"modelLicenseNoticeShown20261109"]) {
+        [self showModelLicense:nil];
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    }
     [_modelStore prepare];
     if (![NSUserDefaults.standardUserDefaults boolForKey:@"firstLaunchShown"]) {
         [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"firstLaunchShown"];
@@ -132,6 +136,36 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:key];
     item.target = self;
     return item;
+}
+
+- (void)showModelLicense:(id)sender {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Built with PLaMo";
+    alert.informativeText = @"Bawan uses PLaMo 3 Translate 0.8B under the PLaMo Community License, separately from Bawan’s MIT License. Using the model is subject to PFN’s terms.\n\n"
+        "Personal and non-commercial use, including academic use, is free without registration.\n\n"
+        "Commercial use includes internal business use. If you or your affiliates’ annual revenue or sales does not exceed JPY 1 billion, register with PFN before commercial use. Above that threshold, a separate commercial agreement is required.\n\n"
+        "The model (~573 MB) downloads directly from PFN to your Mac. Review the official terms for your use.";
+    [alert addButtonWithTitle:sender ? @"Done" : @"Continue to Model Setup"];
+    NSStackView *links = [[NSStackView alloc] init];
+    links.orientation = NSUserInterfaceLayoutOrientationVertical;
+    links.alignment = NSLayoutAttributeLeading;
+    links.spacing = 8;
+    for (NSArray<NSString *> *link in @[
+        @[@"Official license (日本語)", @"https://plamo.preferredai.jp/info/plamo-community-license-ja"],
+        @[@"Official license (English)", @"https://plamo.preferredai.jp/info/plamo-community-license-en"],
+        @[@"Commercial use registration", @"https://forms.gle/mTL8tBLrMYXKNZD56"]]) {
+        NSButton *button = [NSButton buttonWithTitle:link[0] target:self action:@selector(openModelLicenseLink:)];
+        button.identifier = link[1];
+        [links addArrangedSubview:button];
+    }
+    links.frame = NSMakeRect(0, 0, 360, 96);
+    alert.accessoryView = links;
+    [NSApp activateIgnoringOtherApps:YES];
+    [alert runModal];
+}
+
+- (void)openModelLicenseLink:(NSButton *)sender {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:sender.identifier]];
 }
 
 - (void)buildMenus {
@@ -165,6 +199,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.hidden = YES;
     [menu addItem:_retryItem];
     [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
+    [menu addItem:[self menuItem:@"Model License…" action:@selector(showModelLicense:) key:@""]];
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     _statusItem.menu = menu;
@@ -174,6 +209,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSMenuItem *appItem = [[NSMenuItem alloc] initWithTitle:@"Bawan" action:NULL keyEquivalent:@""];
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Bawan"];
     [appMenu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
+    [appMenu addItem:[self menuItem:@"Model License…" action:@selector(showModelLicense:) key:@""]];
     [appMenu addItem:NSMenuItem.separatorItem];
     [appMenu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     appItem.submenu = appMenu;
