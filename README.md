@@ -91,6 +91,7 @@ Application Supportに保存したモデルとmacOSの権限設定は別に保�
 モデルはQ4_K_M、KVキャッシュはF16、入出力上限は各4,096トークンを維持します。追加の量子化は行いません。
 解放後もアロケーターやMetalが領域を保持する場合があるため、実メモリの削減量と復帰時間は実測で判断します。LinuxのRSSをmacOSのphysical footprintやアプリ全体の使用量として扱わないでください。
 原文・訳文の履歴ファイルやログは作りません。ログイン起動の初期値はオフです。
+途中訳文のUI配送は、main queueが処理できるまで同一要求の連続した全文スナップショットを最新1件にまとめます。完了・取消・エラーなどの通知順序と最終訳文は維持し、推論・量子化・トークン上限は変更しません。
 UIは1つのパネルとそのビュー・制約を再利用し、追加の全文キャッシュやイベント履歴を保持しません。
 テーマ変更や逐次出力はイベントに応じて表示だけを更新し、待機中の定期ポーリングや常時アニメーションは行いません。
 
@@ -116,7 +117,7 @@ OSによってクリップボード読み取りの許可が表示される場合
 
 ```sh
 ./scripts/build.sh -DLORE_BUILD_TESTS=ON -DLORE_BUILD_SMOKE=ON
-cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke app_delegate_smoke engine_lifecycle engine_smoke engine_profile --parallel 3
+cmake --build build --target gesture_tests shortcut_tests shortcut_preferences_tests panel_smoke settings_smoke mascot_smoke app_delegate_smoke engine_lifecycle engine_event_mailbox_tests engine_smoke engine_profile --parallel 3
 ctest --test-dir build --output-on-failure
 ./build/engine_smoke "$HOME/Library/Application Support/local.lore.Lore/plamo-3-translate-0.8b-Q4_K_M.gguf"
 ```
@@ -124,6 +125,7 @@ ctest --test-dir build --output-on-failure
 `gesture_tests`は従来のコピー操作を確認します。`shortcut_tests`では、任意キーの1回・2回押し、割り当ての検証と重複、400msの境界、タイムアウト、長押し、別キー、修飾キー、アプリ切替、予約したキーの押下・解放を確認します。macOSでは`shortcut_preferences_tests`で設定の保存・復元と旧設定の移行も確認します。
 `panel_smoke`と`settings_smoke`はAppKitの画面・操作・レイアウト・ウィンドウ再利用を確認し、`build/panel-smoke/`と`build/settings-smoke/`へキャプチャを保存します。これらは実アプリ上のグローバルキーやOS権限の許可・取消を検証するテストではありません。
 `mascot_smoke`は3種類のホバーをそれぞれ1回再生し、クリックでの再生・切り替え、枠の固定、縮小画像の共有、有限時間での終了と離脱時の解除を確認します。キャプチャは`build/mascot-smoke/`へ保存します。
+`engine_event_mailbox_tests`はモデル不要で、UI停止中の途中訳文集約、通知順序、再配送、並行配送を確認します。
 `engine_lifecycle`はモデル不要で、遅延初期化、存在しないモデルの読込エラー、再試行、未使用時の終了を確認します。`app_delegate_smoke`はmacOSで準備中の要求取消・読込失敗の案内・古いエンジンの通知破棄を確認し、モデル取得やグローバルキー監視は開始しません。
 実モデルのテストは初回の自動ロード、warmupの非干渉、待機後の解放・再ロード、英日両方向、連続翻訳での独立した文脈、UTF-8・入力上限エラー後の復帰、2,048トークンを超える入力、逐次出力、読込中・翻訳中の取消とその後の復帰を確認します。待機のテストには短い期限を指定し、製品の60秒待機を短縮して検証します。
 任意の文章を1回翻訳することもできます。
@@ -221,3 +223,4 @@ Built with PLaMo. [PLaMo 3 Translate 0.8Bの公式GGUF Q4_K_M](https://huggingfa
 モデルにはPLaMo Community Licenseが適用されます。個人利用を想定しており、他の用途の条件は公式モデルカードを確認してください。
 推論ライブラリ[llama.cpp](https://github.com/ggml-org/llama.cpp/tree/b12307)はMIT Licenseです。
 アプリのResourcesにはそのLICENSEと第三者ライセンスの案内を同梱します。
+
