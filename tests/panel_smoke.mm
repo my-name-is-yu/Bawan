@@ -44,6 +44,45 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
 }
 
+static void RequireOrdinaryWindow(NSWindow *window, NSString *stage) {
+    NSWindowCollectionBehavior pinned = NSWindowCollectionBehaviorCanJoinAllSpaces;
+    Require([window isKindOfClass:NSPanel.class] && !((NSPanel *)window).floatingPanel &&
+        window.level == NSNormalWindowLevel && !window.hidesOnDeactivate &&
+        (window.collectionBehavior & pinned) == 0 &&
+        (window.collectionBehavior & NSWindowCollectionBehaviorMoveToActiveSpace) != 0,
+        [NSString stringWithFormat:@"Lore must retain ordinary window ordering %@: level=%ld behavior=%lu",
+            stage, static_cast<long>(window.level), static_cast<unsigned long>(window.collectionBehavior)]);
+}
+
+static void CheckOrdinaryWindowOrdering(TranslationPanel *panel, NSWindow *window) {
+    NSWindow *cover = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 160, 100)
+        styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    cover.releasedWhenClosed = NO;
+    cover.level = NSNormalWindowLevel;
+    [cover setFrame:window.frame display:NO];
+    @try {
+        [cover orderWindow:NSWindowAbove relativeTo:window.windowNumber];
+        Settle(window);
+        // orderedWindows is the scripting list and can exclude panels. The
+        // native window-number list includes them in active-Space z-order.
+        NSArray<NSNumber *> *ordered = [NSWindow windowNumbersWithOptions:0];
+        NSUInteger coverIndex = [ordered indexOfObject:@(cover.windowNumber)];
+        NSUInteger loreIndex = [ordered indexOfObject:@(window.windowNumber)];
+        Require(coverIndex != NSNotFound && loreIndex != NSNotFound && coverIndex < loreIndex,
+            @"Another normal window must be able to cover the translator");
+        [panel showForManualInput];
+        Settle(window);
+        ordered = [NSWindow windowNumbersWithOptions:0];
+        coverIndex = [ordered indexOfObject:@(cover.windowNumber)];
+        loreIndex = [ordered indexOfObject:@(window.windowNumber)];
+        Require(coverIndex != NSNotFound && loreIndex != NSNotFound && loreIndex < coverIndex,
+            @"Summoning the translator must bring it forward again");
+        RequireOrdinaryWindow(window, @"after recalling it from behind another normal window");
+    } @finally {
+        [cover close];
+    }
+}
+
 static void CheckBounds(NSWindow *window) {
     NSView *root = window.contentView;
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
@@ -487,6 +526,8 @@ static void RunSmoke(void) {
     [panel showForManualInput];
     NSWindow *window = PanelWindow();
     Settle(window);
+    RequireOrdinaryWindow(window, @"after manual entry");
+    CheckOrdinaryWindowOrdering(panel, window);
     Require(std::abs(window.frame.size.width - 720) < 1 &&
             std::abs(window.frame.size.height - 500) < 1, @"Unexpected initial panel size");
     Require(std::abs(window.minSize.width - 640) < 1 &&
@@ -520,6 +561,7 @@ static void RunSmoke(void) {
 
     [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
     [panel showForSelection:@" \n"];
+    RequireOrdinaryWindow(window, @"after selection entry");
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
     Require(!footerHint.hidden, @"The input hint must be visible while the translator is empty and idle");

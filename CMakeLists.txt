@@ -72,13 +72,14 @@ set(LORE_UI_RESOURCES resources/LoreMascot.png resources/PaperGrain.png)
 if(LORE_BUILD_APP)
     add_executable(Lore MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm src/LoreAppearance.mm
+        src/LoreMascotView.mm
         src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
         ${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE")
     set_source_files_properties(${LORE_UI_RESOURCES} resources/AppIcon.icns resources/THIRD_PARTY_NOTICES.md "${llama_SOURCE_DIR}/LICENSE"
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_link_libraries(Lore PRIVATE lore_engine lore_gesture
         "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
-        "-framework CoreGraphics" "-framework ServiceManagement"
+        "-framework CoreGraphics" "-framework ServiceManagement" "-framework ImageIO"
         "-framework ApplicationServices" "-framework Carbon")
     target_compile_options(Lore PRIVATE -fobjc-arc -Wall -Wextra)
     set_target_properties(Lore PROPERTIES
@@ -112,26 +113,36 @@ if(LORE_BUILD_TESTS)
             get_filename_component(resource_name "${resource}" NAME)
             configure_file("${resource}" "${CMAKE_BINARY_DIR}/test-resources/${resource_name}" COPYONLY)
         endforeach()
-        add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm src/LoreAppearance.mm)
+        add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm src/LoreAppearance.mm src/LoreMascotView.mm)
         target_include_directories(panel_smoke PRIVATE src)
         target_compile_definitions(panel_smoke PRIVATE
             LORE_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(panel_smoke PRIVATE "-framework AppKit" "-framework QuartzCore")
+        target_link_libraries(panel_smoke PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework ImageIO")
         target_compile_options(panel_smoke PRIVATE -fobjc-arc -Wall -Wextra)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
         add_executable(settings_smoke tests/settings_smoke.mm src/SettingsViewController.mm src/TranslationPanel.mm src/LoreAppearance.mm
+            src/LoreMascotView.mm
             src/ShortcutPreferences.mm src/ShortcutMonitor.mm)
         target_include_directories(settings_smoke PRIVATE src)
         target_compile_definitions(settings_smoke PRIVATE
             LORE_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
         target_link_libraries(settings_smoke PRIVATE lore_gesture "-framework AppKit" "-framework QuartzCore" "-framework ServiceManagement"
-            "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon")
+            "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon" "-framework ImageIO")
         target_compile_options(settings_smoke PRIVATE -fobjc-arc -Wall -Wextra)
         add_test(NAME settings_navigation COMMAND settings_smoke)
         set_tests_properties(settings_navigation PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
+        add_executable(mascot_smoke tests/mascot_smoke.mm src/LoreMascotView.mm src/LoreAppearance.mm)
+        target_include_directories(mascot_smoke PRIVATE src)
+        target_compile_definitions(mascot_smoke PRIVATE
+            LORE_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
+        target_link_libraries(mascot_smoke PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework ImageIO")
+        target_compile_options(mascot_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME mascot_hover COMMAND mascot_smoke)
+        set_tests_properties(mascot_hover PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 15)
     endif()
 endif()
 if(LORE_BUILD_SMOKE)

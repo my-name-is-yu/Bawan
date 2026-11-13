@@ -1,6 +1,7 @@
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
 #import "LoreAppearance.h"
+#import "LoreMascotView.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
 #import <QuartzCore/CAMediaTimingFunction.h>
@@ -225,19 +226,10 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 }
 @end
 
-@interface LoreMascotView : NSImageView
-@end
-@implementation LoreMascotView
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
-- (void)drawRect:(NSRect)dirtyRect { LoreDrawMedallion(self.bounds); }
-@end
-
 @interface TranslationPanel () <NSWindowDelegate, NSTextViewDelegate> {
     LorePanel *_panel;
     NSView *_translationContent;
+    LoreMascotView *_mascot;
     SettingsViewController *_settings;
     __weak NSResponder *_translationResponder;
     LoreTextView *_source;
@@ -362,9 +354,10 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [_panel setFrame:NSMakeRect(0, 0, 720, 500) display:NO];
     _panel.releasedWhenClosed = NO;
     _panel.hidesOnDeactivate = NO;
-    _panel.floatingPanel = YES;
+    _panel.floatingPanel = NO;
+    _panel.level = NSNormalWindowLevel;
     _panel.becomesKeyOnlyIfNeeded = YES;
-    _panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+    _panel.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace |
                                 NSWindowCollectionBehaviorFullScreenAuxiliary;
     _panel.delegate = self;
     __weak TranslationPanel *weakSelf = self;
@@ -399,8 +392,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     LoreSurfaceView *dividerBottom = SurfaceView(content, @"pane-divider-bottom", LoreBorder);
 
     LoreMascotView *mascot = [[LoreMascotView alloc] init];
+    _mascot = mascot;
     mascot.identifier = @"mascot";
-    mascot.image = LoreMascotImage();
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [header addSubview:mascot];
@@ -556,6 +549,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 - (void)showWithoutChangingInput {
     [self showTranslation];
     [self positionNearPointer];
+    // Raise once within the normal window level, without taking the source app's focus.
     [_panel orderFrontRegardless];
 }
 
@@ -567,6 +561,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     BOOL entering = ![self isShowingSettings];
     if (entering) {
         _translationResponder = _panel.firstResponder;
+        [_mascot resetHoverAnimation];
         [_translate resetPressFeedback];
         [_copy resetPressFeedback];
         [_panel makeFirstResponder:nil];
@@ -737,6 +732,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 - (void)windowWillClose:(NSNotification *)notification {
     [self showTranslation];
+    [_mascot resetHoverAnimation];
     [_translate resetPressFeedback];
     [_copy resetPressFeedback];
     [self resetCopyFeedback];

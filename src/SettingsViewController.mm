@@ -1,5 +1,6 @@
 #import "SettingsViewController.h"
 #import "LoreAppearance.h"
+#import "LoreMascotView.h"
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <set>
@@ -31,13 +32,6 @@
 
 @implementation LoreSettingsMasthead
 - (void)drawRect:(NSRect)dirtyRect { LoreDrawHeader(self.bounds); }
-@end
-
-@interface LoreSettingsMedallion : LoreSettingsPaper
-@end
-
-@implementation LoreSettingsMedallion
-- (void)drawRect:(NSRect)dirtyRect { LoreDrawMedallion(self.bounds); }
 @end
 
 @interface LoreSettingsGroup : NSBox
@@ -165,6 +159,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *_loginHint;
     NSSwitch *_loginSwitch;
     NSButton *_back;
+    LoreMascotView *_mascot;
     id _preferencesObserver;
     id _activationObserver;
     id _eventMonitor;
@@ -204,7 +199,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
     masthead.identifier = @"settings-header";
     masthead.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:masthead];
-    LoreSettingsMedallion *mascot = [[LoreSettingsMedallion alloc] init];
+    LoreMascotView *mascot = [[LoreMascotView alloc] init];
+    _mascot = mascot;
     mascot.identifier = @"settings-mascot";
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
@@ -469,6 +465,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [_monitor refresh];
         [self refresh];
     } else {
+        [_mascot resetHoverAnimation];
         [self finishRecording];
     }
 }
