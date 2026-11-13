@@ -14,6 +14,25 @@
 - (BOOL)isFlipped { return YES; }
 @end
 
+@interface LoreSettingsClipView : NSClipView
+@end
+
+@implementation LoreSettingsClipView
+- (BOOL)isOpaque { return YES; }
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.backgroundColor = LoreColor(LoreBackground);
+    self.enclosingScrollView.backgroundColor = LoreColor(LoreBackground);
+    self.enclosingScrollView.needsDisplay = YES;
+    self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    [LoreColor(LoreBackground) setFill];
+    NSRectFill(dirtyRect);
+    LoreDrawPaper(self.bounds);
+}
+@end
+
 @implementation LoreSettingsPaper
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
@@ -159,9 +178,12 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSMutableArray<NSButton *> *_restoreButtons;
     NSMutableArray<NSTextField *> *_statuses;
     NSMutableArray<NSButton *> *_permissionButtons;
+    NSTextField *_permissionHint;
+    NSTextField *_reservation;
     NSTextField *_shortcutHint;
     NSTextField *_loginHint;
     NSSwitch *_loginSwitch;
+    NSButton *_back;
     id _preferencesObserver;
     id _activationObserver;
     id _eventMonitor;
@@ -172,6 +194,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 - (void)updateDocumentLayout;
 - (void)setShortcutMessage:(NSString *)message error:(BOOL)error;
+- (void)revealMessage:(NSTextField *)label;
 - (NSEvent *)recordEvent:(NSEvent *)event;
 - (void)finishRecording;
 - (void)finishRecordingIfReleased;
@@ -215,6 +238,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     [masthead addSubview:subtitle];
 
     NSButton *back = [NSButton buttonWithTitle:@"Translator" target:self action:@selector(goBack:)];
+    _back = back;
     back.identifier = @"settings-back";
     back.bordered = NO;
     back.font = LoreLabelFont(13);
@@ -234,8 +258,11 @@ NSString *RowID(NSUInteger index, NSString *control) {
     scroll.hasHorizontalScroller = NO;
     scroll.autohidesScrollers = YES;
     scroll.scrollerStyle = NSScrollerStyleOverlay;
-    scroll.drawsBackground = NO;
-    scroll.contentView.drawsBackground = NO;
+    scroll.drawsBackground = YES;
+    scroll.backgroundColor = LoreColor(LoreBackground);
+    scroll.contentView = [[LoreSettingsClipView alloc] initWithFrame:NSZeroRect];
+    scroll.contentView.drawsBackground = YES;
+    scroll.contentView.backgroundColor = LoreColor(LoreBackground);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
     NSView *document = [[LoreSettingsDocument alloc] initWithFrame:NSZeroRect];
@@ -243,14 +270,46 @@ NSString *RowID(NSUInteger index, NSString *control) {
     document.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.documentView = document;
 
-    NSStackView *shortcutTitle = Stack(@[Icon(@"keyboard"),
-        Label(@"Global shortcuts", 14, NSFontWeightSemibold, LoreColor(LoreText))],
-        NSUserInterfaceLayoutOrientationHorizontal, 10);
-    NSStackView *shortcutContent = Stack(@[shortcutTitle], NSUserInterfaceLayoutOrientationVertical, 12);
+    NSView *shortcutTitle = [[NSView alloc] init];
+    shortcutTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    NSImageView *keyboard = Icon(@"keyboard");
+    NSTextField *shortcutName = Label(@"Global shortcuts", 14, NSFontWeightSemibold, LoreColor(LoreText));
+    NSTextField *keyHeading = Label(@"Shortcut (click)", 12, NSFontWeightSemibold, LoreColor(LoreSecondaryText));
+    keyHeading.identifier = @"shortcut-key-heading";
+    NSTextField *pressesHeading = Label(@"Presses", 12, NSFontWeightSemibold, LoreColor(LoreSecondaryText));
+    pressesHeading.identifier = @"shortcut-presses-heading";
+    NSButton *help = [NSButton buttonWithImage:LoreSymbol(@"questionmark.circle", nil, 17)
+        target:self action:@selector(showShortcutHelp:)];
+    help.identifier = @"shortcut-help";
+    help.bordered = NO;
+    help.contentTintColor = LoreAccentColor();
+    help.translatesAutoresizingMaskIntoConstraints = NO;
+    help.toolTip = @"Shortcut help";
+    [help setAccessibilityLabel:@"Shortcut help"];
+    for (NSView *view in @[keyboard, shortcutName, keyHeading, pressesHeading, help]) {
+        [shortcutTitle addSubview:view];
+    }
+    NSStackView *shortcutContent = Stack(@[shortcutTitle], NSUserInterfaceLayoutOrientationVertical, 6);
+    [NSLayoutConstraint activateConstraints:@[
+        [shortcutTitle.widthAnchor constraintEqualToAnchor:shortcutContent.widthAnchor],
+        [shortcutTitle.heightAnchor constraintEqualToConstant:22],
+        [keyboard.leadingAnchor constraintEqualToAnchor:shortcutTitle.leadingAnchor],
+        [keyboard.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
+        [shortcutName.leadingAnchor constraintEqualToAnchor:keyboard.trailingAnchor constant:10],
+        [shortcutName.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
+        [shortcutName.trailingAnchor constraintLessThanOrEqualToAnchor:keyHeading.leadingAnchor constant:-12],
+        [keyHeading.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
+        [pressesHeading.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
+        [help.trailingAnchor constraintEqualToAnchor:shortcutTitle.trailingAnchor],
+        [help.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
+        [help.widthAnchor constraintEqualToConstant:28],
+        [help.heightAnchor constraintEqualToConstant:22]
+    ]];
     for (NSUInteger i = 0; i < 2; ++i) {
         lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
         NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, LoreColor(LoreText));
-        [name.widthAnchor constraintEqualToConstant:128].active = YES;
+        name.maximumNumberOfLines = 1;
+        [name.widthAnchor constraintEqualToConstant:152].active = YES;
         NSSwitch *enabled = [[NSSwitch alloc] init];
         enabled.target = self;
         enabled.action = @selector(toggleEnabled:);
@@ -270,7 +329,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         record.tag = i;
         record.identifier = RowID(i, @"key");
         record.toolTip = @"Click, then press a new key combination once. Set Once or Twice separately. Esc cancels.";
-        [record.widthAnchor constraintEqualToConstant:140].active = YES;
+        [record.widthAnchor constraintEqualToConstant:128].active = YES;
         [record.heightAnchor constraintEqualToConstant:LoreInputHeight].active = YES;
         [record setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" shortcut key"]];
         NSPopUpButton *count = [[LoreShortcutPressCount alloc] initWithFrame:NSZeroRect pullsDown:NO];
@@ -285,7 +344,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         count.tag = i;
         count.identifier = RowID(i, @"count");
         count.toolTip = @"For Twice, release the key between presses and press again within 400 ms.";
-        [count.widthAnchor constraintEqualToConstant:84].active = YES;
+        [count.widthAnchor constraintEqualToConstant:80].active = YES;
         [count.heightAnchor constraintEqualToConstant:LoreInputHeight].active = YES;
         [count setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" press count"]];
         NSImage *restoreImage = LoreSymbol(@"arrow.counterclockwise", nil, 17);
@@ -297,7 +356,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         restore.toolTip = @"Restore the default key, press count, and enabled state.";
         [restore.widthAnchor constraintEqualToConstant:28].active = YES;
         [restore setAccessibilityLabel:[@"Restore defaults for " stringByAppendingString:ShortcutActionTitle(action)]];
-        NSStackView *controls = Stack(@[name, enabled, record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 8);
+        NSStackView *controls = Stack(@[name, enabled, record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 6);
         NSTextField *status = Label(@"", 12, NSFontWeightMedium, LoreColor(LoreSecondaryText));
         status.identifier = RowID(i, @"status");
         [status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
@@ -315,6 +374,14 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [state.widthAnchor constraintEqualToAnchor:row.widthAnchor].active = YES;
         [shortcutContent addArrangedSubview:row];
         [row.widthAnchor constraintEqualToAnchor:shortcutContent.widthAnchor].active = YES;
+        if (i == 0) {
+            [NSLayoutConstraint activateConstraints:@[
+                [keyHeading.leadingAnchor constraintEqualToAnchor:record.leadingAnchor],
+                [keyHeading.widthAnchor constraintEqualToAnchor:record.widthAnchor],
+                [pressesHeading.leadingAnchor constraintEqualToAnchor:count.leadingAnchor],
+                [pressesHeading.widthAnchor constraintEqualToAnchor:count.widthAnchor]
+            ]];
+        }
         [_enabledSwitches addObject:enabled];
         [_recordButtons addObject:record];
         [_pressCounts addObject:count];
@@ -322,16 +389,18 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [_statuses addObject:status];
         [_permissionButtons addObject:permission];
     }
-    NSTextField *reservation = Label(@"Except for selection translation with ⌘C twice, enabled keys are reserved for Lore—even a single press. Other apps’ shortcuts cannot be checked automatically.",
+    _permissionHint = Label(@"Allow Lore in System Settings. Typing and pasting work without permissions.",
         12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
-    reservation.identifier = @"shortcut-reservation";
-    NSTextField *localKeys = Label(@"In translator: ⌘Return to translate · ⌘⇧C to copy translation · Esc to close",
+    _permissionHint.identifier = @"shortcut-permission-help";
+    _permissionHint.hidden = YES;
+    _reservation = Label(@"Custom shortcuts reserve their keys in other apps.",
         12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
-    localKeys.identifier = @"shortcut-local-keys";
+    _reservation.identifier = @"shortcut-reservation";
+    _reservation.hidden = YES;
     _shortcutHint = Label(@"", 12, NSFontWeightRegular, LoreColor(LoreSecondaryText));
     _shortcutHint.identifier = @"shortcut-feedback";
     _shortcutHint.hidden = YES;
-    for (NSTextField *label in @[reservation, localKeys, _shortcutHint]) {
+    for (NSTextField *label in @[_permissionHint, _reservation, _shortcutHint]) {
         [shortcutContent addArrangedSubview:label];
         [label.widthAnchor constraintEqualToAnchor:shortcutContent.widthAnchor].active = YES;
     }
@@ -436,8 +505,17 @@ NSString *RowID(NSUInteger index, NSString *control) {
     }
 }
 
+- (void)focusInitialControl {
+    NSWindow *window = self.view.window;
+    [window recalculateKeyViewLoop];
+    [window makeFirstResponder:_back];
+}
+
 - (void)refresh {
     BOOL recording = _eventMonitor != nil;
+    BOOL needsPermission = NO;
+    BOOL reservesCustomKeys = NO;
+    const auto defaults = lore::defaultShortcuts();
     for (NSUInteger i = 0; i < 2; ++i) {
         lore::ShortcutAction action = static_cast<lore::ShortcutAction>(i);
         lore::ShortcutBinding binding = [_preferences bindingForAction:action];
@@ -450,6 +528,12 @@ NSString *RowID(NSUInteger index, NSString *control) {
         _pressCounts[i].enabled = !recording;
         _restoreButtons[i].enabled = !recording;
         ShortcutAvailability availability = [_monitor availabilityForAction:action];
+        needsPermission |= availability == ShortcutAvailabilityNeedsInputMonitoring ||
+                           availability == ShortcutAvailabilityNeedsAccessibility;
+        BOOL custom = binding.keyCode != defaults[i].keyCode || binding.modifiers != defaults[i].modifiers ||
+                      binding.pressCount != defaults[i].pressCount;
+        reservesCustomKeys |= binding.enabled && custom &&
+            (action != lore::ShortcutAction::TranslateSelection || !lore::isPassiveCopy(binding));
         NSString *status = @"Off";
         NSString *permission = @"Retry";
         LoreColorRole statusRole = LoreSecondaryText;
@@ -458,9 +542,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
             case ShortcutAvailabilityAvailable:
                 status = @"Shortcut ready"; statusRole = LoreSuccess; break;
             case ShortcutAvailabilityNeedsInputMonitoring:
-                status = @"Input Monitoring required"; permission = @"Input Monitoring…"; statusRole = LoreWarning; break;
+                status = @"Input Monitoring required"; permission = @"Open Input Monitoring…"; statusRole = LoreWarning; break;
             case ShortcutAvailabilityNeedsAccessibility:
-                status = @"Accessibility required"; permission = @"Accessibility…"; statusRole = LoreWarning; break;
+                status = @"Accessibility required"; permission = @"Open Accessibility…"; statusRole = LoreWarning; break;
             case ShortcutAvailabilityFailed:
                 status = @"Could not start monitoring"; statusRole = LoreError; break;
         }
@@ -476,6 +560,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
         _permissionButtons[i].hidden = availability == ShortcutAvailabilityOff || availability == ShortcutAvailabilityAvailable;
         _permissionButtons[i].enabled = !recording;
     }
+    _permissionHint.hidden = !needsPermission;
+    _reservation.hidden = !reservesCustomKeys;
     [self updateDocumentLayout];
 }
 
@@ -484,6 +570,17 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _shortcutHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
     _shortcutHint.hidden = message.length == 0;
     [self updateDocumentLayout];
+    if (error && message.length > 0) [self revealMessage:_shortcutHint];
+}
+
+- (void)revealMessage:(NSTextField *)label {
+    [label scrollRectToVisible:label.bounds];
+    if (self.view.window.visible) {
+        NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
+            NSAccessibilityAnnouncementKey: label.stringValue,
+            NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
+        });
+    }
 }
 
 - (void)showError:(NSString *)message {
@@ -491,6 +588,18 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)goBack:(id)sender { if (self.onBack) self.onBack(); }
+
+- (void)showShortcutHelp:(id)sender {
+    NSWindow *window = self.view.window;
+    if (!window || window.attachedSheet) return;
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Shortcut help";
+    alert.informativeText = @"Click a Shortcut field and press the new combination once, then choose Once or Twice. For Twice, release the key and press it again within 400 ms.\n\n"
+        @"Except for Translate Selection with ⌘C twice, enabled shortcuts reserve their keys in other apps, including a single press. Other apps’ shortcuts cannot be checked automatically.\n\n"
+        @"In the translator: ⌘Return translates or cancels, ⇧⌘C copies the translation, and Esc closes. In Settings, Esc returns to the translator. While recording, Esc cancels recording first.";
+    [alert addButtonWithTitle:@"Done"];
+    [alert beginSheetModalForWindow:window completionHandler:nil];
+}
 
 - (void)toggleEnabled:(NSSwitch *)sender {
     lore::ShortcutAction action = static_cast<lore::ShortcutAction>(sender.tag);
@@ -617,10 +726,14 @@ NSString *RowID(NSUInteger index, NSString *control) {
         NSControlStateValueOn : NSControlStateValueOff;
     NSString *hint = message ?: (status == SMAppServiceStatusRequiresApproval ?
         @"Allow Lore in System Settings → General → Login Items." : @"");
+    BOOL changed = _loginHint.hidden || ![_loginHint.stringValue isEqualToString:hint];
     _loginHint.stringValue = hint;
     _loginHint.textColor = error ? LoreColor(LoreError) : LoreColor(LoreSecondaryText);
     _loginHint.hidden = hint.length == 0;
     [self updateDocumentLayout];
+    if (hint.length > 0 && (error || (changed && status == SMAppServiceStatusRequiresApproval))) {
+        [self revealMessage:_loginHint];
+    }
 }
 
 - (void)openLoginSettings:(id)sender { if (self.onLoginSettings) self.onLoginSettings(); }

@@ -629,7 +629,8 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
 }
 
 - (void)showSettings:(SettingsViewController *)settings {
-    if (![self isShowingSettings]) {
+    BOOL entering = ![self isShowingSettings];
+    if (entering) {
         _translationResponder = _panel.firstResponder;
         [_translate resetPressFeedback];
         [_copy resetPressFeedback];
@@ -651,6 +652,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [NSApp activateIgnoringOtherApps:YES];
     [_panel makeKeyAndOrderFront:nil];
     [settings setActive:_panel.keyWindow];
+    if (entering) [settings focusInitialControl];
 }
 
 - (void)showTranslation {
@@ -704,9 +706,21 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     if (output.length == 0 && direction == lore::Direction::Automatic) _sourceEditedSinceRequest = NO;
     _outputDirection = direction;
     if (![_output.string isEqualToString:output]) {
+        NSScrollView *scroll = _output.enclosingScrollView;
+        NSClipView *clip = scroll.contentView;
+        NSPoint readingPosition = clip.bounds.origin;
+        // Follow a new result or a reader already within one line of the end.
+        // Read geometry on this output event; do not retain another text buffer.
+        BOOL followEnd = _output.string.length == 0 ||
+            NSMaxY(scroll.documentVisibleRect) >= NSMaxY(_output.bounds) - 24;
         [self resetCopyFeedback];
         _output.string = output;
-        [_output scrollRangeToVisible:NSMakeRange(output.length, 0)];
+        if (output.length && followEnd) {
+            [_output scrollRangeToVisible:NSMakeRange(output.length, 0)];
+        } else {
+            [clip scrollToPoint:output.length ? readingPosition : NSZeroPoint];
+            [scroll reflectScrolledClipView:clip];
+        }
     }
     [self updateButtons];
 }
@@ -715,6 +729,7 @@ static NSScrollView *TextArea(NSView *parent, LoreTextView *__strong *textView, 
     [self updateLanguageLabels];
     BOOL hasInput = [_source.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     BOOL hasOutput = _output.string.length > 0;
+    _shortcutHint.hidden = hasInput || hasOutput || _busy;
     _translate.enabled = _busy || (_available && hasInput);
     _translate.contentTintColor = _translate.enabled ? LoreColor(LoreHeaderText) : nil;
     _translate.title = _busy ? @"Cancel  ⌘↵" : (hasOutput ? @"Retranslate  ⌘↵" : @"Translate  ⌘↵");

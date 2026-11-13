@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
 // The host owns window focus; active means this screen is visible and key.
 - (void)setActive:(BOOL)active;
+- (void)focusInitialControl;
 - (void)refresh;
 - (void)showError:(NSString *)message;
 - (void)setLoginStatus:(SMAppServiceStatus)status message:(nullable NSString *)message error:(BOOL)error;

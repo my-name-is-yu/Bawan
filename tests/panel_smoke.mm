@@ -68,7 +68,7 @@ static void CheckBounds(NSWindow *window) {
     Require(!root.hasAmbiguousLayout, @"Panel layout is ambiguous");
     for (NSString *identifier in @[@"swap", @"translate", @"copy", @"settings", @"mascot", @"brand-name",
                                    @"source-heading", @"output-heading", @"source-language", @"output-language",
-                                   @"status", @"instructions"]) {
+                                   @"status", @"instructions", @"shortcut-hint"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -196,6 +196,84 @@ static void Capture(NSWindow *window, NSString *name) {
     NSData *png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
     NSString *path = [@"panel-smoke" stringByAppendingPathComponent:[name stringByAppendingString:@".png"]];
     Require([png writeToFile:path atomically:YES], @"Could not save AppKit view capture");
+}
+
+static void RequireLastCharacterVisible(NSTextView *text, NSString *message) {
+    Require(text.string.length > 0, @"A scroll fixture must contain text");
+    [text.layoutManager ensureLayoutForTextContainer:text.textContainer];
+    NSRange glyphs = [text.layoutManager glyphRangeForCharacterRange:NSMakeRange(text.string.length - 1, 1)
+        actualCharacterRange:nullptr];
+    NSRect end = [text.layoutManager boundingRectForGlyphRange:glyphs inTextContainer:text.textContainer];
+    end.origin.x += text.textContainerOrigin.x;
+    end.origin.y += text.textContainerOrigin.y;
+    Require(NSContainsRect(NSInsetRect(text.visibleRect, -1, -1), end),
+        [NSString stringWithFormat:@"%@: last=%@ visible=%@", message,
+            NSStringFromRect(end), NSStringFromRect(text.visibleRect)]);
+}
+
+static void CheckLongTranslationScrolling(TranslationPanel *panel, NSWindow *window, NSTextView *output) {
+    NSMutableString *english = [NSMutableString string];
+    NSMutableString *japanese = [NSMutableString string];
+    for (NSUInteger paragraph = 1; paragraph <= 10; ++paragraph) {
+        [english appendFormat:@"Paragraph %lu: The team reviewed the field notes from the old library. "
+            @"Please preserve the original wording and include the date when you send the revised report.\n\n",
+            static_cast<unsigned long>(paragraph)];
+        [japanese appendFormat:@"第%lu段落：チームは古い図書館で集めた調査記録を確認しました。"
+            @"改訂版の報告書を送る際は、原文の表現を保ち、調査を実施した日付も記載してください。\n\n",
+            static_cast<unsigned long>(paragraph)];
+    }
+    [english deleteCharactersInRange:NSMakeRange(english.length - 2, 2)];
+    [japanese deleteCharactersInRange:NSMakeRange(japanese.length - 2, 2)];
+    NSRect previousFrame = window.frame;
+    NSAppearance *previousAppearance = window.appearance;
+    [window setContentSize:NSMakeSize(640, 420)];
+    [panel setShortcutAvailable:YES];
+    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
+    for (NSUInteger language = 0; language < 2; ++language) {
+        NSString *input = language == 0 ? english : japanese;
+        NSString *result = language == 0 ? japanese : english;
+        lore::Direction direction = language == 0 ? lore::Direction::EnglishToJapanese : lore::Direction::JapaneseToEnglish;
+        [panel showForSelection:input];
+        [panel setOutput:result direction:direction];
+        Settle(window);
+        Require(output.bounds.size.height > output.enclosingScrollView.contentView.bounds.size.height * 2,
+            @"Ten-paragraph translations must exercise a genuinely scrollable text document");
+        RequireLastCharacterVisible(output, @"The first long streaming update must follow the new request");
+        for (NSUInteger dark = 0; dark < 2; ++dark) {
+            window.appearance = [NSAppearance appearanceNamed:dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
+            NSClipView *clip = output.enclosingScrollView.contentView;
+            [clip scrollToPoint:NSMakePoint(0, 48)];
+            [output.enclosingScrollView reflectScrolledClipView:clip];
+            Settle(window);
+            NSPoint readingPosition = clip.bounds.origin;
+            NSString *expanded = [result stringByAppendingString:language == 0 ?
+                @"追記：次回の会議では、保存された記録をもう一度確認します。" :
+                @"Additional note: We will review the preserved records again at the next meeting."];
+            [panel setOutput:expanded direction:direction];
+            Settle(window);
+            Require(std::abs(clip.bounds.origin.y - readingPosition.y) <= 1,
+                [NSString stringWithFormat:@"A streaming update must preserve the reader's earlier position: before=%@ after=%@",
+                    NSStringFromPoint(readingPosition), NSStringFromPoint(clip.bounds.origin)]);
+            Capture(window, [NSString stringWithFormat:@"long-%@-%@", language == 0 ? @"japanese" : @"english",
+                dark ? @"dark" : @"light"]);
+            [output scrollRangeToVisible:NSMakeRange(output.string.length, 0)];
+            Settle(window);
+            NSString *following = [expanded stringByAppendingFormat:@"\n\n%@", result];
+            [panel setOutput:following direction:direction];
+            Settle(window);
+            RequireLastCharacterVisible(output, @"A reader at the end must keep following streaming output");
+            // A new request must forget a prior request's manually scrolled position.
+            [clip scrollToPoint:NSMakePoint(0, 48)];
+            [output.enclosingScrollView reflectScrolledClipView:clip];
+            [panel showForSelection:input];
+            [panel setOutput:result direction:direction];
+            Settle(window);
+            RequireLastCharacterVisible(output, @"A new request must resume following its output");
+        }
+    }
+    [window setFrame:previousFrame display:NO];
+    window.appearance = previousAppearance;
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
 }
 
 static void RequireTint(NSWindow *window, NSColor *actual, NSColor *expected, NSString *message) {
@@ -452,6 +530,7 @@ static void RunSmoke(void) {
             @"Native captures must load the real mascot and paper assets");
     RequireLanguages(window, @"AUTO", @"—");
     NSTextField *status = (NSTextField *)Control(window, @"status", NSTextField.class);
+    NSTextField *footerHint = (NSTextField *)Control(window, @"shortcut-hint", NSTextField.class);
     Require(source.editable && source.selectable && !output.editable && output.selectable,
             @"Source/output editing contract changed");
     Require(source.enclosingScrollView != output.enclosingScrollView &&
@@ -462,6 +541,20 @@ static void RunSmoke(void) {
     [panel showForSelection:@" \n"];
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
+    Require(!footerHint.hidden, @"The input hint must be visible while the translator is empty and idle");
+    [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
+    Require(footerHint.hidden, @"The empty-input hint must not compete with an active translation");
+    [panel setAvailable:YES busy:NO status:@"" kind:LoreStatusInformation];
+    [panel setOutput:@"Retained translation" direction:lore::Direction::EnglishToJapanese];
+    Require(footerHint.hidden, @"An existing translation must hide the empty-input hint");
+    [panel setOutput:@"" direction:lore::Direction::Automatic];
+    Require(!footerHint.hidden, @"Clearing the last translation must restore the empty-input hint");
+    source.string = english;
+    [source didChangeText];
+    Require(footerHint.hidden, @"Typing source text must hide the empty-input hint");
+    source.string = @"";
+    [source didChangeText];
+    Require(!footerHint.hidden, @"Deleting the source text must restore the empty-input hint");
     NSInteger emptyCopyCount = NSPasteboard.generalPasteboard.changeCount;
     [window performKeyEquivalent:KeyEvent(window, @"C",
         NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
@@ -469,7 +562,7 @@ static void RunSmoke(void) {
             @"Command-Shift-C must leave the clipboard unchanged when output is empty");
     [panel showForSelection:english];
     RequireLanguages(window, @"AUTO", @"—");
-    Require(translate.enabled && !copy.enabled && !swap.enabled,
+    Require(translate.enabled && !copy.enabled && !swap.enabled && footerHint.hidden,
             @"Nonempty source must enable translation only");
     CheckPressedPrimaryContrast(window, translate);
     [translate performClick:nil];
@@ -608,6 +701,8 @@ static void RunSmoke(void) {
     [panel setShortcutInstructions:@""];
     Require(instructions.hidden, @"An empty shortcut helper must leave no extra message row");
 
+    CheckLongTranslationScrolling(panel, window, output);
+
     [panel setShortcutAvailable:YES];
     [panel showForSelection:english];
     [panel setOutput:japanese direction:lore::Direction::EnglishToJapanese];
@@ -626,6 +721,9 @@ static void RunSmoke(void) {
     RequireTintInBothAppearances(window, status.textColor, LoreColor(LoreWarning),
             @"Input-limit warnings must use the shared warning color");
     Capture(window, @"minimum-permission-error");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    Capture(window, @"minimum-dark");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     [window setContentSize:NSMakeSize(720, 500)];
     [panel setShortcutAvailable:YES];
     [panel setAvailable:NO busy:NO status:@"Downloading the model… 43%" kind:LoreStatusInformation];
@@ -635,8 +733,10 @@ static void RunSmoke(void) {
     Capture(window, @"model-setup");
     [panel setAvailable:YES busy:YES status:@"" kind:LoreStatusInformation];
     [panel setOutput:@"会議は来週" direction:lore::Direction::EnglishToJapanese];
-    Require([translate.title isEqualToString:@"Cancel  ⌘↵"] && translate.enabled && copy.enabled,
+    Require([translate.title isEqualToString:@"Cancel  ⌘↵"] && translate.enabled && copy.enabled &&
+            [copy.title isEqualToString:@"Copy Translation"],
             @"Busy state must offer cancellation and partial-output copying");
+    Capture(window, @"streaming");
     NSUInteger beforeKey = translations;
     NSUInteger beforeKeyCancellations = cancellations;
     [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];

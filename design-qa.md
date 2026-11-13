@@ -1,4 +1,4 @@
-# Lore vintage UI QA — 2026-11-12
+# Lore vintage UI QA — 2026-11-13
 
 final result: blocked
 
@@ -19,7 +19,7 @@ final result: blocked
 - The previous regular-app configuration was applied: no LSUIElement agent flag, NSApplicationActivationPolicyRegular at launch.
 - Static color calculations include the actual paper asset's extrema composited at 3.5%. Minimum normal-text contrast is 4.59:1 on the textured light header; primary buttons exceed 4.70:1. Body, language headings, secondary text and settings status colors also exceed 4.5:1. Results are in `build/ui-validation/static-checks.json`.
 - Libclang 18.1.1 parsed the integrated UI sources, AppDelegate and both smoke tests against actual macOS 14.5 SDK headers, targeting arm64 macOS 14. Both the product NSBundle loader and test-resource loader branches passed with zero errors. Warnings are limited to existing unused callback/main parameters. Reports are retained under `build/`. This is syntax/API checking, not native linking or execution.
-- Rebased onto the configurable-shortcuts version of main, retaining both shortcut rows, key recording/release handling, panel recall/focus behavior and Command-Shift-C copying. Settings keep the 700pt width needed for the new controls.
+- Rebased onto the configurable-shortcuts version of main, retaining both shortcut rows, key recording/release handling, panel recall/focus behavior and Command-Shift-C copying. Both screens use the shared 720×500pt panel and support its 640×420pt minimum.
 - Portable CMake configuration and build succeeded after integration. Both copy_gesture and shortcuts CTests passed (2/2) on Linux. This does not exercise AppKit.
 - `git diff --check` passes.
 
@@ -44,6 +44,16 @@ final result: blocked
 - Header spacing is measured with AppKit alignment rectangles, with raw bounds checked separately for clipping and overlap.
 - Settings are a retained view controller inside the existing panel, with a fixed masthead and a vertically scrolling body. The back action and non-recording Esc restore the retained translation view without closing, clearing text or cancelling translation. Settings cannot undo hidden translator edits; a newly selected passage returns to the translator before clearing the previous editing session. Native close and Command-W close the shared window. Leaving settings ends recording while retaining held-key release protection.
 - The latest follow-up macOS results and native captures are available from [PR #5](https://github.com/my-name-is-yu/Lore/pull/5). Baseline captures for commit 8e556e2 were inspected during the consistency review; they do not validate later follow-up changes.
+
+## Lightweight usability follow-up
+
+- The initial footer hint is shown only before input/output and is hidden during translation.
+- Streaming output follows the end only when the reader is already within one line of it. Reading positions use temporary geometry, without retaining an old translation or adding scroll observers, timers or layout polling.
+- Settings expose shortcut editing and press-count labels, show permission instructions only when needed, and move detailed guidance to an on-demand native help dialog. Input Monitoring and Accessibility remain optional for manual typing/pasting.
+- Newly displayed settings errors are brought into view by the product, rather than by the smoke-test fixture. Settings entry has an explicit initial focus and keeps keyboard traversal inside the current screen.
+- The native settings scroll area uses the paper palette in both appearances, including a legacy scroller gutter.
+- Existing views and image caches are reused. No background observer, timer or animation is added for this follow-up. Whole-app RAM/CPU measurements remain a separate manual check below.
+- Copy Translation/Copied and copying partial output remain unchanged, as requested by the user.
 
 ## Blocking verification
 

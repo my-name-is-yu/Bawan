@@ -96,7 +96,8 @@ static void CheckBounds(NSWindow *window) {
     for (NSString *identifier in @[@"shortcut-selection-enabled", @"shortcut-selection-key", @"shortcut-selection-count",
             @"shortcut-selection-reset", @"shortcut-selection-status", @"shortcut-selection-permission",
             @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
-            @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-local-keys",
+            @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-permission-help",
+            @"shortcut-key-heading", @"shortcut-presses-heading", @"shortcut-help",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
             @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
             @"settings-brand-name", @"settings-subtitle", @"settings-back", @"settings-scroll"]) {
@@ -269,6 +270,45 @@ static void CheckInputFaces(NSWindow *window) {
     window.appearance = previous;
 }
 
+static NSString *TextInView(NSView *view) {
+    NSMutableString *text = [NSMutableString string];
+    if ([view isKindOfClass:NSTextField.class]) [text appendString:((NSTextField *)view).stringValue];
+    for (NSView *child in view.subviews) [text appendFormat:@"\n%@", TextInView(child)];
+    return text;
+}
+
+static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
+    NSScrollerStyle previousStyle = scroll.scrollerStyle;
+    BOOL previousAutohide = scroll.autohidesScrollers;
+    NSAppearance *previousAppearance = window.appearance;
+    scroll.scrollerStyle = NSScrollerStyleLegacy;
+    scroll.autohidesScrollers = NO;
+    for (NSUInteger dark = 0; dark < 2; ++dark) {
+        window.appearance = [NSAppearance appearanceNamed:dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
+        Settle(window);
+        NSClipView *clip = scroll.contentView;
+        Require(scroll.drawsBackground && clip.drawsBackground && !scroll.verticalScroller.hidden,
+            @"The always-visible native scroller must retain the paper-backed scroll and clip surfaces");
+        RequireTint(window, scroll.backgroundColor, LoreColor(LoreBackground),
+            @"The legacy scroll gutter must resolve the current paper color");
+        RequireTint(window, clip.backgroundColor, LoreColor(LoreBackground),
+            @"The clip background must resolve the same paper color");
+        NSBitmapImageRep *bitmap = [clip bitmapImageRepForCachingDisplayInRect:clip.bounds];
+        Require(bitmap != nil, @"Could not capture the legacy scroll background");
+        [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+            [clip cacheDisplayInRect:clip.bounds toBitmapImageRep:bitmap];
+            // The document's outer margin contains no text, card border or scroller glyph.
+            NSInteger x = static_cast<NSInteger>(4 * bitmap.pixelsWide / clip.bounds.size.width);
+            RequireTint(window, BitmapColor(bitmap, x, bitmap.pixelsHigh / 2), LoreColor(LoreBackground),
+                [NSString stringWithFormat:@"The rendered clip margin must stay paper-colored; profile=%@", bitmap.colorSpace]);
+        }];
+        Capture(window, dark ? @"legacy-scroller-dark" : @"legacy-scroller-light");
+    }
+    scroll.scrollerStyle = previousStyle;
+    scroll.autohidesScrollers = previousAutohide;
+    window.appearance = previousAppearance;
+}
+
 static void SendKey(SmokeSettingsViewController *settings, NSWindow *window, unsigned short code,
                     NSEventModifierFlags modifiers, BOOL down, NSString *characters) {
     [settings setRecordedKey:code down:down];
@@ -337,6 +377,15 @@ static void RunSmoke(void) {
     }
     Require(ownedWindows == 1, @"Settings must not create a second Lore window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
+    Require(window.firstResponder == back,
+        @"Entering Settings must focus its Back control rather than the detached translation editor");
+    for (NSUInteger step = 0; step < 12; ++step) {
+        [window selectNextKeyView:nil];
+        NSResponder *responder = window.firstResponder;
+        Require([responder isKindOfClass:NSView.class] &&
+            [(NSView *)responder isDescendantOf:settings.view],
+            [NSString stringWithFormat:@"Tab navigation must remain in the visible Settings screen: %@", responder]);
+    }
     Require(window.undoManager == nil, @"Settings must not expose the hidden translator's undo manager");
     [window makeFirstResponder:window];
     [NSApp sendAction:@selector(undo:) to:nil from:window];
@@ -377,6 +426,11 @@ static void RunSmoke(void) {
     NSTextField *selectionStatus = (NSTextField *)FindView(root, @"shortcut-selection-status");
     NSTextField *panelStatus = (NSTextField *)FindView(root, @"shortcut-panel-status");
     NSTextField *feedback = (NSTextField *)FindView(root, @"shortcut-feedback");
+    NSTextField *permissionHelp = (NSTextField *)FindView(root, @"shortcut-permission-help");
+    NSTextField *reservation = (NSTextField *)FindView(root, @"shortcut-reservation");
+    NSTextField *keyHeading = (NSTextField *)FindView(root, @"shortcut-key-heading");
+    NSTextField *pressesHeading = (NSTextField *)FindView(root, @"shortcut-presses-heading");
+    NSButton *help = (NSButton *)FindView(root, @"shortcut-help");
     NSTextField *privacy = (NSTextField *)FindView(root, @"local-processing");
     NSSwitch *selectionEnabled = (NSSwitch *)FindView(root, @"shortcut-selection-enabled");
     NSSwitch *panelEnabled = (NSSwitch *)FindView(root, @"shortcut-panel-enabled");
@@ -389,6 +443,34 @@ static void RunSmoke(void) {
         [selectionKey.title isEqualToString:ShortcutKeyLabel(lore::defaultShortcuts()[0])] &&
         [panelKey.title isEqualToString:ShortcutKeyLabel(lore::defaultShortcuts()[1])],
         @"Both shortcuts must show their enabled defaults and separate press counts");
+    Require([keyHeading.stringValue containsString:@"click"] &&
+        [pressesHeading.stringValue isEqualToString:@"Presses"] && help != nil && window.attachedSheet == nil,
+        @"Shortcut editing and press counts must be discoverable before opening optional help");
+    Require(!permissionHelp.hidden && [permissionHelp.stringValue containsString:@"Typing and pasting"] && reservation.hidden,
+        @"Missing permissions must explain the manual fallback without an irrelevant default-key reservation warning");
+    [help performClick:nil];
+    Settle(window);
+    NSWindow *helpSheet = window.attachedSheet;
+    NSString *helpText = helpSheet ? TextInView(helpSheet.contentView) : @"";
+    Require(helpSheet != nil && [helpText containsString:@"Shortcut help"] &&
+        [helpText containsString:@"400 ms"] && [helpText containsString:@"reserve their keys"] &&
+        [helpText containsString:@"⌘Return"],
+        @"Optional native help must reveal recording, reservation and translator-key details on demand");
+    NSView *helpContent = helpSheet.contentView;
+    NSBitmapImageRep *helpBitmap = [helpContent bitmapImageRepForCachingDisplayInRect:helpContent.bounds];
+    Require(helpBitmap != nil, @"Could not capture optional shortcut help");
+    [helpSheet.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        [helpContent cacheDisplayInRect:helpContent.bounds toBitmapImageRep:helpBitmap];
+    }];
+    NSData *helpPNG = [helpBitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    Require([helpPNG writeToFile:@"settings-smoke/shortcut-help.png" atomically:YES], @"Could not save optional help capture");
+    [window endSheet:helpSheet returnCode:NSModalResponseOK];
+    NSDate *helpDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (window.attachedSheet && helpDeadline.timeIntervalSinceNow > 0) {
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    Require(window.attachedSheet == nil && window.contentView == root,
+        @"Dismissing optional help must return to the existing Settings screen");
     __block NSUInteger loginSettings = 0, loginChanges = 0;
     __block BOOL requestedLogin = NO;
     settings.onLoginSettings = ^{ ++loginSettings; };
@@ -434,6 +516,8 @@ static void RunSmoke(void) {
     [settings refresh];
     Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcuts must show ready");
+    Require(permissionHelp.hidden && reservation.hidden,
+        @"Ready default shortcuts must remove setup-only explanations");
     RequireTintInBothAppearances(window, selectionStatus.textColor, LoreColor(LoreSuccess),
         @"Ready shortcuts must use the shared success color");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
@@ -452,6 +536,12 @@ static void RunSmoke(void) {
     monitor.panelAvailability = ShortcutAvailabilityAvailable;
     [settings refresh];
 
+    [window setContentSize:NSMakeSize(640, 420)];
+    Settle(window);
+    [scroll.contentView scrollToPoint:NSZeroPoint];
+    [scroll reflectScrolledClipView:scroll.contentView];
+    CGFloat errorBaseHeight = document.bounds.size.height;
+    NSRect errorFrame = window.frame;
     NSString *longError = @"Lore could not change the launch-at-login setting. The operating system returned an error while updating this application’s registration. Open Login Items in System Settings, review the current permissions, and try again.";
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:longError error:YES];
     CheckBounds(window);
@@ -461,24 +551,41 @@ static void RunSmoke(void) {
         @"Login failures must use the common error color");
     NSRect textBounds = [hint.attributedStringValue boundingRectWithSize:NSMakeSize(hint.bounds.size.width, CGFLOAT_MAX)
         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
-    Require(document.bounds.size.height > baseHeight &&
+    Require(document.bounds.size.height > errorBaseHeight &&
         document.bounds.size.height > scroll.contentView.bounds.size.height &&
-        hint.bounds.size.height + 2 >= textBounds.size.height && NSEqualRects(window.frame, settingsFrame),
+        hint.bounds.size.height + 2 >= textBounds.size.height && NSEqualRects(window.frame, errorFrame),
         @"Long login errors must grow a scrollable document while preserving the shared window frame");
     Require([privacy.stringValue isEqualToString:privacyText], @"Login feedback must preserve the privacy explanation");
-    [hint scrollRectToVisible:hint.bounds];
     Capture(window, @"long-error");
     NSRect hintInDocument = [hint convertRect:hint.bounds toView:document];
     NSRect visibleDocument = scroll.documentVisibleRect;
     Require(NSContainsRect(NSInsetRect(visibleDocument, -0.5, -0.5), hintInDocument),
-        [NSString stringWithFormat:@"The entire login error must actually scroll into view: hint=%@ visible=%@",
+        [NSString stringWithFormat:@"The product must reveal the entire login error without test-side scrolling: hint=%@ visible=%@",
             NSStringFromRect(hintInDocument), NSStringFromRect(visibleDocument)]);
+    [scroll.contentView scrollToPoint:NSZeroPoint];
+    [scroll reflectScrolledClipView:scroll.contentView];
+    Settle(window);
+    Require(!NSContainsRect(scroll.documentVisibleRect, hintInDocument),
+        @"The repeated-error fixture must first move away from the long login error");
+    [settings setLoginStatus:SMAppServiceStatusNotRegistered message:longError error:YES];
+    Settle(window);
+    Require(NSContainsRect(NSInsetRect(scroll.documentVisibleRect, -0.5, -0.5), hintInDocument),
+        @"Retrying the same failed operation must reveal its error again");
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
+    [window setFrame:settingsFrame display:NO];
     Settle(window);
     Require(hint.hidden && document.bounds.size.height <= baseHeight + 1 && NSEqualRects(window.frame, settingsFrame),
         @"Clearing feedback must restore document height without resizing the shared window");
     [scroll.contentView scrollToPoint:NSZeroPoint];
     [scroll reflectScrolledClipView:scroll.contentView];
+    [settings showError:@"The shortcut could not be saved because another action already uses this key."];
+    Settle(window);
+    NSRect feedbackInDocument = [feedback convertRect:feedback.bounds toView:document];
+    Require(!feedback.hidden && NSContainsRect(NSInsetRect(scroll.documentVisibleRect, -0.5, -0.5), feedbackInDocument) &&
+        NSEqualRects(window.frame, settingsFrame),
+        @"A shortcut error must reveal its own feedback without resizing the shared window");
+    Capture(window, @"shortcut-error");
+    [settings showError:@""];
 
     selectionEnabled.state = NSControlStateValueOff;
     SendControlAction(selectionEnabled);
@@ -539,6 +646,8 @@ static void RunSmoke(void) {
     Require(custom.enabled && custom.keyCode == 40 && custom.modifiers == (lore::Control | lore::Option) &&
         custom.pressCount == 1 && [selectionKey.title isEqualToString:ShortcutKeyLabel(custom)],
         @"Custom key, press count, enabled state, and visible label must agree");
+    Require(!reservation.hidden && [reservation.stringValue containsString:@"reserve"],
+        @"An enabled custom shortcut must explain that its key is reserved");
     ShortcutPreferences *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     lore::ShortcutBinding persisted = [reloaded bindingForAction:lore::ShortcutAction::TranslateSelection];
     Require(persisted.enabled && persisted.keyCode == custom.keyCode && persisted.modifiers == custom.modifiers &&
@@ -584,6 +693,7 @@ static void RunSmoke(void) {
     lore::ShortcutBinding restored = [preferences bindingForAction:lore::ShortcutAction::TranslateSelection];
     Require(restored.enabled && lore::isPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
         @"Reset restores the default key, press count, and enabled state");
+    Require(reservation.hidden, @"Restoring the default assignments must remove the custom-key reservation warning");
     [settings showError:@""];
     // Leaving the page does not resign the shared key window. It must still
     // finish recording and wait for a swallowed key's physical release.
@@ -602,6 +712,10 @@ static void RunSmoke(void) {
     [window setContentSize:NSMakeSize(640, 420)];
     CheckBounds(window);
     Capture(window, @"minimum");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    Capture(window, @"minimum-dark");
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    CheckLegacyPaper(window, scroll);
     [window setFrame:settingsFrame display:NO];
     for (NSUInteger iteration = 0; iteration < 20; ++iteration) {
         [back performClick:nil];
@@ -609,7 +723,9 @@ static void RunSmoke(void) {
             @"Returning to translation must deactivate Settings without changing windows");
         [gear performClick:nil];
         Require(settings.view == root && window.contentView == root && settings.view.window == window &&
-            FindView(root, @"shortcut-selection-key") == selectionKey && NSEqualRects(window.frame, settingsFrame),
+            FindView(root, @"shortcut-selection-key") == selectionKey &&
+            FindView(root, @"settings-scroll") == scroll && FindView(root, @"settings-document") == document &&
+            FindView(root, @"shortcut-help") == help && window.attachedSheet == nil && NSEqualRects(window.frame, settingsFrame),
             @"Twenty navigation cycles must reuse the same host, controller view and shortcut controls");
         CheckBounds(window);
     }
