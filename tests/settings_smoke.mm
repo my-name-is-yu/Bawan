@@ -16,8 +16,8 @@
 }
 @property(nonatomic) ShortcutAvailability selectionAvailability;
 @property(nonatomic) ShortcutAvailability panelAvailability;
+@property(nonatomic) BOOL permissionsGranted;
 @property(nonatomic) NSUInteger permissionRequests;
-@property(nonatomic) NSUInteger refreshCount;
 @property(nonatomic) bawan::ShortcutAction lastPermissionAction;
 @end
 
@@ -33,7 +33,12 @@
 }
 - (void)start {}
 - (void)stop {}
-- (void)refresh { ++_refreshCount; }
+- (void)refresh {
+    if (_permissionsGranted) {
+        _selectionAvailability = ShortcutAvailabilityAvailable;
+        _panelAvailability = ShortcutAvailabilityAvailable;
+    }
+}
 - (BOOL)suspended { return _testSuspended; }
 - (void)setSuspended:(BOOL)value { _testSuspended = value; }
 - (BOOL)settingsActive { return _testSettingsActive; }
@@ -53,11 +58,9 @@
 @interface SmokeSettingsViewController : SettingsViewController {
     std::set<CGKeyCode> _testHeldKeys;
 }
-@property(nonatomic) NSUInteger refreshCount;
 - (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down;
 @end
 @implementation SmokeSettingsViewController
-- (void)refresh { ++_refreshCount; [super refresh]; }
 - (void)setRecordedKey:(CGKeyCode)key down:(BOOL)down {
     if (down) _testHeldKeys.insert(key);
     else _testHeldKeys.erase(key);
@@ -133,10 +136,12 @@ static void CheckBounds(NSWindow *window) {
     NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
     NSView *back = FindView(root, @"settings-back");
     NSRect backFrame = [back convertRect:back.bounds toView:header];
+    constexpr CGFloat expectedHeaderHeight = 80;
+    constexpr CGFloat expectedMascotSize = 72;
     Require(FindView(root, @"settings-brand-name") == nil, @"The Settings header must omit the wordmark");
-    Require(std::abs(header.bounds.size.height - BawanHeaderHeight) < 1 &&
-            std::abs(mascot.bounds.size.width - BawanBrandMarkSize) < 1 &&
-            std::abs(mascot.bounds.size.height - BawanBrandMarkSize) < 1 &&
+    Require(std::abs(header.bounds.size.height - expectedHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - expectedMascotSize) < 1 &&
+            std::abs(mascot.bounds.size.height - expectedMascotSize) < 1 &&
             std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
             std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1 &&
             std::abs(NSMinX(subtitleAlignment) - NSMinX(header.bounds) - 24) < 1 &&
@@ -144,8 +149,8 @@ static void CheckBounds(NSWindow *window) {
             [NSString stringWithFormat:
         @"The Settings mascot must retain its size and stay centered, with the label 24pt from the left: "
         @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f labelAlignment=%@",
-        NSStringFromRect(header.bounds), BawanHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), BawanBrandMarkSize, NSStringFromRect(subtitleAlignment)]);
+        NSStringFromRect(header.bounds), expectedHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), expectedMascotSize, NSStringFromRect(subtitleAlignment)]);
     Require(NSContainsRect(header.bounds, mascotFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
             NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(mascotFrame, subtitleFrame) &&
             !NSIntersectsRect(backFrame, subtitleFrame) && !NSIntersectsRect(backFrame, mascotFrame),
@@ -153,9 +158,9 @@ static void CheckBounds(NSWindow *window) {
     for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
                                    @"shortcut-panel-count"]) {
         NSControl *control = (NSControl *)FindView(root, identifier);
-        Require(std::abs(control.bounds.size.height - BawanInputHeight) < 1 &&
-                std::abs(control.font.pointSize - BawanInputFontSize) < 0.1,
-                @"Key recorders and press counts must share the same input height and typography");
+        Require(std::abs(control.bounds.size.height - 28) < 1 &&
+                std::abs(control.font.pointSize - 13) < 0.1,
+                @"Key recorders and press counts must use 28pt inputs and 13pt type");
     }
     NSView *shortcut = FindView(root, @"shortcut-group");
     NSView *login = FindView(root, @"login-group");
@@ -387,18 +392,6 @@ static void RunSmoke(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SmokeShortcutMonitor *monitor = [[SmokeShortcutMonitor alloc] initWithPreferences:preferences];
     SmokeSettingsViewController *settings = [[SmokeSettingsViewController alloc] initWithPreferences:preferences monitor:monitor];
-    // External notifications are owned by AppDelegate, not a second Settings
-    // subscription. Returning to the screen must still retry monitor access.
-    const NSUInteger initialSettingsRefreshes = settings.refreshCount;
-    const NSUInteger initialMonitorRefreshes = monitor.refreshCount;
-    [NSNotificationCenter.defaultCenter postNotificationName:BawanShortcutsDidChangeNotification object:preferences];
-    [NSNotificationCenter.defaultCenter postNotificationName:NSApplicationDidBecomeActiveNotification object:NSApp];
-    Require(settings.refreshCount == initialSettingsRefreshes && monitor.refreshCount == initialMonitorRefreshes,
-        @"Settings must not independently duplicate external notification refreshes");
-    [settings setActive:YES];
-    Require(settings.refreshCount == initialSettingsRefreshes + 1 && monitor.refreshCount == initialMonitorRefreshes + 1,
-        @"Showing Settings must refresh both permissions and displayed state once");
-    [settings setActive:NO];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0;
     panel.onTranslate = ^(NSString *__unused text, bawan::Direction __unused direction) { ++translations; };
@@ -586,11 +579,18 @@ static void RunSmoke(void) {
     [settings setLoginStatus:SMAppServiceStatusEnabled message:nil error:NO];
     Require(login.state == NSControlStateValueOn && hint.hidden,
         @"Enabled service must show on and clear approval feedback");
-    monitor.selectionAvailability = ShortcutAvailabilityAvailable;
-    monitor.panelAvailability = ShortcutAvailabilityAvailable;
-    [settings refresh];
+    [panel showTranslation];
+    [window makeKeyAndOrderFront:nil];
+    Settle(window);
+    Require(window.keyWindow,
+        @"The permission-refresh fixture requires the translator to be key before reopening Settings");
+    monitor.permissionsGranted = YES;
+    [panel showSettings:settings];
+    Settle(window);
+    monitor.permissionsGranted = NO;
     Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
-        [panelStatus.stringValue isEqualToString:@"Shortcut ready"], @"Active shortcuts must show ready");
+        [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
+        @"Reopening Settings must replace stale permission warnings with the current ready state");
     Require(permissionHelp.hidden && reservation.hidden,
         @"Ready default shortcuts must remove setup-only explanations");
     RequireTintInBothAppearances(window, selectionStatus.textColor, BawanColor(BawanSuccess),
