@@ -34,7 +34,6 @@
     NSString *_modelStatus;
     NSString *_resultStatus;
     BawanStatusKind _resultStatusKind;
-    NSUInteger _resultOutputRevision;
 }
 @end
 
@@ -56,6 +55,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     };
     _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
     _translationPanel.onClose = ^{ [weakSelf cancelTranslation]; };
+    _translationPanel.onOutputUpdated = ^{ [weakSelf translationOutputDidChange]; };
     _translationPanel.onSettings = ^{ [weakSelf openSettings:nil]; };
 
     _modelStore = [[ModelStore alloc] init];
@@ -233,8 +233,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSApp.mainMenu = main;
 }
 
+- (void)translationOutputDidChange {
+    if (!_resultStatus) return;
+    _resultStatus = nil;
+    [self updateStatus];
+}
+
 - (void)updateStatus {
-    if (_resultStatus && _resultOutputRevision != _translationPanel.outputRevision) _resultStatus = nil;
     _modelItem.title = _modelStatus ?: @"Preparing the model…";
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
@@ -360,7 +365,6 @@ static NSString *StringFromUTF8(const std::string &text) {
             _resultStatus = event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : nil;
             _resultStatusKind = BawanStatusWarning;
-            _resultOutputRevision = _translationPanel.outputRevision;
             [self updateStatus];
             break;
         case Kind::Cancelled:
@@ -368,7 +372,6 @@ static NSString *StringFromUTF8(const std::string &text) {
             _activeRequestId = 0;
             _resultStatus = @"Translation cancelled";
             _resultStatusKind = BawanStatusInformation;
-            _resultOutputRevision = _translationPanel.outputRevision;
             [self updateStatus];
             break;
         case Kind::Error:
@@ -376,7 +379,6 @@ static NSString *StringFromUTF8(const std::string &text) {
             _activeRequestId = 0;
             _resultStatus = StringFromUTF8(event.text);
             _resultStatusKind = BawanStatusError;
-            _resultOutputRevision = _translationPanel.outputRevision;
             [self updateStatus];
             break;
         default: break;
@@ -393,7 +395,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     _busy = NO;
     _resultStatus = @"Translation cancelled";
     _resultStatusKind = BawanStatusInformation;
-    _resultOutputRevision = _translationPanel.outputRevision;
     [self updateStatus];
 }
 

@@ -9,6 +9,7 @@
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
 - (void)updateStatus;
+- (void)translationOutputDidChange;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
 - (void)openTranslation:(id)sender;
@@ -244,7 +245,6 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
     beginRequest(106);
     [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Complete, 106, "Limited translation", true}];
     [panel setOutput:@"" direction:bawan::Direction::Automatic];
-    [delegate updateStatus];
     Require(output.string.length == 0 && status.hidden,
         @"Clearing output outside a translation request must discard its result notice");
     [panel setOutput:@"Complete translation" direction:bawan::Direction::EnglishToJapanese];
@@ -358,6 +358,7 @@ int main() {
         };
         panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
         panel.onClose = ^{ [weakDelegate cancelTranslation]; };
+        panel.onOutputUpdated = ^{ [weakDelegate translationOutputDidChange]; };
         [delegate buildMenus];
         [delegate updateStatus];
         int result = EXIT_SUCCESS;

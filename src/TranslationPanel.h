@@ -10,7 +10,7 @@ typedef NS_ENUM(NSInteger, BawanStatusKind) {
 };
 
 @interface TranslationPanel : NSObject
-@property(nonatomic, readonly) NSUInteger outputRevision;
+@property(nonatomic, copy, nullable) void (^onOutputUpdated)(void);
 @property(nonatomic, copy, nullable) void (^onTranslate)(NSString *text, bawan::Direction direction);
 @property(nonatomic, copy, nullable) void (^onCancel)(void);
 @property(nonatomic, copy, nullable) void (^onClose)(void);
