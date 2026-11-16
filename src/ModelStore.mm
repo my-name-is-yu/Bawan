@@ -124,8 +124,6 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         return;
     }
     _modelURL = [directory URLByAppendingPathComponent:ModelFilename];
-    // A forced quit may leave a staged download behind. No partial file is
-    // usable until hashing succeeds, so remove abandoned stages on retry/start.
     for (NSURL *entry in [files contentsOfDirectoryAtURL:directory
                             includingPropertiesForKeys:nil options:0 error:nil]) {
         if ([entry.lastPathComponent hasPrefix:@"."] &&
@@ -134,7 +132,6 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         }
     }
     if ([files fileExistsAtPath:_modelURL.path]) {
-        // Avoid hashing a second time in the same application session.
         if ([_verifiedURL isEqual:_modelURL]) {
             if (self.onReady) self.onReady(_modelURL);
             return;
@@ -151,8 +148,6 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.timeoutIntervalForRequest = 60;
     configuration.timeoutIntervalForResource = 60 * 60;
-    // Foreground session: no persistent daemon or background download remains
-    // after the application exits.
     _session = [NSURLSession sessionWithConfiguration:configuration delegate:self
                                       delegateQueue:NSOperationQueue.mainQueue];
     _task = [_session downloadTaskWithURL:[NSURL URLWithString:ModelDownloadURL]];
@@ -181,8 +176,6 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                 }
                 if (result != Verification::Valid) {
                     NSString *failureReason = reason ?: @"Model verification failed.";
-                    // Only remove a pre-existing model if its size/hash proves
-                    // corruption. A read/permission failure must not delete it.
                     if (downloaded || result == Verification::Invalid) {
                         NSError *removeError = nil;
                         if (![files removeItemAtURL:url error:&removeError] &&

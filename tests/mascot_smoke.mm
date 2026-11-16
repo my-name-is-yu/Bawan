@@ -95,8 +95,6 @@ static void RequireFinite(CALayer *layer) {
 }
 
 static void CapturePresentation(BawanMascotView *view, NSString *motion) {
-    // These are compositor-layer samples, not an AppKit cacheDisplay snapshot of
-    // the resting model. The owning test window stays the same for every preset.
     CALayer *presentation = view.layer.presentationLayer;
     if (!presentation) return;
     NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr
@@ -182,8 +180,6 @@ static void RunSmoke(void) {
         [first mouseExited:exited];
     } else {
         NSMutableSet<NSString *> *motions = [NSMutableSet set];
-        // Exercise the three distinct hover choices once each, without repeated
-        // window opening or a lifecycle stress loop.
         for (NSUInteger choice = 0; choice < 3; ++choice) {
             [first mouseEntered:entered];
             CALayer *dog = NamedLayer(first.layer, @"bawan.mascot.dog");
@@ -232,8 +228,6 @@ static void RunSmoke(void) {
         RequireFinite(replacementDog);
         [window displayIfNeeded];
         [CATransaction flush];
-        // Drain the canceled playback's completion with ample time left on
-        // the replacement, rather than sampling near its natural end.
         ServiceAppKit(0.03);
         Require([[[replacementDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"]
                     isEqual:replacementMotion],

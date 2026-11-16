@@ -80,7 +80,6 @@ std::vector<llama_token> tokenize(const llama_vocab * vocab,
     if (required == INT_MIN) { throw std::runtime_error("Unable to parse the text."); }
     if (required == 0) { return {}; }
     const auto count = required < 0 ? -required : required;
-    // Reject before allocating/filling a token vector for input we cannot use.
     if (static_cast<std::size_t>(count) > tokenBudget) {
         throw std::runtime_error("The text is too long. Select less text and try again (input limit: 4,096 tokens).");
     }
@@ -103,7 +102,7 @@ std::string tokenPiece(const llama_vocab * vocab, llama_token token) {
     return piece;
 }
 
-} // namespace
+}
 
 class TranslationEngine::Impl {
 public:
@@ -180,7 +179,7 @@ private:
               Direction direction = Direction::Automatic) noexcept {
         if (stopping_) { return; }
         try { callback_(EngineEvent{kind, id, std::move(text), truncated, direction}); }
-        catch (...) { /* Never unwind across the inference thread boundary. */ }
+        catch (...) {  }
     }
 
     void unload() {
@@ -286,8 +285,6 @@ private:
         const auto tokens = prompt(request);
         if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
 
-        // Keep only the model resident. Request-local resources are released on
-        // success, cancellation and exceptions, before a terminal event is sent.
         auto parameters = llama_context_default_params();
         parameters.n_ctx = kMaximumPrompt + kMaximumOutput;
         parameters.n_batch = kBatchSize;
@@ -306,7 +303,6 @@ private:
         Batch batch(llama_batch_ext_init(context.get()), llama_batch_ext_free);
         Sampler sampler(llama_sampler_chain_init(llama_sampler_chain_default_params()), llama_sampler_free);
         if (!batch || !sampler) { throw std::runtime_error("Unable to prepare the translation engine."); }
-        // Reuse vocabulary-sized sampling scratch within this translation.
         llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
         const auto * vocab = llama_model_get_vocab(model_.get());
         for (std::size_t position = 0; position < tokens.size(); position += kBatchSize) {
@@ -369,8 +365,6 @@ private:
                 pendingWarmUp_ = false;
                 cancellation = cancellation_.load();
             }
-            // Repeated warmUp calls neither reload a hot model nor extend its
-            // idle lifetime. A request queued during prewarming reuses the load.
             if (!request && model_) { continue; }
             try {
                 if (request && cancelled(request->id)) {
@@ -433,4 +427,4 @@ std::uint64_t TranslationEngine::translate(std::string text, Direction direction
 void TranslationEngine::cancel() { impl_->cancel(); }
 void TranslationEngine::shutdown() { impl_->shutdown(); }
 
-} // namespace bawan
+}

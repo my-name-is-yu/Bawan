@@ -11,7 +11,6 @@ NSImage *BawanMascotImage(void) {
         NSString *path = [NSBundle.mainBundle pathForResource:@"BawanMascot" ofType:@"png"];
 #endif
         if (!path) return;
-        // Decode only the display-size thumbnail; never retain the 1254px original.
         CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path],
             (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache:@NO});
         if (!source) return;
@@ -61,7 +60,6 @@ NSImage *BawanMascotImage(void) {
     if (self.scrollerStyle == NSScrollerStyleOverlay) {
         [super drawKnobSlotInRect:slotRect highlight:highlight];
     } else {
-        // Paint the full legacy gutter; AppKit still draws and tracks its knob.
         [BawanColor(BawanBackground) setFill];
         NSRectFill(self.bounds);
     }

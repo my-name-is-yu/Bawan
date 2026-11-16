@@ -6,7 +6,7 @@
 #include <array>
 
 namespace {
-constexpr int64_t copyEventTag = 0x426177616e437079; // "BawanCpy"
+constexpr int64_t copyEventTag = 0x426177616e437079;
 constexpr unsigned selectionIndex = static_cast<unsigned>(bawan::ShortcutAction::TranslateSelection);
 constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::OpenPanel);
 }
@@ -16,8 +16,6 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     bawan::ShortcutBindings _bindings;
     std::array<bawan::ShortcutGesture, 2> _gestures;
     std::array<ShortcutAvailability, 2> _availability;
-    // Keep ownership through configuration changes, including modifier release
-    // before key-up. A draining tap does not reserve any new key presses.
     std::array<bool, 128> _swallowed;
     std::array<NSUInteger, 128> _swallowedRevision;
     NSUInteger _gestureRevision;
@@ -242,7 +240,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self installTapActive:YES];
     } else {
         [self removeTapActive:YES];
-        // Permission loss prevents further draining; do not reserve a future press.
         if (!accessibilityAllowed) _swallowed.fill(false);
     }
     if (hadPassiveTap != (_passiveTap != nullptr) || hadActiveTap != (_activeTap != nullptr)) {
@@ -330,7 +327,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     for (unsigned i = 0; i < _bindings.size(); ++i) {
         const bool passive = i == selectionIndex && bawan::isPassiveCopy(_bindings[i]);
         if (!_bindings[i].enabled || passive == static_cast<bool>(active)) continue;
-        // A held key from an old configuration must not become a new gesture.
         if (owned && type == kCGEventKeyDown && _swallowedRevision[key] != _gestureRevision) continue;
         const auto result = _gestures[i].handle(input);
         consumed |= result.consumed;
@@ -462,8 +458,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 }
 
 - (void)dealloc {
-    // The application stops monitoring before releasing its owner. Removing
-    // observers here also makes short-lived test instances safe to release.
     [self stop];
 }
 

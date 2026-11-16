@@ -1,7 +1,4 @@
 #!/usr/bin/env swift
-// Export the vector master as a transparent, single-page PDF. No third-party tools are needed.
-// Usage: swift scripts/generate-status-icon.swift [source.svg] [output.pdf]
-// The master uses filled M/L/Z paths and circles; unsupported shapes fail explicitly.
 import Foundation
 import CoreGraphics
 

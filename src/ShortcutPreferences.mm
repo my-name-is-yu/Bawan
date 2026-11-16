@@ -180,7 +180,6 @@ static bool EqualBindings(bawan::ShortcutBinding lhs, bawan::ShortcutBinding rhs
             ReadBinding(rows[@"openPanel"], _bindings[1]);
         }
     }
-    // Corrupt or manually edited preferences must not reserve a chord twice.
     if (bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[1].enabled = false;
     [self save];
     return self;

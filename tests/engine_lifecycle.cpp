@@ -69,13 +69,12 @@ private:
     std::vector<bawan::EngineEvent> events_;
 };
 
-} // namespace
+}
 
 int main() {
     try {
         using Kind = bawan::EngineEvent::Kind;
         Events events;
-        // An unavailable file must not produce a loading/error event until use.
         bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
             [&](bawan::EngineEvent event) { events.push(std::move(event)); }, 25ms);
         events.requireQuietFor(50ms);
@@ -85,8 +84,6 @@ int main() {
         events.requireEvent(Kind::Error, engine.translate("Hello"), after);
         events.requireEvent(Kind::Error, 0, after);
 
-        // A failed cold request must not leave the worker stuck or suppress a
-        // subsequent prewarm failure, which is reported independently at id 0.
         after = events.mark();
         engine.warmUp();
         events.requireEvent(Kind::Error, 0, after);
@@ -112,8 +109,6 @@ int main() {
         cancelledEngine = &cancelled;
         after = cancelledEvents.mark();
         cancelled.warmUp();
-        // Loading is a global phase: a cancelled prewarm must terminate it even
-        // without an owning translation request, so the UI can leave Loading.
         cancelledEvents.requireEvent(Kind::Cancelled, 0, after);
         cancelled.shutdown();
         std::cout << "PASS: lazy construction, cold errors, prewarm errors/cancellation, retries and unused shutdown\n";

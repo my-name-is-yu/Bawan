@@ -50,4 +50,4 @@ private:
     std::int64_t application_ = 0;
     std::uint64_t firstTime_ = 0;
 };
-} // namespace bawan
+}

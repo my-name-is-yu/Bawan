@@ -118,7 +118,7 @@ bool hasNonASCII(const std::string & text) {
     return false;
 }
 
-} // namespace
+}
 
 int main(int argc, char ** argv) {
     if (argc < 2 || argc > 3) {
@@ -204,9 +204,6 @@ int main(int argc, char ** argv) {
         const auto tooLong = events.wait(engine.translate(overlong, bawan::Direction::Automatic));
         if (tooLong.kind != bawan::EngineEvent::Kind::Error) { throw std::runtime_error("Overlong prompt was not rejected"); }
         events.requireNoOutput(tooLong.requestId);
-        // A large accidental paste still follows the token contract. It must
-        // reject before a second tokenizer pass / full source-token allocation,
-        // not silently truncate or poison the following translation.
         std::string largePaste;
         largePaste.reserve(2 * 1024 * 1024);
         while (largePaste.size() < 2 * 1024 * 1024) largePaste += "hello ";
@@ -267,7 +264,6 @@ int main(int argc, char ** argv) {
             throw std::runtime_error("The model was not reloaded once after idle unloading");
         }
         events.requireNoIdleBeforeCompletion(reloadedId, afterIdle);
-        // Shut down while the model is cooling down, before its next idle deadline.
         engine.shutdown();
         events.requireQuietFor(2 * idleTimeout);
 

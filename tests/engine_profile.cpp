@@ -78,7 +78,6 @@ struct Result {
     std::int64_t observedTextFootprint = -1;
 };
 
-// Keep one model-state event and one translation event, not event history.
 class LatestEvent {
 public:
     void push(bawan::EngineEvent event) {
@@ -96,9 +95,6 @@ public:
                 }
                 if (event.kind == bawan::EngineEvent::Kind::Text) {
                     if (!firstText_) { firstText_ = arrived; }
-                    // Capture arrival before sampling so first-text latency excludes
-                    // this callback's diagnostic work. These are observations, not
-                    // continuously sampled process peaks.
                     const auto sample = usage();
                     observedTextRSS_ = std::max(observedTextRSS_, sample.currentRSS);
                     observedTextFootprint_ = std::max(observedTextFootprint_, sample.physicalFootprint);
@@ -145,7 +141,7 @@ void memoryMetrics(const char * phase, const Usage & sample) {
               << "max_rss_" << phase << "_bytes=" << sample.maximumRSS << '\n';
 }
 
-} // namespace
+}
 
 int main(int argc, char ** argv) {
     if (argc != 2) {

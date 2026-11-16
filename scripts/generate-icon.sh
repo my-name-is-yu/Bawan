@@ -1,5 +1,4 @@
 #!/bin/sh
-# Rebuild the checked-in icon after replacing resources/AppIcon.png.
 set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 temporary_dir=$(mktemp -d)

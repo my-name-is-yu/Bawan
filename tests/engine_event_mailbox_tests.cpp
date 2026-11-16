@@ -64,7 +64,6 @@ int main() {
             if (event.kind == Kind::Complete) require(event.requestId == ++completed);
         }
     };
-    // Only drain after a real scheduling signal, not unconditional polling.
     while (!done || scheduled.load() != 0) {
         const auto callbacks = scheduled.exchange(0);
         for (unsigned n = 0; n < callbacks; ++n) consume();
