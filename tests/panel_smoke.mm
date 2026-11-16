@@ -712,6 +712,7 @@ static void RunSmoke(void) {
     [source breakUndoCoalescing];
     Settle(window);
     NSUndoManager *editUndo = source.undoManager;
+    while (editUndo.groupingLevel > 0) [editUndo endUndoGrouping];
     BOOL editGroupsByEvent = editUndo.groupsByEvent;
     editUndo.groupsByEvent = NO;
     [editUndo beginUndoGrouping];
@@ -730,7 +731,8 @@ static void RunSmoke(void) {
             @"Copy and Swap must not use the translation from before a source edit");
     [editUndo undo];
     Require([source.string isEqualToString:@"Visit 東京 tomorrow."] && output.string.length == 0,
-            @"Undo must restore the previous source without reviving a stale translation");
+            [NSString stringWithFormat:@"Undo must restore the previous source without reviving a stale translation: source=%@ output=%@",
+                source.string, output.string]);
     [editUndo redo];
     Require([source.string isEqualToString:japanese] && output.string.length == 0,
             @"Clearing stale output must preserve the source edit's Redo history");
