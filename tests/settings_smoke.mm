@@ -100,7 +100,9 @@ static void CheckFrameDragging(NSWindow *window) {
         @"The Settings masthead must share native background dragging with its decorative label");
     for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
                             [NSValue valueWithSize:NSMakeSize(640, 420)]]) {
-        [window setContentSize:size.sizeValue];
+        NSRect frame = window.frame;
+        frame.size = size.sizeValue;
+        [window setFrame:frame display:NO];
         for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
             window.appearance = [NSAppearance appearanceNamed:appearance];
             Settle(window);
