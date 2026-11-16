@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "TranslationPanel.h"
+#import "ModelStore.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -13,6 +14,23 @@
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
+@end
+
+@interface ModelStore (SmokeTest)
+- (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
+    SHA256:(NSString *)expectedSHA256;
+@end
+
+@interface ModelFixtureFileManager : NSFileManager
+@property(nonatomic, copy) NSURL *supportDirectory;
+@end
+
+@implementation ModelFixtureFileManager
+- (NSURL *)URLForDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domain
+    appropriateForURL:(NSURL *)url create:(BOOL)create error:(NSError **)error {
+    if (directory == NSApplicationSupportDirectory && domain == NSUserDomainMask) return _supportDirectory;
+    return [super URLForDirectory:directory inDomain:domain appropriateForURL:url create:create error:error];
+}
 @end
 
 static void Require(BOOL condition, NSString *message) {
@@ -103,6 +121,52 @@ static void CheckWarmUpFailure(AppDelegate *delegate) {
     RequireModelFailure(delegate);
 }
 
+static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
+    ModelFixtureFileManager *files = [[ModelFixtureFileManager alloc] init];
+    files.supportDirectory = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+        URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
+    NSURL *directory = [files.supportDirectory URLByAppendingPathComponent:@"local.bawan.Bawan" isDirectory:YES];
+    NSURL *model = [directory URLByAppendingPathComponent:@"plamo-3-translate-0.8b-Q4_K_M.gguf"];
+    NSData *valid = [@"valid model fixture" dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *corrupt = [@"damaged model bytes" dataUsingEncoding:NSUTF8StringEncoding];
+    ModelStore *store = [[ModelStore alloc] initWithFileManager:files expectedSize:valid.length
+        SHA256:@"32e5e24230b47f8db398a288c8a7ca84723ba83d0099fceeaecdec1976d25c30"];
+    ModelStore *previousStore = [delegate valueForKey:@"modelStore"];
+    __block NSUInteger ready = 0;
+    __block NSUInteger errors = 0;
+    __block NSURL *lastReadyURL = nil;
+    __block NSString *lastError = nil;
+    store.onReady = ^(NSURL *url) { ++ready; lastReadyURL = url; };
+    store.onError = ^(NSString *message) { ++errors; lastError = message; };
+    @try {
+        Require([files createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil],
+            @"The model retry fixture directory must be created");
+        Require([valid writeToURL:model atomically:YES], @"The valid model fixture must be written");
+        [delegate setValue:store forKey:@"modelStore"];
+        [store prepare];
+        WaitFor(^BOOL { return ready || errors; }, @"Initial fixture verification did not complete");
+        Require(ready == 1 && errors == 0 && [lastReadyURL isEqual:model],
+            @"The original model fixture must pass real SHA256 verification at its fixture path");
+
+        Require(valid.length == corrupt.length, @"The corruption fixture must preserve model size");
+        Require([corrupt writeToURL:model atomically:YES], @"The same-path model must be corrupted");
+        [delegate retryModel:nil];
+        WaitFor(^BOOL { return ready > 1 || errors; }, @"Retry did not revalidate the changed model");
+        Require(ready == 1 && errors == 1 && [lastError containsString:@"SHA256"],
+            @"Retry must reject changed model bytes with a SHA256 error instead of reporting Ready");
+        Require(![files fileExistsAtPath:model.path], @"Retry must remove the model proven corrupt");
+
+        Require([valid writeToURL:model atomically:YES], @"The valid model fixture must be restored");
+        [delegate retryModel:nil];
+        WaitFor(^BOOL { return ready > 1 || errors > 1; }, @"Retry did not verify the restored model");
+        Require(ready == 2 && errors == 1, @"Retry must accept the restored valid model");
+    } @finally {
+        [store cancel];
+        [delegate setValue:previousStore forKey:@"modelStore"];
+        [files removeItemAtURL:files.supportDirectory error:nil];
+    }
+}
+
 int main() {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -121,7 +185,8 @@ int main() {
                 CheckPendingSelection(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
-                std::cout << "PASS: pending selection cancellation, cold load errors, warmup errors and retry isolation\n";
+                CheckModelRevalidationOnRetry(delegate);
+                std::cout << "PASS: pending selection cancellation, cold load errors, warmup errors, retry isolation and model revalidation\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;
