@@ -32,6 +32,9 @@
     BOOL _terminating;
     BOOL _modelFailed;
     NSString *_modelStatus;
+    NSString *_resultStatus;
+    BawanStatusKind _resultStatusKind;
+    NSUInteger _resultOutputRevision;
 }
 @end
 
@@ -231,12 +234,14 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateStatus {
+    if (_resultStatus && _resultOutputRevision != _translationPanel.outputRevision) _resultStatus = nil;
     _modelItem.title = _modelStatus ?: @"Preparing the model…";
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:_modelAvailable busy:NO status:_modelAvailable ? @"" : _modelItem.title
-                                         kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
+    if (!_busy) [_translationPanel setAvailable:_modelAvailable busy:NO
+        status:_resultStatus ?: (_modelAvailable ? @"" : _modelItem.title)
+        kind:_resultStatus ? _resultStatusKind : (_modelFailed ? BawanStatusError : BawanStatusInformation)];
     else if (!_modelAvailable) [_translationPanel setAvailable:NO busy:YES status:_modelItem.title
                                                         kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
 }
@@ -301,6 +306,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
     if (_terminating) return;
+    _resultStatus = nil;
     if (!_modelAvailable) {
         if (_modelFailed) { [self updateStatus]; return; }
         _pendingText = [text copy];
@@ -337,7 +343,7 @@ static NSString *StringFromUTF8(const std::string &text) {
             _modelStatus = StringFromUTF8(event.text);
         }
         [self updateStatus];
-        [_translationPanel setAvailable:_modelAvailable busy:_busy
+        if (!_resultStatus) [_translationPanel setAvailable:_modelAvailable busy:_busy
             status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _modelStatus
             kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;
@@ -351,19 +357,27 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:event.truncated ?
-                @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
-                                      kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
+            _resultStatus = event.truncated ?
+                @"Output limit reached. The translation is incomplete. Select less text and try again." : nil;
+            _resultStatusKind = BawanStatusWarning;
+            _resultOutputRevision = _translationPanel.outputRevision;
+            [self updateStatus];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+            _resultStatus = @"Translation cancelled";
+            _resultStatusKind = BawanStatusInformation;
+            _resultOutputRevision = _translationPanel.outputRevision;
+            [self updateStatus];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
+            _resultStatus = StringFromUTF8(event.text);
+            _resultStatusKind = BawanStatusError;
+            _resultOutputRevision = _translationPanel.outputRevision;
+            [self updateStatus];
             break;
         default: break;
     }
@@ -377,8 +391,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (!_busy) { [self updateStatus]; return; }
     _activeRequestId = 0;
     _busy = NO;
+    _resultStatus = @"Translation cancelled";
+    _resultStatusKind = BawanStatusInformation;
+    _resultOutputRevision = _translationPanel.outputRevision;
     [self updateStatus];
-    [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
 }
 
 - (void)openTranslation:(id)sender {

@@ -628,6 +628,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 - (void)setOutput:(NSString *)output direction:(bawan::Direction)direction {
     _outputDirection = direction;
     if (![_output.string isEqualToString:output]) {
+        ++_outputRevision;
         NSScrollView *scroll = _output.enclosingScrollView;
         NSClipView *clip = scroll.contentView;
         NSRect readingRect = scroll.documentVisibleRect;

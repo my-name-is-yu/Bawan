@@ -11,6 +11,7 @@
 - (void)updateStatus;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
+- (void)openTranslation:(id)sender;
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
@@ -169,6 +170,97 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
         @"The revised source's own completion must still enable Copy and Swap");
 }
 
+static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *panel) {
+    [panel showForSelection:@"A source sentence"];
+    NSWindow *window = nil;
+    for (NSWindow *candidate in NSApp.windows) {
+        if ([candidate.contentView.identifier isEqualToString:@"bawan-panel"]) window = candidate;
+    }
+    NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
+    NSTextField *status = (NSTextField *)FindView(window.contentView, @"status");
+    NSButton *primary = (NSButton *)FindView(window.contentView, @"translate");
+    Require(output && status && primary, @"Retained result checks require the real panel controls");
+
+    auto beginRequest = [&](uint64_t requestId) {
+        NSString *previousStatus = status.stringValue;
+        [delegate setValue:@NO forKey:@"modelAvailable"];
+        [delegate translateText:@"A source sentence" direction:bawan::Direction::EnglishToJapanese];
+        Require(output.string.length == 0 &&
+            (previousStatus.length == 0 || ![status.stringValue isEqualToString:previousStatus]),
+            @"A new translation must clear the retained output and its previous result notice");
+        [delegate setValue:nil forKey:@"pendingText"];
+        [delegate setValue:@YES forKey:@"modelAvailable"];
+        [delegate setValue:@(requestId) forKey:@"activeRequestId"];
+        [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Ready, 0}];
+    };
+    auto requireResult = [&](NSString *expectedOutput, NSString *expectedStatus) {
+        Require([output.string isEqualToString:expectedOutput] && !status.hidden &&
+            [status.stringValue isEqualToString:expectedStatus],
+            @"Retained output must keep its cancellation, truncation or error notice");
+    };
+    auto reopenAndWarm = [&](NSString *expectedOutput, NSString *expectedStatus) {
+        [panel close];
+        [delegate openTranslation:nil];
+        requireResult(expectedOutput, expectedStatus);
+        [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Loading, 0}];
+        requireResult(expectedOutput, expectedStatus);
+        [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Ready, 0}];
+        requireResult(expectedOutput, expectedStatus);
+    };
+
+    beginRequest(101);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Text, 101, "Partial translation"}];
+    [primary performClick:nil];
+    requireResult(@"Partial translation", @"Translation cancelled");
+    reopenAndWarm(@"Partial translation", @"Translation cancelled");
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Complete, 101, "Stale translation"}];
+    requireResult(@"Partial translation", @"Translation cancelled");
+
+    beginRequest(102);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Complete, 102, "Limited translation", true}];
+    NSString *truncated = @"Output limit reached. The translation is incomplete. Select less text and try again.";
+    requireResult(@"Limited translation", truncated);
+    reopenAndWarm(@"Limited translation", truncated);
+
+    beginRequest(103);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Text, 103, "Translation before error"}];
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Error, 103, "Translation failed"}];
+    reopenAndWarm(@"Translation before error", @"Translation failed");
+
+    beginRequest(104);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Text, 104, "Translation before close"}];
+    reopenAndWarm(@"Translation before close", @"Translation cancelled");
+
+    beginRequest(105);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Complete, 105, "Complete translation"}];
+    [panel close];
+    [delegate openTranslation:nil];
+    Require([output.string isEqualToString:@"Complete translation"] && status.hidden,
+        @"A complete new translation must remain free of the previous result notice after reopening");
+    beginRequest(106);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Complete, 106, "Limited translation", true}];
+    [panel setOutput:@"" direction:bawan::Direction::Automatic];
+    [delegate updateStatus];
+    Require(output.string.length == 0 && status.hidden,
+        @"Clearing output outside a translation request must discard its result notice");
+    [panel setOutput:@"Complete translation" direction:bawan::Direction::EnglishToJapanese];
+    [panel close];
+    [delegate openTranslation:nil];
+    Require([output.string isEqualToString:@"Complete translation"] && status.hidden,
+        @"Restoring different output must not restore a notice from the discarded result");
+
+    beginRequest(107);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Text, 107, "Partial translation"}];
+    [primary performClick:nil];
+    [panel setOutput:@"" direction:bawan::Direction::Automatic];
+    [panel setOutput:@"Partial translation" direction:bawan::Direction::EnglishToJapanese];
+    [panel close];
+    [delegate openTranslation:nil];
+    Require([output.string isEqualToString:@"Partial translation"] && status.hidden,
+        @"Clearing then restoring the same output must not resurrect its old cancellation notice");
+    [delegate setValue:@NO forKey:@"modelAvailable"];
+}
+
 static void CheckColdRequestAndRetry(AppDelegate *delegate) {
     SetAvailableModel(delegate);
     [delegate translateText:@"Hello" direction:bawan::Direction::EnglishToJapanese];
@@ -269,10 +361,11 @@ int main() {
             try {
                 CheckPendingSelection(delegate, panel);
                 CheckEditedRequests(delegate, panel);
+                CheckRetainedResultStatus(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
                 CheckModelRevalidationOnRetry(delegate);
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation and model revalidation\n";
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, retained result notices, cold load errors, warmup errors, retry isolation and model revalidation\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;
