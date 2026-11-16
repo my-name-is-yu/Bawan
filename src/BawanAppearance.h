@@ -19,7 +19,6 @@ static inline NSColor *BawanRGB(unsigned value) {
                                blue:(value & 255) / 255.0 alpha:1];
 }
 
-// External inline linkage shares this palette across the app's view files.
 inline NSColor *BawanColor(BawanColorRole role) {
     static NSArray<NSColor *> *palette;
     static dispatch_once_t once;
@@ -58,8 +57,6 @@ inline NSColor *BawanColor(BawanColorRole role) {
 static inline NSColor *BawanAccentFillColor(void) { return BawanRGB(0xB53B28); }
 static inline NSColor *BawanAccentColor(void) { return BawanColor(BawanError); }
 
-// A pressed primary action darkens in both appearances; its ivory label keeps
-// at least 4.5:1 contrast instead of blending the red toward light text in dark mode.
 static inline NSColor *BawanPrimaryButtonFill(BOOL highlighted) {
     return highlighted ? BawanRGB(0x943020) : BawanAccentFillColor();
 }
@@ -111,8 +108,6 @@ static inline NSFont *BawanSerifFont(CGFloat size, BOOL bold) {
 static inline NSFont *BawanBodyFont(CGFloat size) { return BawanSerifFont(size, NO); }
 static inline NSFont *BawanLabelFont(CGFloat size) { return BawanSerifFont(size, YES); }
 
-// Smoke tests are command-line executables. Give them the same staged resources
-// as the app, without an environment-variable override in the shipped product.
 inline NSImage *BawanLoadImage(NSString *name) {
 #ifdef BAWAN_TEST_RESOURCE_DIR
     NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:
@@ -123,7 +118,6 @@ inline NSImage *BawanLoadImage(NSString *name) {
     return path ? [[NSImage alloc] initWithContentsOfFile:path] : nil;
 }
 
-// External inline linkage shares these two caches across the app's view files.
 NSImage *BawanMascotImage(void);
 
 inline NSImage *BawanPaperImage(void) {

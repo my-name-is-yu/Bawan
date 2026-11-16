@@ -24,8 +24,6 @@ std::uint8_t normalizeShortcutModifiers(std::uint8_t modifiers, std::uint16_t ke
 }
 
 static bool supportedKey(std::uint16_t key) {
-    // ANSI/ISO/JIS typing keys, keypad, navigation, and F1–F20. Modifier,
-    // input-source, media, and hardware-control keys are not shortcut keys.
     if (key <= 51 || key == 53 || (key >= 82 && key <= 101) ||
         (key >= 114 && key <= 126)) return true;
     switch (key) {
@@ -78,7 +76,6 @@ ShortcutGesture::Result ShortcutGesture::handle(const ShortcutEvent& event) {
         application_ = event.application;
     }
     if (event.kind == ShortcutEvent::Kind::FlagsChanged) {
-        // Copy remains passive and supports releasing Command between copies.
         if (suppress_ && event.modifiers != binding_.modifiers) cancel();
         return result;
     }
@@ -98,8 +95,6 @@ ShortcutGesture::Result ShortcutGesture::handle(const ShortcutEvent& event) {
         return result;
     }
     if (down_) {
-        // A swallowed press retains ownership even if Option is released or
-        // another modifier is pressed before key-up.
         result.consumed = consumedDown_;
         if (event.repeat || event.modifiers != binding_.modifiers) cancel();
         return result;
@@ -142,4 +137,4 @@ void ShortcutGesture::reset() {
     cancel();
 }
 
-} // namespace bawan
+}

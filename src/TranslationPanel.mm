@@ -19,7 +19,6 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
     NSBezierPath *path = gold ? BawanCutCornerPath(face) :
         [NSBezierPath bezierPathWithRoundedRect:face xRadius:8 yRadius:8];
     if (enabled) {
-        // Every framed action shares the same hard shadow, including cut corners.
         NSBezierPath *shadow = [path copy];
         NSAffineTransform *offset = [NSAffineTransform transform];
         [offset translateXBy:0 yBy:3];
@@ -42,7 +41,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     return label;
 }
 
-} // namespace
+}
 
 @interface BawanPanel : NSPanel
 @property(nonatomic, copy) void (^onTranslateKey)(void);
@@ -54,7 +53,6 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return NO; }
 - (NSUndoManager *)undoManager {
-    // Keep the translator's history while Settings owns the responder chain.
     if ([self.contentView.identifier isEqualToString:@"bawan-settings"]) return nil;
     return [super undoManager];
 }
@@ -82,7 +80,6 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 }
 @end
 
-// Appearance changes reuse the same surfaces, constraints and static art.
 @interface BawanSurfaceView : NSView
 @property(nonatomic, strong) NSColor *fillColor;
 @property(nonatomic, strong) NSColor *borderColor;
@@ -160,7 +157,6 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
     animation.toValue = [NSValue valueWithCATransform3D:target];
     animation.duration = 0.12;
     animation.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.23 :1 :0.32 :1];
-    // One replaceable finite animation; a rapid reversal starts at presentation.
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer.transform = target;
@@ -189,7 +185,6 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
         _trackingPointer = NO;
         [self animatePressed:NO];
     }
-    // Never wait for motion before translating, cancelling or copying.
     return [super sendAction:action to:target];
 }
 - (void)viewDidChangeEffectiveAppearance {
@@ -449,7 +444,6 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     _shortcutHint.alignment = NSTextAlignmentCenter;
     _shortcutHint.maximumNumberOfLines = 2;
     [footer addSubview:_shortcutHint];
-    // Only the two footer actions need their own composited press feedback.
     for (BawanActionButton *button in @[_translate, _copy]) {
         button.wantsLayer = YES;
         button.pressFeedback = YES;
@@ -539,8 +533,6 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     [self showTranslation];
     _inputDirection = bawan::Direction::Automatic;
     _source.string = text;
-    // A newly selected passage starts a new editing session, not an undo history
-    // of every passage translated since the resident panel was first created.
     [_source.undoManager removeAllActions];
     [self setOutput:@"" direction:bawan::Direction::Automatic];
     [self showWithoutChangingInput];
@@ -640,14 +632,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         NSClipView *clip = scroll.contentView;
         NSRect readingRect = scroll.documentVisibleRect;
         NSUInteger previousLength = _output.string.length;
-        // Follow a new result or a reader already within one line of the end.
-        // Read geometry on this output event; do not retain another text buffer.
         BOOL followEnd = previousLength == 0 ||
             NSMaxY(readingRect) >= NSMaxY(_output.bounds) - 24;
         [self resetCopyFeedback];
         if (previousLength && output.length > previousLength && [output hasPrefix:_output.string]) {
-            // Streaming growth only edits the new tail. Keep earlier glyphs and
-            // the reader's position instead of replacing the entire text store.
             [_output.textStorage replaceCharactersInRange:NSMakeRange(previousLength, 0)
                 withString:[output substringFromIndex:previousLength]];
         } else {
@@ -719,8 +707,6 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (void)resetCopyFeedback {
     if (_copy.image == _copyIcon) return;
-    // Keep confirmation until the content changes or the panel closes. No timer,
-    // delayed block, toast view or stored copy of the translation is necessary.
     _copy.title = @"Copy Translation";
     _copy.image = _copyIcon;
 }

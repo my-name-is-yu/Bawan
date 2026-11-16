@@ -6,7 +6,6 @@ namespace {
 constexpr CFTimeInterval HoverDuration = 0.28;
 NSString *const HoverKey = @"bawan.hover";
 
-// Paths use the original artwork's normalized coordinates, with y pointing down.
 CGPathRef EarPath(BOOL right, CGSize size, BOOL bodyCutout) {
     CGMutablePathRef path = CGPathCreateMutable();
     if (right) {
@@ -225,7 +224,6 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     if (!self.window.visible || self.hiddenOrHasHiddenAncestor ||
         NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) return;
     [self layoutSubtreeIfNeeded];
-    // A click can replace an unfinished hover. Continue from what is visible.
     NSValue *dogStart = [NSValue valueWithCATransform3D:(_dog.presentationLayer ?: _dog).transform];
     NSValue *leftStart = [NSValue valueWithCATransform3D:(_leftEar.presentationLayer ?: _leftEar).transform];
     NSValue *rightStart = [NSValue valueWithCATransform3D:(_rightEar.presentationLayer ?: _rightEar).transform];
@@ -237,7 +235,6 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     [CATransaction setDisableActions:YES];
     [CATransaction setCompletionBlock:^{
         BawanMascotView *view = weakSelf;
-        // An earlier completion must not cancel a later hover or click.
         if (view && view->_hoverGeneration == generation) [view clearHoverAnimations];
     }];
     NSValue *rest = Transform(0);

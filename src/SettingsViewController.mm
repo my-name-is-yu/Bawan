@@ -46,8 +46,6 @@
 }
 @end
 
-// AppKit still owns event tracking, key equivalents, menus and focus. Only the
-// input face is shared with Bawan's other controls.
 @interface BawanShortcutButton : NSButton
 @end
 
@@ -142,7 +140,7 @@ NSBox *Group(NSView *content) {
 NSString *RowID(NSUInteger index, NSString *control) {
     return [NSString stringWithFormat:@"shortcut-%@-%@", index == 0 ? @"selection" : @"panel", control];
 }
-} // namespace
+}
 
 @interface SettingsViewController () {
     ShortcutPreferences *_preferences;
@@ -439,8 +437,6 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [loginGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [footer.widthAnchor constraintEqualToAnchor:content.widthAnchor]
     ]];
-    // AppDelegate owns external preference/activation updates. Local actions
-    // refresh directly; setActive: refreshes when this screen is shown again.
     [self refresh];
     return self;
 }

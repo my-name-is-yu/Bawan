@@ -303,8 +303,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_terminating) return;
     if (!_modelAvailable) {
         if (_modelFailed) { [self updateStatus]; return; }
-        // Keep only the latest selection while the model file is being verified
-        // or downloaded. Closing/cancelling clears it before setup completes.
         _pendingText = [text copy];
         _pendingDirection = direction;
         _activeRequestId = 0;
@@ -327,8 +325,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
     using Kind = bawan::EngineEvent::Kind;
     if (event.requestId == 0) {
-        // Availability describes the verified file, independently of whether
-        // inference resources are currently loaded or have expired after idle.
         if (event.kind == Kind::Idle) return;
         if (event.kind == Kind::Loading) {
             _modelFailed = NO;
@@ -440,14 +436,12 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)refreshSettings {
-    // Retry after returning from System Settings without prompting or polling.
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
-    // One activation owner retries permissions even when Settings is closed.
     if (_settingsViewController.view.window.visible) [self refreshSettings];
     else [_shortcut refresh];
 }

@@ -180,7 +180,6 @@ static void testSingleAndPassive() {
             "other keys cancel passive copy pairs too");
 }
 
-// Preserve the legacy copy cases against the state machine the app actually uses.
 static void testPassiveCopyRegressions() {
     ShortcutGesture gesture;
     const auto copy = [](Kind kind, std::uint64_t milliseconds,

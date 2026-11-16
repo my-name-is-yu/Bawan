@@ -10,7 +10,6 @@ static void require(bool value) { if (!value) std::abort(); }
 
 int main() {
     bawan::EngineEventMailbox mailbox;
-    // Simulate a blocked UI while all 4,096 generated tokens arrive.
     std::size_t oldBytes = 0;
     for (std::size_t n = 1; n <= 4096; ++n) {
         oldBytes += n * 4;
@@ -40,7 +39,6 @@ int main() {
     require(events[4].requestId == 3 && events[5].kind == Kind::Cancelled &&
             events[6].kind == Kind::Error && events[7].kind == Kind::Idle);
 
-    // A drain races with the producer: all terminal events arrive once, in order.
     std::atomic<bool> done{false};
     std::atomic<unsigned> scheduled{0};
     std::thread producer([&] {
@@ -57,7 +55,6 @@ int main() {
             if (event.kind == Kind::Complete) require(event.requestId == ++completed);
         }
     };
-    // Only drain after a real scheduling signal, not unconditional polling.
     while (!done || scheduled.load() != 0) {
         const auto callbacks = scheduled.exchange(0);
         for (unsigned n = 0; n < callbacks; ++n) consume();

@@ -5,8 +5,6 @@
 #include <iostream>
 #include <stdexcept>
 
-// Exercise the real delegate without applicationDidFinishLaunching: no model
-// download, global event tap or permission request belongs in this test.
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
 - (void)updateStatus;
@@ -80,8 +78,6 @@ static void CheckColdRequestAndRetry(AppDelegate *delegate) {
         @"Cold model loading did not report its failure to the application");
     RequireModelFailure(delegate);
 
-    // Start another load, then replace its engine before draining the main
-    // queue. Retry must invalidate any callbacks retained by that old engine.
     [delegate translateText:@"Try again" direction:bawan::Direction::EnglishToJapanese];
     uint64_t oldGeneration = [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue];
     uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
@@ -96,7 +92,6 @@ static void CheckColdRequestAndRetry(AppDelegate *delegate) {
         !Flag(delegate, @"modelAvailable") && [delegate valueForKey:@"modelURL"] == nil &&
         [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the model…"] && retry.hidden,
         @"Old engine events must not overwrite model setup after Retry");
-    // _modelStore was never created, so Retry cannot start network or file work.
 }
 
 static void CheckWarmUpFailure(AppDelegate *delegate) {

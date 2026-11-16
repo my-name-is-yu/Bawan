@@ -29,7 +29,6 @@ if(BAWAN_BUILD_APP AND NOT APPLE)
     message(FATAL_ERROR "Bawan.app requires macOS 14+, Apple's SDK and an Apple Silicon Mac. Use -DBAWAN_BUILD_APP=OFF for portable engine checks.")
 endif()
 
-# Build only the inference library. No server, web UI, Python or Rust tools.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)

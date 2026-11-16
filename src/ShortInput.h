@@ -53,8 +53,6 @@ inline std::size_t shortEnglishWordCount(std::string_view text) {
         } else if ((c < 0x20 && (c < '\t' || c > '\r')) || c == 0x7F) {
             return 0;
         }
-        // Apostrophes and hyphens join only inside a word. Quotes and doubled
-        // hyphens remain separators, so punctuation cannot hide a sixth word.
         inWord = connector && inWord && position + width < text.size() &&
             alphanumeric(static_cast<unsigned char>(text[position + width]));
         position += width;
@@ -62,4 +60,4 @@ inline std::size_t shortEnglishWordCount(std::string_view text) {
     return hasLetter ? words : 0;
 }
 
-} // namespace bawan
+}

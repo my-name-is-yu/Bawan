@@ -19,4 +19,4 @@ inline std::string translationPromptPrefix(std::string_view text, bool toEnglish
     return prefix;
 }
 
-} // namespace bawan::detail
+}

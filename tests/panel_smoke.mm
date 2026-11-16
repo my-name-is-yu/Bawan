@@ -282,7 +282,6 @@ static void CheckLongTranslationScrolling(TranslationPanel *panel, NSWindow *win
             [panel setOutput:following direction:direction];
             Settle(window);
             RequireLastCharacterVisible(output, @"A reader at the end must keep following streaming output");
-            // A new request must forget a prior request's manually scrolled position.
             [output scrollRectToVisible:NSMakeRect(0, 48, 1, scroll.documentVisibleRect.size.height)];
             [panel showForSelection:input];
             [panel setOutput:result direction:direction];
@@ -340,7 +339,6 @@ static void CheckPressedPrimaryContrast(NSWindow *window, NSButton *button) {
             [button cacheDisplayInRect:button.bounds toBitmapImageRep:bitmap];
             foreground = Luminance(button.contentTintColor);
         }];
-        // Sample blank face padding, clear of the centered title, border and shadow.
         NSInteger x = static_cast<NSInteger>(8 * bitmap.pixelsWide / button.bounds.size.width);
         CGFloat background = Luminance(BitmapColor(bitmap, x, bitmap.pixelsHigh / 2));
         CGFloat contrast = (MAX(foreground, background) + 0.05) / (MIN(foreground, background) + 0.05);
@@ -474,8 +472,6 @@ static void CheckPointerFeedback(NSButton *copy) {
                     !animation.autoreverses && animation.removedOnCompletion,
                     @"Pointer feedback must be a finite, automatically removed animation");
         }
-        // Submit the displayed layer tree, then service AppKit while waiting
-        // for the compositor's completion event.
         [copy.window displayIfNeeded];
         [CATransaction flush];
         NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;

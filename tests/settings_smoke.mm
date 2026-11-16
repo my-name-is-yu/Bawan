@@ -48,8 +48,6 @@
 }
 @end
 
-// Send events through NSApplication and its real local event monitor, while
-// keeping physical release checks deterministic without injecting OS input.
 @interface SmokeSettingsViewController : SettingsViewController {
     std::set<CGKeyCode> _testHeldKeys;
 }
@@ -267,7 +265,6 @@ static void CheckInputFaces(NSWindow *window) {
             NSString *path = [@"settings-smoke" stringByAppendingPathComponent:
                 [NSString stringWithFormat:@"input-%@-%@.png", identifier, appearance]];
             Require([png writeToFile:path atomically:YES], @"Could not save the shortcut input diagnostic");
-            // Read empty vertical padding, clear of title glyphs, popup arrows and the border.
             NSInteger y = static_cast<NSInteger>(4 * bitmap.pixelsHigh / control.bounds.size.height);
             RequireTint(window, BitmapColor(bitmap, bitmap.pixelsWide / 2, y), BawanColor(BawanBackground),
                 [NSString stringWithFormat:@"Native cells must preserve Bawan's shared input face: %@; bitmapColorSpace=%@",
@@ -304,12 +301,9 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
         Require(bitmap != nil, @"Could not capture the legacy scroll background");
         [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
             [clip cacheDisplayInRect:clip.bounds toBitmapImageRep:bitmap];
-            // The document's outer margin contains no text, card border or scroller glyph.
             NSInteger x = static_cast<NSInteger>(4 * bitmap.pixelsWide / clip.bounds.size.width);
             NSColor *actual = [BitmapColor(bitmap, x, bitmap.pixelsHigh / 2) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
             NSColor *expected = [BawanColor(BawanBackground) colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-            // BawanDrawPaper composites grain at 0.035 opacity. This rendered sample
-            // includes that texture; the flat color tokens above retain 0.01 checks.
             Require(actual != nil && expected != nil &&
                 std::abs(actual.redComponent - expected.redComponent) < 0.04 &&
                 std::abs(actual.greenComponent - expected.greenComponent) < 0.04 &&
@@ -347,12 +341,10 @@ static void CheckLegacyPaper(NSWindow *window, NSScrollView *scroll) {
             [NSString stringWithFormat:@"The scroller fixture must expose a blank slot away from its knob: slot=%@ knob=%@ bounds=%@",
                 NSStringFromRect(slot), NSStringFromRect(knob), NSStringFromRect(scroller.bounds)]);
         NSRect sampleRect = NSMakeRect(NSMidX(blank) - 1, NSMidY(blank) - 1, 2, 2);
-        // Crop in view coordinates so bitmap row orientation cannot select the knob instead.
         NSBitmapImageRep *sample = [scroller bitmapImageRepForCachingDisplayInRect:sampleRect];
         Require(sample != nil, @"Could not capture the empty legacy slot sample");
         [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
             [scroller cacheDisplayInRect:sampleRect toBitmapImageRep:sample];
-            // The slot is a flat fill; only the separate clip sample includes paper grain.
             RequireTint(window, BitmapColor(sample, sample.pixelsWide / 2, sample.pixelsHigh / 2), BawanColor(BawanBackground),
                 [NSString stringWithFormat:@"The actual native scroller slot must be paper-cobawand: slot=%@ knob=%@ sample=%@ profile=%@",
                     NSStringFromRect(slot), NSStringFromRect(knob), NSStringFromRect(sampleRect), sample.colorSpace]);
@@ -387,8 +379,6 @@ static void RunSmoke(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SmokeShortcutMonitor *monitor = [[SmokeShortcutMonitor alloc] initWithPreferences:preferences];
     SmokeSettingsViewController *settings = [[SmokeSettingsViewController alloc] initWithPreferences:preferences monitor:monitor];
-    // External notifications are owned by AppDelegate, not a second Settings
-    // subscription. Returning to the screen must still retry monitor access.
     const NSUInteger initialSettingsRefreshes = settings.refreshCount;
     const NSUInteger initialMonitorRefreshes = monitor.refreshCount;
     [NSNotificationCenter.defaultCenter postNotificationName:BawanShortcutsDidChangeNotification object:preferences];
@@ -770,8 +760,6 @@ static void RunSmoke(void) {
         @"Reset restores the default key, press count, and enabled state");
     Require(reservation.hidden, @"Restoring the default assignments must remove the custom-key reservation warning");
     [settings showError:@""];
-    // Leaving the page does not resign the shared key window. It must still
-    // finish recording and wait for a swallowed key's physical release.
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     [back performClick:nil];
@@ -800,8 +788,6 @@ static void RunSmoke(void) {
         !source.undoManager.canUndo && !monitor.settingsActive,
         @"A new selection from Settings must return to translation and clear the previous passage's undo history");
     [gear performClick:nil];
-    // Exercise a real settings control's responder chain, including the view
-    // controller, without depending on hosted CI granting a key window.
     [selectionKey interpretKeyEvents:@[KeyEvent(window, @"\x1b", 0, 53)]];
     Settle(window);
     Require(window.visible && window.contentView == translationRoot && closes == 0,
