@@ -164,14 +164,20 @@ int main(int argc, char ** argv) {
             word.find("束の間") == std::string::npos) {
             throw std::runtime_error("Short word lost its meaning: " + word);
         }
+        const auto invitation = completed(events, engine.translate("You're welcome to join.", bawan::Direction::Automatic),
+                                          bawan::Direction::EnglishToJapanese);
+        if (invitation.find("参加") == std::string::npos && invitation.find("加わ") == std::string::npos &&
+            invitation.find("仲間") == std::string::npos) {
+            throw std::runtime_error("Short invitation lost its meaning: " + invitation);
+        }
         const auto idiom = completed(events, engine.translate("on the fence", bawan::Direction::Automatic),
                                      bawan::Direction::EnglishToJapanese);
         // Quantized inference can vary by GPU backend; check completion and
-        // direction here, and the exact prompt format in short_input_tests.
+        // direction here without pinning a particular idiom interpretation.
         if (!hasNonASCII(idiom)) throw std::runtime_error("Short idiom did not produce Japanese: " + idiom);
         completed(events, engine.translate("Please do not leave just yet.", bawan::Direction::Automatic),
                   bawan::Direction::EnglishToJapanese);
-        std::cout << "Short EN→JA: " << word << " / " << idiom << '\n';
+        std::cout << "Short EN→JA: " << word << " / " << invitation << " / " << idiom << '\n';
 
         if (completed(events, engine.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Repeated greedy translation changed after another request (possible stale KV)");

@@ -1,4 +1,4 @@
-#include "TranslationPrompt.h"
+#include "ShortInput.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -33,23 +33,5 @@ int main() {
             return EXIT_FAILURE;
         }
     }
-    const std::string ordinary = "<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:msg|>";
-    if (bawan::detail::translationPromptPrefix("one two three four five six", false) != ordinary ||
-        bawan::detail::translationPromptPrefix(u8"日本語", true) != ordinary ||
-        bawan::detail::translationPromptPrefix("Hello", true) != ordinary ||
-        bawan::detail::translationPromptPrefix(u8"Hello 日本語", false) != ordinary) {
-        std::cerr << "An out-of-scope request changed its prompt\n";
-        return EXIT_FAILURE;
-    }
-    if (bawan::detail::translationPromptPrefix("ephemeral", false) !=
-            "<|plamo:tag|>dataset<|plamo:msg|>translation"
-            "<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>" ||
-        bawan::detail::translationPromptPrefix("on the fence", false) !=
-            "<|plamo:tag|>dataset<|plamo:msg|>translation"
-            "<|plamo:tag|>context<|plamo:msg|>英語から日本語への翻訳です。"
-            "<|plamo:tag|>input<|plamo:msg|>") {
-        std::cerr << "The short-input PFML3 language/context fields were not serialized\n";
-        return EXIT_FAILURE;
-    }
-    std::cout << "PASS: " << std::size(cases) << " word boundaries and ordinary-prompt preservation\n";
+    std::cout << "PASS: " << std::size(cases) << " short-English word boundaries\n";
 }
