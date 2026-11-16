@@ -290,6 +290,35 @@ static void CheckColdRequestAndRetry(AppDelegate *delegate) {
         @"Old engine events must not overwrite model setup after Retry");
 }
 
+static void CheckSwapUndoRejectsStaleOutput(AppDelegate *delegate, TranslationPanel *panel) {
+    SetAvailableModel(delegate);
+    NSString *original = @"  Keep the exact original.\n";
+    NSString *translation = @"元の文章を保持してください。";
+    [panel showForSelection:original];
+    [panel showForManualInput];
+    NSWindow *window = NSApp.keyWindow;
+    NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
+    NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
+    NSButton *swap = (NSButton *)FindView(window.contentView, @"swap");
+    Require(source && output && swap, @"Swap regression must reach the real translation controls");
+    [panel setOutput:translation direction:bawan::Direction::EnglishToJapanese];
+    [swap performClick:nil];
+    uint64_t reverseRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+    Require(reverseRequest != 0 && [source.string isEqualToString:translation],
+        @"Swap must start a real cancellable reverse request");
+    Require([NSApp sendAction:@selector(undo:) to:nil from:window], @"Edit Undo must restore Swap through the responder chain");
+    for (auto kind : {bawan::EngineEvent::Kind::Text, bawan::EngineEvent::Kind::Complete,
+                      bawan::EngineEvent::Kind::Cancelled}) {
+        bawan::EngineEvent stale{kind, reverseRequest, "Stale reverse translation"};
+        stale.direction = bawan::Direction::JapaneseToEnglish;
+        [delegate handleEngineEvent:stale];
+    }
+    Require([source.string isEqualToString:original] && [output.string isEqualToString:translation] &&
+        swap.enabled && [[(NSButton *)FindView(window.contentView, @"translate") title]
+            isEqualToString:@"Retranslate  ⌘↵"],
+        @"Queued reverse text and terminal events must not overwrite an undone Swap or restore its busy state");
+}
+
 static void CheckWarmUpFailure(AppDelegate *delegate) {
     SetAvailableModel(delegate);
     [delegate warmUpEngine];
@@ -368,10 +397,11 @@ int main() {
                 CheckPendingSelection(delegate, panel);
                 CheckEditedRequests(delegate, panel);
                 CheckRetainedResultStatus(delegate, panel);
+                CheckSwapUndoRejectsStaleOutput(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
                 CheckModelRevalidationOnRetry(delegate);
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, retained result notices, cold load errors, warmup errors, retry isolation and model revalidation\n";
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, retained result notices, Swap Undo cancellation, cold load errors, warmup errors, retry isolation and model revalidation\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;

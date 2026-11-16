@@ -675,12 +675,45 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     if (_available && hasInput && self.onTranslate) self.onTranslate(_source.string, _inputDirection);
 }
 
+- (void)registerSwapUndo {
+    NSString *source = [_source.string copy];
+    NSString *output = [_output.string copy];
+    bawan::Direction inputDirection = _inputDirection;
+    bawan::Direction outputDirection = _outputDirection;
+    NSRange sourceSelection = _source.selectedRange;
+    NSRange outputSelection = _output.selectedRange;
+    NSRect sourceReadingRect = _source.enclosingScrollView.documentVisibleRect;
+    NSRect outputReadingRect = _output.enclosingScrollView.documentVisibleRect;
+    BOOL restartTranslation = _busy;
+    [_source.undoManager registerUndoWithTarget:self handler:^(TranslationPanel *target) {
+        [target registerSwapUndo];
+        if (target->_busy && target.onCancel) target.onCancel();
+        [target->_source breakUndoCoalescing];
+        target->_source.string = source;
+        target->_inputDirection = inputDirection;
+        [target->_source setSelectedRange:sourceSelection];
+        [target->_source scrollRectToVisible:sourceReadingRect];
+        [target setOutput:restartTranslation ? @"" : output
+                direction:restartTranslation ? bawan::Direction::Automatic : outputDirection];
+        if (!restartTranslation) {
+            [target->_output setSelectedRange:outputSelection];
+            [target->_output scrollRectToVisible:outputReadingRect];
+        }
+        [target setAvailable:target->_available busy:NO status:@"" kind:BawanStatusInformation];
+        if (restartTranslation) [target translate:nil];
+    }];
+    [_source.undoManager setActionName:@"Swap"];
+}
+
 - (void)swapText:(id)sender {
     if (!_swap.enabled) return;
+    [_source breakUndoCoalescing];
+    [_source.undoManager beginUndoGrouping];
+    [self registerSwapUndo];
+    [_source.undoManager endUndoGrouping];
     _inputDirection = _outputDirection == bawan::Direction::EnglishToJapanese ?
         bawan::Direction::JapaneseToEnglish : bawan::Direction::EnglishToJapanese;
     _source.string = _output.string;
-    [_source.undoManager removeAllActions];
     [_source scrollRangeToVisible:NSMakeRange(0, 0)];
     [self setOutput:@"" direction:bawan::Direction::Automatic];
     [self translate:nil];
