@@ -685,9 +685,29 @@ static void RunSmoke(void) {
     Require([lastInput isEqualToString:@"Visit 東京 tomorrow."] &&
             lastDirection == bawan::Direction::EnglishToJapanese,
             @"Mixed-script output must reverse its actual direction instead of being detected again");
-    source.string = japanese;
-    [source didChangeText];
     [panel setOutput:@"Output from the previous request" direction:bawan::Direction::EnglishToJapanese];
+    NSUInteger beforeEditCancellations = cancellations;
+    [window makeFirstResponder:source];
+    [source.undoManager beginUndoGrouping];
+    [source insertText:japanese replacementRange:NSMakeRange(0, source.string.length)];
+    [source.undoManager endUndoGrouping];
+    Require([source.string isEqualToString:japanese] && output.string.length == 0 &&
+            !copy.enabled && !swap.enabled && cancellations == beforeEditCancellations && source.undoManager.canUndo,
+            @"Editing completed output must clear its translation without cancelling idle work or losing Undo");
+    NSInteger editedCopyCount = NSPasteboard.generalPasteboard.changeCount;
+    NSUInteger beforeEditedSwap = translations;
+    [window performKeyEquivalent:KeyEvent(window, @"C",
+        NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
+    [swap performClick:nil];
+    Require(NSPasteboard.generalPasteboard.changeCount == editedCopyCount &&
+            translations == beforeEditedSwap && [source.string isEqualToString:japanese],
+            @"Copy and Swap must not use the translation from before a source edit");
+    [source.undoManager undo];
+    Require([source.string isEqualToString:@"Visit 東京 tomorrow."] && output.string.length == 0,
+            @"Undo must restore the previous source without reviving a stale translation");
+    [source.undoManager redo];
+    Require([source.string isEqualToString:japanese] && output.string.length == 0,
+            @"Clearing stale output must preserve the source edit's Redo history");
     [translate performClick:nil];
     Require(lastDirection == bawan::Direction::Automatic,
             @"Editing swapped input must restore automatic direction");

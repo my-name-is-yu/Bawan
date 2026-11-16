@@ -41,6 +41,15 @@ static BOOL Flag(AppDelegate *delegate, NSString *key) {
     return [[delegate valueForKey:key] boolValue];
 }
 
+static NSView *FindView(NSView *root, NSString *identifier) {
+    if ([root.identifier isEqualToString:identifier]) return root;
+    for (NSView *child in root.subviews) {
+        NSView *found = FindView(child, identifier);
+        if (found) return found;
+    }
+    return nil;
+}
+
 template <typename Predicate>
 static void WaitFor(Predicate predicate, NSString *message) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20];
@@ -86,6 +95,78 @@ static void CheckPendingSelection(AppDelegate *delegate, TranslationPanel *panel
         [delegate valueForKey:@"pendingText"] == nil &&
         [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
         @"Closing during verification must clear queued translation and warmup work");
+}
+
+static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) {
+    [panel showForSelection:@"Original source"];
+    [panel showForManualInput];
+    NSWindow *window = [panel valueForKey:@"panel"];
+    NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
+    NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
+    NSButton *translate = (NSButton *)FindView(window.contentView, @"translate");
+    NSButton *copy = (NSButton *)FindView(window.contentView, @"copy");
+    NSButton *swap = (NSButton *)FindView(window.contentView, @"swap");
+    Require(source && output && translate && copy && swap, @"The edit fixture must find the real panel controls");
+
+    [delegate translateText:source.string direction:bawan::Direction::Automatic];
+    BOOL groupsByEvent = source.undoManager.groupsByEvent;
+    source.undoManager.groupsByEvent = NO;
+    [source.undoManager beginUndoGrouping];
+    [source insertText:@"Revised queued source" replacementRange:NSMakeRange(0, source.string.length)];
+    [source.undoManager endUndoGrouping];
+    source.undoManager.groupsByEvent = groupsByEvent;
+    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
+        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0 &&
+        [source.string isEqualToString:@"Revised queued source"] && output.string.length == 0,
+        @"Editing a queued source must discard the pending translation before model readiness");
+    SetAvailableModel(delegate);
+    Require([translate.title isEqualToString:@"Translate  ⌘↵"] && !copy.enabled && !swap.enabled,
+        @"Model availability after an edit must leave the revised source ready for an explicit translation");
+
+    [translate performClick:nil];
+    uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+    Require(oldRequest != 0 && Flag(delegate, @"busy"), @"The edit fixture must start a real active request");
+    bawan::EngineEvent partial{bawan::EngineEvent::Kind::Text, oldRequest, "Original partial output",
+        false, bawan::Direction::EnglishToJapanese};
+    [delegate handleEngineEvent:partial];
+    Require([output.string isEqualToString:@"Original partial output"] && copy.enabled,
+        @"The active request must display partial output before it is edited");
+    [source breakUndoCoalescing];
+    source.undoManager.groupsByEvent = NO;
+    [source.undoManager beginUndoGrouping];
+    [source insertText:@"Revised active source" replacementRange:NSMakeRange(0, source.string.length)];
+    [source.undoManager endUndoGrouping];
+    source.undoManager.groupsByEvent = groupsByEvent;
+    Require(!Flag(delegate, @"busy") && [source.string isEqualToString:@"Revised active source"] &&
+        output.string.length == 0 && !copy.enabled && !swap.enabled,
+        @"Editing an active source must cancel translation and remove its partial output");
+    for (auto kind : {bawan::EngineEvent::Kind::Text, bawan::EngineEvent::Kind::Complete}) {
+        bawan::EngineEvent stale{kind, oldRequest, "Late original output", false, bawan::Direction::EnglishToJapanese};
+        [delegate handleEngineEvent:stale];
+    }
+    Require(output.string.length == 0 && !copy.enabled && !swap.enabled && !Flag(delegate, @"busy"),
+        @"Late text and completion must not restore output for an edited source");
+    [source.undoManager undo];
+    Require([source.string isEqualToString:@"Revised queued source"] && output.string.length == 0,
+        [NSString stringWithFormat:@"Cancelling an active translation must preserve Undo without reviving its output; source=%@, output=%@",
+            source.string, output.string]);
+    [source.undoManager redo];
+    Require([source.string isEqualToString:@"Revised active source"],
+        [NSString stringWithFormat:@"Cancellation must preserve source Redo; source=%@", source.string]);
+
+    [translate performClick:nil];
+    uint64_t newRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+    Require(newRequest != 0 && newRequest != oldRequest, @"The revised source must start a fresh request");
+    bawan::EngineEvent staleComplete{bawan::EngineEvent::Kind::Complete, oldRequest, "Late original output",
+        false, bawan::Direction::EnglishToJapanese};
+    [delegate handleEngineEvent:staleComplete];
+    Require(output.string.length == 0 && Flag(delegate, @"busy"),
+        @"An old completion must not finish the revised source's request");
+    bawan::EngineEvent revisedComplete{bawan::EngineEvent::Kind::Complete, newRequest, "Revised output",
+        false, bawan::Direction::EnglishToJapanese};
+    [delegate handleEngineEvent:revisedComplete];
+    Require([output.string isEqualToString:@"Revised output"] && copy.enabled && swap.enabled && !Flag(delegate, @"busy"),
+        @"The revised source's own completion must still enable Copy and Swap");
 }
 
 static void CheckColdRequestAndRetry(AppDelegate *delegate) {
@@ -176,6 +257,10 @@ int main() {
         [delegate setValue:panel forKey:@"translationPanel"];
         [delegate setValue:@"Checking the model…" forKey:@"modelStatus"];
         __weak AppDelegate *weakDelegate = delegate;
+        panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
+            [weakDelegate translateText:text direction:direction];
+        };
+        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
         panel.onClose = ^{ [weakDelegate cancelTranslation]; };
         [delegate buildMenus];
         [delegate updateStatus];
@@ -183,10 +268,11 @@ int main() {
         @try {
             try {
                 CheckPendingSelection(delegate, panel);
+                CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
                 CheckModelRevalidationOnRetry(delegate);
-                std::cout << "PASS: pending selection cancellation, cold load errors, warmup errors, retry isolation and model revalidation\n";
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation and model revalidation\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;
