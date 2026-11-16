@@ -468,8 +468,13 @@ static void RunSmoke(void) {
     NSUndoManager *swapUndo = source.undoManager;
     BOOL swapGroupsByEvent = swapUndo.groupsByEvent;
     swapUndo.groupsByEvent = NO;
+    [panel setOutput:@"会議は来週の月曜日に変更されました。" direction:bawan::Direction::EnglishToJapanese];
     NSString *beforeSwapOutput = [output.string copy];
-    [(NSButton *)FindView(translationRoot, @"swap") performClick:nil];
+    NSButton *swapButton = (NSButton *)FindView(translationRoot, @"swap");
+    Require(swapButton.enabled, @"The Settings regression must begin with a completed result that can be swapped");
+    [swapButton performClick:nil];
+    Require([source.string isEqualToString:beforeSwapOutput] && output.string.length == 0,
+        @"The Settings regression must establish a real Swap before testing navigation");
     [panel setOutput:@"The meeting has moved." direction:bawan::Direction::JapaneseToEnglish];
     [gear performClick:nil];
     Require(window.undoManager == nil, @"Settings must hide the Swap undo manager");

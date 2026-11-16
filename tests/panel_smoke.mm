@@ -709,9 +709,14 @@ static void RunSmoke(void) {
     [panel setOutput:@"Output from the previous request" direction:bawan::Direction::EnglishToJapanese];
     NSUInteger beforeEditCancellations = cancellations;
     [window makeFirstResponder:source];
-    [source.undoManager beginUndoGrouping];
+    [source breakUndoCoalescing];
+    Settle(window);
+    NSUndoManager *editUndo = source.undoManager;
+    BOOL editGroupsByEvent = editUndo.groupsByEvent;
+    editUndo.groupsByEvent = NO;
+    [editUndo beginUndoGrouping];
     [source insertText:japanese replacementRange:NSMakeRange(0, source.string.length)];
-    [source.undoManager endUndoGrouping];
+    [editUndo endUndoGrouping];
     Require([source.string isEqualToString:japanese] && output.string.length == 0 &&
             !copy.enabled && !swap.enabled && cancellations == beforeEditCancellations && source.undoManager.canUndo,
             @"Editing completed output must clear its translation without cancelling idle work or losing Undo");
@@ -723,12 +728,13 @@ static void RunSmoke(void) {
     Require(NSPasteboard.generalPasteboard.changeCount == editedCopyCount &&
             translations == beforeEditedSwap && [source.string isEqualToString:japanese],
             @"Copy and Swap must not use the translation from before a source edit");
-    [source.undoManager undo];
+    [editUndo undo];
     Require([source.string isEqualToString:@"Visit 東京 tomorrow."] && output.string.length == 0,
             @"Undo must restore the previous source without reviving a stale translation");
-    [source.undoManager redo];
+    [editUndo redo];
     Require([source.string isEqualToString:japanese] && output.string.length == 0,
             @"Clearing stale output must preserve the source edit's Redo history");
+    editUndo.groupsByEvent = editGroupsByEvent;
     [translate performClick:nil];
     Require(lastDirection == bawan::Direction::Automatic,
             @"Editing swapped input must restore automatic direction");
