@@ -109,9 +109,12 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     Require(source && output && translate && copy && swap, @"The edit fixture must find the real panel controls");
 
     [delegate translateText:source.string direction:bawan::Direction::Automatic];
+    BOOL groupsByEvent = source.undoManager.groupsByEvent;
+    source.undoManager.groupsByEvent = NO;
     [source.undoManager beginUndoGrouping];
     [source insertText:@"Revised queued source" replacementRange:NSMakeRange(0, source.string.length)];
     [source.undoManager endUndoGrouping];
+    source.undoManager.groupsByEvent = groupsByEvent;
     Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
         [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0 &&
         [source.string isEqualToString:@"Revised queued source"] && output.string.length == 0,
@@ -129,9 +132,11 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     Require([output.string isEqualToString:@"Original partial output"] && copy.enabled,
         @"The active request must display partial output before it is edited");
     [source breakUndoCoalescing];
+    source.undoManager.groupsByEvent = NO;
     [source.undoManager beginUndoGrouping];
     [source insertText:@"Revised active source" replacementRange:NSMakeRange(0, source.string.length)];
     [source.undoManager endUndoGrouping];
+    source.undoManager.groupsByEvent = groupsByEvent;
     Require(!Flag(delegate, @"busy") && [source.string isEqualToString:@"Revised active source"] &&
         output.string.length == 0 && !copy.enabled && !swap.enabled,
         @"Editing an active source must cancel translation and remove its partial output");
@@ -143,9 +148,11 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
         @"Late text and completion must not restore output for an edited source");
     [source.undoManager undo];
     Require([source.string isEqualToString:@"Revised queued source"] && output.string.length == 0,
-        @"Cancelling an active translation must preserve Undo without reviving its output");
+        [NSString stringWithFormat:@"Cancelling an active translation must preserve Undo without reviving its output; source=%@, output=%@",
+            source.string, output.string]);
     [source.undoManager redo];
-    Require([source.string isEqualToString:@"Revised active source"], @"Cancellation must preserve source Redo");
+    Require([source.string isEqualToString:@"Revised active source"],
+        [NSString stringWithFormat:@"Cancellation must preserve source Redo; source=%@", source.string]);
 
     [translate performClick:nil];
     uint64_t newRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
