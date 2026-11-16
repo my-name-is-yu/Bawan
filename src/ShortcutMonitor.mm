@@ -306,7 +306,17 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     const bool owned = active && key < _swallowed.size() && _swallowed[key];
     bool consumed = owned && (type == kCGEventKeyDown || type == kCGEventKeyUp);
     if (active && type == kCGEventKeyUp && key < _swallowed.size()) _swallowed[key] = false;
-    if (_suspended) {
+    const auto modifiers = ShortcutModifiersFromFlags(static_cast<NSEventModifierFlags>(CGEventGetFlags(event)), key);
+    // A nonactivating panel can own keyboard input while another app stays frontmost.
+    NSWindow *keyWindow = NSApp.keyWindow;
+    const bool nativeCommand = keyWindow.isKeyWindow && keyWindow.visible &&
+        bawan::isNativeWindowShortcut(key, modifiers);
+    if (_suspended || _settingsActive || nativeCommand) {
+        if (_settingsActive || nativeCommand) {
+            [self cancelPending];
+            [self configureGestures];
+        }
+        // Previously intercepted downs still own their repeats and release.
         if (active && type == kCGEventKeyUp) {
             __weak ShortcutMonitor *weakSelf = self;
             dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf refresh]; });
@@ -318,7 +328,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     const bawan::ShortcutEvent input = {
         type == kCGEventKeyDown ? bawan::ShortcutEvent::Kind::KeyDown :
             type == kCGEventKeyUp ? bawan::ShortcutEvent::Kind::KeyUp : bawan::ShortcutEvent::Kind::FlagsChanged,
-        key, ShortcutModifiersFromFlags(static_cast<NSEventModifierFlags>(CGEventGetFlags(event)), key),
+        key, modifiers,
         repeat, application, CGEventGetTimestamp(event)
     };
     if (_awaitingCopyRelease && type == kCGEventKeyDown && key != _copyReleaseKey) {
@@ -334,7 +344,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
             _swallowed[key] = true;
             _swallowedRevision[key] = _gestureRevision;
         }
-        if (_settingsActive) continue;
         if (result.firstPress) {
             ++_generation;
             _awaitingCopyRelease = NO;

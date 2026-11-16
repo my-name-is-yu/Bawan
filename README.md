@@ -129,6 +129,7 @@ In **Settings…**, click **Shortcut (click)** to record a new key combination a
 - Reserved app shortcuts (`⌘Return`, `⌘⇧C`, `⌘Q`, `⌘,`) and combinations already used by the other active action cannot be assigned.
 - Double-press shortcuts require both presses within 400 ms, releasing the key between presses without holding it down, pressing other keys, or switching apps.
 - Unlike the default `⌘C` ×2 (which preserves normal copy behavior), custom shortcuts are intercepted from the first press and are not forwarded to the active app even if a double-press is not completed.
+- While Bawan's window has keyboard focus, native Copy, Paste, Cut, Select All, Undo, Redo, and Close commands take priority over custom global shortcuts. Global actions pause in Settings; other shortcuts, including `⌥T` ×2, remain available in the translator.
 - Custom shortcuts for selection translation trigger a copy in the active app after key release and require Accessibility permission.
 
 ### Translation Behavior
