@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <set>
 
+#import "WindowDragChecks.h"
+
 @interface SmokeShortcutMonitor : ShortcutMonitor {
     ShortcutPreferences *_testPreferences;
     BOOL _testSuspended;
@@ -82,6 +84,36 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
     [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     [window.contentView layoutSubtreeIfNeeded];
+}
+
+static void CheckFrameDragging(NSWindow *window) {
+    NSRect originalFrame = window.frame;
+    NSAppearance *originalAppearance = window.appearance;
+    NSView *root = window.contentView;
+    NSView *header = FindView(root, @"settings-header");
+    NSView *mascot = FindView(root, @"settings-mascot");
+    NSButton *back = (NSButton *)FindView(root, @"settings-back");
+    NSTextField *subtitle = (NSTextField *)FindView(root, @"settings-subtitle");
+    NSView *scroll = FindView(root, @"settings-scroll");
+    Require(!subtitle.editable && !subtitle.selectable &&
+        window.movable && window.movableByWindowBackground,
+        @"The Settings masthead must share native background dragging with its decorative label");
+    for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
+                            [NSValue valueWithSize:NSMakeSize(640, 420)]]) {
+        [window setContentSize:size.sizeValue];
+        for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+            window.appearance = [NSAppearance appearanceNamed:appearance];
+            Settle(window);
+            CheckBackgroundDragGrid(window, header, @[mascot, back]);
+            CheckBackgroundDragCenter(window, subtitle, YES);
+            CheckBackgroundDragCenter(window, mascot, NO);
+            CheckBackgroundDragCenter(window, back, NO);
+            CheckBackgroundDragPoint(window, scroll, NSMakePoint(8, NSMidY(scroll.bounds)), NO, scroll);
+        }
+    }
+    window.appearance = originalAppearance;
+    [window setFrame:originalFrame display:NO];
+    Settle(window);
 }
 
 static void RequireOrdinaryWindow(NSWindow *window, NSString *stage) {
@@ -433,6 +465,7 @@ static void RunSmoke(void) {
     Require(ownedWindows == 1, @"Settings must not create a second Bawan window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
     Capture(window, @"entry");
+    CheckFrameDragging(window);
     Require(window.firstResponder == back,
         [NSString stringWithFormat:@"Entering Settings must focus Back rather than the detached translation editor: %@",
             window.firstResponder]);

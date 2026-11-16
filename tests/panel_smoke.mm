@@ -7,6 +7,8 @@
 #include <iostream>
 #include <stdexcept>
 
+#import "WindowDragChecks.h"
+
 static void Require(BOOL condition, NSString *message) {
     if (!condition) throw std::runtime_error(message.UTF8String);
 }
@@ -42,6 +44,56 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
     [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     [window.contentView layoutSubtreeIfNeeded];
+}
+
+static void CheckFrameDragging(NSWindow *window) {
+    NSRect originalFrame = window.frame;
+    NSAppearance *originalAppearance = window.appearance;
+    NSView *header = Control(window, @"header", NSView.class);
+    NSView *footer = Control(window, @"footer", NSView.class);
+    NSView *mascot = Control(window, @"mascot", NSView.class);
+    NSButton *settings = (NSButton *)Control(window, @"settings", NSButton.class);
+    NSButton *translate = (NSButton *)Control(window, @"translate", NSButton.class);
+    NSButton *copy = (NSButton *)Control(window, @"copy", NSButton.class);
+    NSView *swap = Control(window, @"swap", NSButton.class);
+    NSTextField *hint = (NSTextField *)Control(window, @"shortcut-hint", NSTextField.class);
+    Require(!hint.hidden && !hint.editable && !hint.selectable && !translate.enabled && !copy.enabled,
+        @"The frame drag fixture must include its decorative hint and disabled footer buttons");
+    Require(window.movable && window.movableByWindowBackground &&
+        (window.styleMask & NSWindowStyleMaskResizable) != 0,
+        @"Frame dragging must use the movable, natively resizable window");
+    for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
+                            [NSValue valueWithSize:NSMakeSize(640, 420)]]) {
+        [window setContentSize:size.sizeValue];
+        for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+            window.appearance = [NSAppearance appearanceNamed:appearance];
+            Settle(window);
+            CheckBackgroundDragGrid(window, header, @[mascot, settings]);
+            CheckBackgroundDragGrid(window, footer, @[translate, copy]);
+            CheckBackgroundDragCenter(window, hint, YES);
+            for (NSView *control in @[mascot, settings, translate, copy, swap]) {
+                CheckBackgroundDragCenter(window, control, NO);
+            }
+            for (NSString *identifier in @[@"source", @"output"]) {
+                NSTextView *text = (NSTextView *)Control(window, identifier, NSTextView.class);
+                NSScrollView *scroll = text.enclosingScrollView;
+                CheckBackgroundDragCenter(window, scroll, NO);
+                CheckBackgroundDragPoint(window, scroll,
+                    NSMakePoint(2, NSMidY(scroll.bounds)), NO, scroll);
+                NSClipView *clip = scroll.contentView;
+                for (NSValue *point in @[
+                        [NSValue valueWithPoint:NSMakePoint(NSMidX(clip.bounds), NSMinY(clip.bounds) + 2)],
+                        [NSValue valueWithPoint:NSMakePoint(NSMidX(clip.bounds), NSMaxY(clip.bounds) - 2)],
+                        [NSValue valueWithPoint:NSMakePoint(NSMaxX(clip.bounds) - 2, NSMidY(clip.bounds))]]) {
+                    CheckBackgroundDragPoint(window, clip, point.pointValue, NO, clip);
+                }
+                Require(text.selectable, @"Frame dragging must preserve text selection in both panes");
+            }
+        }
+    }
+    window.appearance = originalAppearance;
+    [window setFrame:originalFrame display:NO];
+    Settle(window);
 }
 
 static void RequireOrdinaryWindow(NSWindow *window, NSString *stage) {
@@ -563,6 +615,7 @@ static void RunSmoke(void) {
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
     Require(!footerHint.hidden, @"The input hint must be visible while the translator is empty and idle");
+    CheckFrameDragging(window);
     [panel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
     Require(footerHint.hidden, @"The empty-input hint must not compete with an active translation");
     [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
@@ -584,11 +637,14 @@ static void RunSmoke(void) {
     [panel showForSelection:english];
     Require(translate.enabled && !copy.enabled && !swap.enabled && footerHint.hidden,
             @"Nonempty source must enable translation only");
+    CheckBackgroundDragCenter(window, translate, NO);
     CheckPressedPrimaryContrast(window, translate);
     [translate performClick:nil];
     Require(lastDirection == bawan::Direction::Automatic && [lastInput isEqualToString:english],
             @"Fresh input must translate automatically");
     [panel setOutput:japanese direction:bawan::Direction::EnglishToJapanese];
+    CheckBackgroundDragCenter(window, copy, NO);
+    CheckBackgroundDragCenter(window, swap, NO);
     NSUInteger beforeSwap = translations;
     [swap performClick:nil];
     Require(translations == beforeSwap + 1 && [source.string isEqualToString:japanese] &&
