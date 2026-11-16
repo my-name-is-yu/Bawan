@@ -72,8 +72,6 @@ static void testBindings() {
             "normalization preserves chosen modifiers");
 }
 
-// The same timing and interruption contract applies to intercepted shortcuts
-// and passive Cmd-C. Only the intercepted shortcut consumes matching events.
 static void testDoublePress() {
     struct Mode { ShortcutBinding binding; bool consumed; };
     const Mode modes[] = {{defaultShortcuts()[1], true}, {defaultShortcuts()[0], false}};

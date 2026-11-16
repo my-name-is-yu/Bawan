@@ -22,7 +22,6 @@ static void requireEvents(const std::vector<EngineEvent> &actual,
 
 int main() {
     bawan::EngineEventMailbox mailbox;
-    // Simulate a blocked UI while all 4,096 generated tokens arrive.
     for (std::size_t n = 1; n <= 4096; ++n) {
         require(mailbox.push({Kind::Text, 1, std::string(n * 4, 'x'), false,
                              bawan::Direction::EnglishToJapanese}) == (n == 1));
@@ -34,10 +33,8 @@ int main() {
     require(!mailbox.push({Kind::Ready, 0, ""}));
     require(!mailbox.push({Kind::Text, 2, "old"}));
     require(!mailbox.push({Kind::Text, 2, "latest"}));
-    // Consecutive text from another request must not replace request 2's snapshot.
     require(!mailbox.push({Kind::Text, 3, "next request"}));
     require(!mailbox.push({Kind::Cancelled, 3, ""}));
-    // Returning to request 2 must not coalesce across a terminal-event barrier.
     require(!mailbox.push({Kind::Text, 2, "resumed"}));
     require(!mailbox.push({Kind::Complete, 2, "final", true,
                           bawan::Direction::EnglishToJapanese}));
@@ -51,7 +48,6 @@ int main() {
         {Kind::Error, 4, "error"}, {Kind::Idle, 0, ""},
     });
 
-    // A drain races with the producer: all terminal events arrive once, in order.
     std::atomic<bool> done{false};
     std::atomic<unsigned> scheduled{0};
     std::thread producer([&] {

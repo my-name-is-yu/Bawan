@@ -99,7 +99,6 @@ static void CheckBounds(NSWindow *window) {
     NSView *header = Control(window, @"header", NSView.class);
     NSView *mascot = Control(window, @"mascot", NSView.class);
     NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
-    // Accepted geometry in design-qa.md, independent of product style constants.
     constexpr CGFloat expectedHeaderHeight = 80;
     constexpr CGFloat expectedMascotSize = 72;
     Require(FindView(root, @"brand-name") == nil, @"The translator header must omit the wordmark");

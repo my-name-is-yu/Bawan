@@ -136,7 +136,6 @@ static void CheckBounds(NSWindow *window) {
     NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
     NSView *back = FindView(root, @"settings-back");
     NSRect backFrame = [back convertRect:back.bounds toView:header];
-    // Accepted geometry in design-qa.md, independent of product style constants.
     constexpr CGFloat expectedHeaderHeight = 80;
     constexpr CGFloat expectedMascotSize = 72;
     Require(FindView(root, @"settings-brand-name") == nil, @"The Settings header must omit the wordmark");
@@ -585,7 +584,6 @@ static void RunSmoke(void) {
     Settle(window);
     Require(window.keyWindow,
         @"The permission-refresh fixture requires the translator to be key before reopening Settings");
-    // The permission change reaches cached availability only when refreshed.
     monitor.permissionsGranted = YES;
     [panel showSettings:settings];
     Settle(window);

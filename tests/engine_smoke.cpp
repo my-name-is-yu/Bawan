@@ -166,7 +166,6 @@ int main(int argc, char ** argv) {
         }
         const auto invitation = completed(events, engine.translate("You're welcome to join.", bawan::Direction::Automatic),
                                           bawan::Direction::EnglishToJapanese);
-        // This welcomes participation, rather than replying to someone's thanks.
         if (invitation.find("参加") == std::string::npos && invitation.find("加わ") == std::string::npos &&
             invitation.find("仲間") == std::string::npos) {
             throw std::runtime_error("Short invitation lost its meaning: " + invitation);
