@@ -4,6 +4,7 @@
 
 namespace {
 constexpr CFTimeInterval HoverDuration = 0.28;
+constexpr CGFloat WindowDragThreshold = 4;
 NSString *const HoverKey = @"bawan.hover";
 
 CGPathRef EarPath(BOOL right, CGSize size, BOOL bodyCutout) {
@@ -86,6 +87,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     CALayer *_leftLid;
     CALayer *_rightLid;
     BOOL _inside;
+    NSEvent *_pendingClick;
     NSUInteger _nextMotion;
     NSUInteger _hoverGeneration;
 }
@@ -214,11 +216,29 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
 - (void)mouseEntered:(NSEvent *)event {
     if (_inside) return;
     _inside = YES;
+    if (_pendingClick) return;
     [self playNextAnimation];
 }
 - (void)mouseDown:(NSEvent *)event {
     _inside = YES;
-    [self playNextAnimation];
+    _pendingClick = self.window.visible && !self.hiddenOrHasHiddenAncestor ? event : nil;
+}
+- (void)mouseDragged:(NSEvent *)event {
+    if (!_pendingClick) return;
+    CGFloat dx = event.locationInWindow.x - _pendingClick.locationInWindow.x;
+    CGFloat dy = event.locationInWindow.y - _pendingClick.locationInWindow.y;
+    if (dx * dx + dy * dy < WindowDragThreshold * WindowDragThreshold) return;
+    NSEvent *mouseDown = _pendingClick;
+    _pendingClick = nil;
+    if (!self.window.visible || self.hiddenOrHasHiddenAncestor) return;
+    [self.window performWindowDragWithEvent:mouseDown];
+}
+- (void)mouseUp:(NSEvent *)event {
+    BOOL click = _pendingClick != nil;
+    _pendingClick = nil;
+    if (click && NSPointInRect([self convertPoint:event.locationInWindow fromView:nil], self.bounds)) {
+        [self playNextAnimation];
+    }
 }
 - (void)playNextAnimation {
     if (!self.window.visible || self.hiddenOrHasHiddenAncestor ||
@@ -269,8 +289,13 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     [_rightLid addAnimation:blink forKey:HoverKey];
     [CATransaction commit];
 }
-- (void)mouseExited:(NSEvent *)event { [self resetHoverAnimation]; }
+- (void)mouseExited:(NSEvent *)event {
+    _inside = NO;
+    ++_hoverGeneration;
+    [self clearHoverAnimations];
+}
 - (void)resetHoverAnimation {
+    _pendingClick = nil;
     _inside = NO;
     ++_hoverGeneration;
     [self clearHoverAnimations];
@@ -281,15 +306,22 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     }
 }
 - (void)viewWillMoveToWindow:(NSWindow *)window {
-    if (window != self.window) [self resetHoverAnimation];
+    if (window != self.window) {
+        [self resetHoverAnimation];
+        [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillCloseNotification object:self.window];
+        if (window) [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowWillClose:)
+            name:NSWindowWillCloseNotification object:window];
+    }
     [super viewWillMoveToWindow:window];
 }
+- (void)windowWillClose:(NSNotification *)notification { [self resetHoverAnimation]; }
 - (void)viewDidHide { [super viewDidHide]; [self resetHoverAnimation]; }
 - (void)viewWillStartLiveResize { [super viewWillStartLiveResize]; [self resetHoverAnimation]; }
 - (void)accessibilityChanged:(NSNotification *)notification {
     if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) [self resetHoverAnimation];
 }
 - (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
     [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
 }
 @end
