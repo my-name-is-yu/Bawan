@@ -90,7 +90,6 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 
 @implementation BawanSurfaceView
 - (BOOL)isFlipped { return YES; }
-- (BOOL)mouseDownCanMoveWindow { return YES; }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
