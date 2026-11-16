@@ -712,9 +712,11 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 }
 
 - (void)textDidChange:(NSNotification *)notification {
+    if (notification.object != _source) return;
+    if (_busy && self.onCancel) self.onCancel();
     _inputDirection = bawan::Direction::Automatic;
     _source.needsDisplay = YES;
-    [self updateButtons];
+    [self setOutput:@"" direction:bawan::Direction::Automatic];
 }
 - (void)windowWillClose:(NSNotification *)notification {
     [self showTranslation];
