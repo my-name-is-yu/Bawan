@@ -23,7 +23,8 @@ static const char ModelSHA256[] =
 enum class Verification { Valid, Invalid, Failed, Cancelled };
 
 static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generation,
-                                uint64_t expectedGeneration, NSString **reason) {
+                                uint64_t expectedGeneration, int64_t expectedSize,
+                                const char *expectedSHA256, NSString **reason) {
     std::unique_ptr<FILE, decltype(&std::fclose)> file(
         std::fopen(url.fileSystemRepresentation, "rb"), &std::fclose);
     if (!file) {
@@ -35,7 +36,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         *reason = @"Unable to check the model file size.";
         return Verification::Failed;
     }
-    if (!S_ISREG(info.st_mode) || info.st_size != ModelSize) {
+    if (!S_ISREG(info.st_mode) || info.st_size != expectedSize) {
         *reason = @"The model file size is incorrect.";
         return Verification::Invalid;
     }
@@ -68,7 +69,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         hex[i * 2 + 1] = digits[digest[i] & 0x0f];
     }
     hex[sizeof(hex) - 1] = '\0';
-    if (total != static_cast<size_t>(ModelSize) || std::strcmp(hex, ModelSHA256) != 0) {
+    if (total != static_cast<size_t>(expectedSize) || std::strcmp(hex, expectedSHA256) != 0) {
         *reason = @"The model file failed SHA256 verification.";
         return Verification::Invalid;
     }
@@ -80,17 +81,30 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSURLSession *_session;
     NSURLSessionDownloadTask *_task;
     NSURL *_modelURL;
-    NSURL *_verifiedURL;
+    NSFileManager *_files;
+    int64_t _expectedSize;
+    NSString *_expectedSHA256;
     dispatch_queue_t _verificationQueue;
     double _lastReportedFraction;
 }
+- (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
+                            SHA256:(NSString *)expectedSHA256;
 @end
 
 @implementation ModelStore
 
 - (instancetype)init {
+    return [self initWithFileManager:NSFileManager.defaultManager expectedSize:ModelSize
+                             SHA256:@(ModelSHA256)];
+}
+
+- (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
+                            SHA256:(NSString *)expectedSHA256 {
     self = [super init];
     if (self) {
+        _files = files;
+        _expectedSize = expectedSize;
+        _expectedSHA256 = [expectedSHA256 copy];
         _generation.store(0);
         _verificationQueue = dispatch_queue_create("local.bawan.model-verification",
             dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
@@ -112,7 +126,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     [self cancel];
     const uint64_t generation = _generation.load();
     _lastReportedFraction = -1;
-    NSFileManager *files = NSFileManager.defaultManager;
+    NSFileManager *files = _files;
     NSError *error = nil;
     NSURL *support = [files URLForDirectory:NSApplicationSupportDirectory
                                  inDomain:NSUserDomainMask
@@ -132,15 +146,10 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         }
     }
     if ([files fileExistsAtPath:_modelURL.path]) {
-        if ([_verifiedURL isEqual:_modelURL]) {
-            if (self.onReady) self.onReady(_modelURL);
-            return;
-        }
         [self reportProgress:0 message:@"Checking the saved model…" generation:generation];
         [self verifyURL:_modelURL downloaded:NO generation:generation];
         return;
     }
-    _verifiedURL = nil;
     [self reportProgress:0 message:@"Downloading the model…" generation:generation];
     if (_generation.load() != generation) return;
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
@@ -167,9 +176,10 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     dispatch_async(_verificationQueue, ^{
         @autoreleasepool {
             NSString *reason = nil;
-            const Verification result = VerifyModel(url, self->_generation, generation, &reason);
+            const Verification result = VerifyModel(url, self->_generation, generation,
+                self->_expectedSize, self->_expectedSHA256.UTF8String, &reason);
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSFileManager *files = NSFileManager.defaultManager;
+                NSFileManager *files = self->_files;
                 if (self->_generation.load() != generation || result == Verification::Cancelled) {
                     if (downloaded) [files removeItemAtURL:url error:nil];
                     return;
@@ -196,7 +206,6 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                         return;
                     }
                 }
-                self->_verifiedURL = destination;
                 [self reportProgress:1 message:@"Model verification complete." generation:generation];
                 if (self->_generation.load() == generation && self.onReady) self.onReady(destination);
             });
@@ -208,7 +217,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     didWriteData:(int64_t)bytesWritten totalBytesWritten:(int64_t)totalBytesWritten
     totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {
     if (session != _session || downloadTask != _task) return;
-    const double fraction = std::min(1.0, static_cast<double>(totalBytesWritten) / ModelSize);
+    const double fraction = std::min(1.0, static_cast<double>(totalBytesWritten) / _expectedSize);
     if (fraction - _lastReportedFraction >= 0.01 || fraction == 1) {
         _lastReportedFraction = fraction;
         [self reportProgress:fraction
@@ -237,7 +246,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSURL *temporary = [[_modelURL URLByDeletingLastPathComponent]
         URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", NSUUID.UUID.UUIDString]];
     NSError *error = nil;
-    if (![NSFileManager.defaultManager moveItemAtURL:location toURL:temporary error:&error]) {
+    if (![_files moveItemAtURL:location toURL:temporary error:&error]) {
         [self reportError:@"Unable to save the downloaded model. Check free disk space and folder permissions."
                generation:generation];
         return;
