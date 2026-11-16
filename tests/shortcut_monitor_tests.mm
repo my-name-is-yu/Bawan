@@ -62,7 +62,8 @@ int main() {
         [panel makeKeyWindow];
         require(NSApp.keyWindow == panel && panel.isKeyWindow && panel.visible,
                 "nonactivating panel owns keyboard input");
-        require(!NSApp.active, "native commands are protected even while the app is inactive");
+        // Hosted AppKit may reactivate the app despite deactivate; the key-window
+        // boundary is established here, but inactive-app behavior is not.
 
         struct Command { std::uint16_t key; std::uint8_t modifiers; CGEventFlags flags; };
         const Command commands[] = {{0, bawan::Command, kCGEventFlagMaskCommand},

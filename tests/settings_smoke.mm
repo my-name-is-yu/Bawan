@@ -572,12 +572,12 @@ static void RunSmoke(void) {
     Require(login.state == NSControlStateValueOn && hint.hidden,
         @"Enabled service must show on and clear approval feedback");
     [panel showTranslation];
-    [window makeKeyAndOrderFront:nil];
-    Settle(window);
-    Require(window.keyWindow,
-        @"The permission-refresh fixture requires the translator to be key before reopening Settings");
     monitor.permissionsGranted = YES;
     [panel showSettings:settings];
+    // Hosted runners may withhold key-window focus. Drive the same real
+    // delegate lifecycle used below rather than depending on window-server focus.
+    [window.delegate windowDidBecomeKey:
+        [NSNotification notificationWithName:NSWindowDidBecomeKeyNotification object:window]];
     Settle(window);
     monitor.permissionsGranted = NO;
     Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
