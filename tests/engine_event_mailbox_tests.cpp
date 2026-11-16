@@ -8,37 +8,48 @@ using bawan::EngineEvent;
 using Kind = EngineEvent::Kind;
 static void require(bool value) { if (!value) std::abort(); }
 
+static void requireEvents(const std::vector<EngineEvent> &actual,
+                          const std::vector<EngineEvent> &expected) {
+    require(actual.size() == expected.size());
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        require(actual[i].kind == expected[i].kind &&
+                actual[i].requestId == expected[i].requestId &&
+                actual[i].text == expected[i].text &&
+                actual[i].truncated == expected[i].truncated &&
+                actual[i].direction == expected[i].direction);
+    }
+}
+
 int main() {
     bawan::EngineEventMailbox mailbox;
     // Simulate a blocked UI while all 4,096 generated tokens arrive.
-    std::size_t oldBytes = 0;
     for (std::size_t n = 1; n <= 4096; ++n) {
-        oldBytes += n * 4;
-        require(mailbox.push({Kind::Text, 1, std::string(n * 4, 'x')}) == (n == 1));
+        require(mailbox.push({Kind::Text, 1, std::string(n * 4, 'x'), false,
+                             bawan::Direction::EnglishToJapanese}) == (n == 1));
     }
-    auto events = mailbox.drain();
-    require(events.size() == 1 && events[0].text.size() == 16384);
-    std::cout << "stalled_ui_old_payload_bytes=" << oldBytes
-              << " new_payload_bytes=" << events[0].text.size() << '\n';
+    requireEvents(mailbox.drain(), {{Kind::Text, 1, std::string(16384, 'x'), false,
+                                    bawan::Direction::EnglishToJapanese}});
 
     require(mailbox.push({Kind::Loading, 0, ""}));
     require(!mailbox.push({Kind::Ready, 0, ""}));
     require(!mailbox.push({Kind::Text, 2, "old"}));
     require(!mailbox.push({Kind::Text, 2, "latest"}));
-    EngineEvent complete{Kind::Complete, 2, "final", true, bawan::Direction::EnglishToJapanese};
-    require(!mailbox.push(complete));
+    // Consecutive text from another request must not replace request 2's snapshot.
     require(!mailbox.push({Kind::Text, 3, "next request"}));
     require(!mailbox.push({Kind::Cancelled, 3, ""}));
+    // Returning to request 2 must not coalesce across a terminal-event barrier.
+    require(!mailbox.push({Kind::Text, 2, "resumed"}));
+    require(!mailbox.push({Kind::Complete, 2, "final", true,
+                          bawan::Direction::EnglishToJapanese}));
     require(!mailbox.push({Kind::Error, 4, "error"}));
     require(!mailbox.push({Kind::Idle, 0, ""}));
-    events = mailbox.drain();
-    require(events.size() == 8);
-    require(events[0].kind == Kind::Loading && events[1].kind == Kind::Ready);
-    require(events[2].text == "latest");
-    require(events[3].kind == Kind::Complete && events[3].text == "final" &&
-            events[3].truncated && events[3].direction == bawan::Direction::EnglishToJapanese);
-    require(events[4].requestId == 3 && events[5].kind == Kind::Cancelled &&
-            events[6].kind == Kind::Error && events[7].kind == Kind::Idle);
+    requireEvents(mailbox.drain(), {
+        {Kind::Loading, 0, ""}, {Kind::Ready, 0, ""},
+        {Kind::Text, 2, "latest"}, {Kind::Text, 3, "next request"},
+        {Kind::Cancelled, 3, ""}, {Kind::Text, 2, "resumed"},
+        {Kind::Complete, 2, "final", true, bawan::Direction::EnglishToJapanese},
+        {Kind::Error, 4, "error"}, {Kind::Idle, 0, ""},
+    });
 
     // A drain races with the producer: all terminal events arrive once, in order.
     std::atomic<bool> done{false};

@@ -99,17 +99,20 @@ static void CheckBounds(NSWindow *window) {
     NSView *header = Control(window, @"header", NSView.class);
     NSView *mascot = Control(window, @"mascot", NSView.class);
     NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
+    // Accepted geometry in design-qa.md, independent of product style constants.
+    constexpr CGFloat expectedHeaderHeight = 80;
+    constexpr CGFloat expectedMascotSize = 72;
     Require(FindView(root, @"brand-name") == nil, @"The translator header must omit the wordmark");
-    Require(std::abs(header.bounds.size.height - BawanHeaderHeight) < 1 &&
-            std::abs(mascot.bounds.size.width - BawanBrandMarkSize) < 1 &&
-            std::abs(mascot.bounds.size.height - BawanBrandMarkSize) < 1 &&
+    Require(std::abs(header.bounds.size.height - expectedHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - expectedMascotSize) < 1 &&
+            std::abs(mascot.bounds.size.height - expectedMascotSize) < 1 &&
             std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
             std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1,
             [NSString stringWithFormat:
         @"The translator mascot must retain its size and stay centered in the header: "
         @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f",
-        NSStringFromRect(header.bounds), BawanHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), BawanBrandMarkSize]);
+        NSStringFromRect(header.bounds), expectedHeaderHeight, NSStringFromRect(mascot.bounds),
+        NSStringFromRect(mascotFrame), expectedMascotSize]);
     NSView *settings = Control(window, @"settings", NSButton.class);
     NSRect settingsFrame = [settings convertRect:settings.bounds toView:header];
     Require(NSContainsRect(header.bounds, mascotFrame) && !NSIntersectsRect(mascotFrame, settingsFrame),

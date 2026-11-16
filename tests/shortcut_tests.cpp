@@ -72,50 +72,101 @@ static void testBindings() {
             "normalization preserves chosen modifiers");
 }
 
+// The same timing and interruption contract applies to intercepted shortcuts
+// and passive Cmd-C. Only the intercepted shortcut consumes matching events.
 static void testDoublePress() {
+    struct Mode { ShortcutBinding binding; bool consumed; };
+    const Mode modes[] = {{defaultShortcuts()[1], true}, {defaultShortcuts()[0], false}};
+    for (const auto &mode : modes) {
+        ShortcutGesture gesture;
+        const auto matching = [&](Kind kind, std::uint64_t time, std::int64_t app = 10, bool repeat = false) {
+            return event(kind, time, mode.binding.keyCode, mode.binding.modifiers, app, repeat);
+        };
+        struct Timing { std::uint64_t second; bool triggers; };
+        for (const auto &timing : {Timing{500, true}, Timing{501, false}, Timing{90, false}}) {
+            gesture.configure(mode.binding, mode.consumed);
+            auto result = gesture.handle(matching(Kind::KeyDown, 100));
+            require(result.firstPress && !result.triggered && result.consumed == mode.consumed,
+                    "first tap arms without triggering, preserving active/passive delivery");
+            result = gesture.handle(matching(Kind::KeyUp, 150));
+            require(result.released && !result.triggered && result.consumed == mode.consumed,
+                    "key release is reported without triggering or changing delivery");
+            result = gesture.handle(matching(Kind::KeyDown, timing.second));
+            require(result.triggered == timing.triggers && result.firstPress == !timing.triggers &&
+                    result.consumed == mode.consumed,
+                    "400ms is inclusive; 401ms and backwards time begin a new pair");
+            if (!timing.triggers) {
+                gesture.handle(matching(Kind::KeyUp, timing.second + 10));
+                require(gesture.handle(matching(Kind::KeyDown, timing.second + 20)).triggered,
+                        "an expired or backwards interval can immediately form a fresh pair");
+            }
+            result = gesture.handle(matching(Kind::KeyDown, timing.second + 21, 10, true));
+            require(!result.triggered && result.consumed == mode.consumed,
+                    "a held repeat never retriggers or changes event delivery");
+            gesture.handle(matching(Kind::KeyUp, timing.second + 30));
+            require(gesture.handle(matching(Kind::KeyDown, timing.second + 50)).firstPress,
+                    "after a completed pair or a held repeat, the next tap starts fresh");
+        }
+
+        gesture.configure(mode.binding, mode.consumed);
+        gesture.handle(matching(Kind::KeyDown, 100));
+        auto result = gesture.handle(matching(Kind::KeyDown, 200));
+        require(!result.triggered && result.consumed == mode.consumed, "two downs require a key release");
+        result = gesture.handle(matching(Kind::KeyDown, 250, 10, true));
+        require(!result.triggered && result.consumed == mode.consumed, "a long hold retains event delivery");
+        gesture.handle(matching(Kind::KeyUp, 300));
+        require(gesture.handle(matching(Kind::KeyDown, 350)).firstPress, "long hold cancels the old pair");
+
+        for (auto interruption : {
+                event(Kind::KeyDown, 175, 0, mode.binding.modifiers),
+                event(Kind::KeyDown, 175, mode.binding.keyCode, 0),
+                event(Kind::KeyDown, 175, mode.binding.keyCode, Shift),
+                event(Kind::KeyDown, 175, mode.binding.keyCode, std::uint8_t(mode.binding.modifiers | Shift)),
+                event(Kind::KeyDown, 175, mode.binding.keyCode, std::uint8_t(Command | Option))}) {
+            gesture.configure(mode.binding, mode.consumed);
+            gesture.handle(matching(Kind::KeyDown, 100));
+            gesture.handle(matching(Kind::KeyUp, 150));
+            require(!gesture.handle(interruption).triggered, "other keys or modifiers cannot complete a pair");
+            gesture.handle(event(Kind::KeyUp, 200, interruption.keyCode, interruption.modifiers));
+            require(gesture.handle(matching(Kind::KeyDown, 250)).firstPress,
+                    "other keys and mismatched chords cancel the old pair");
+        }
+
+        for (const bool switchOnRelease : {false, true}) {
+            gesture.configure(mode.binding, mode.consumed);
+            gesture.handle(matching(Kind::KeyDown, 100));
+            result = gesture.handle(matching(Kind::KeyUp, 150, switchOnRelease ? 20 : 10));
+            require(result.released && result.consumed == mode.consumed,
+                    "an application switch cannot leak an intercepted key-up or consume passive copy");
+            require(gesture.handle(matching(Kind::KeyDown, 250, 20)).firstPress,
+                    "an application switch disarms the old pair, during or after release");
+            gesture.handle(matching(Kind::KeyUp, 270, 20));
+            require(gesture.handle(matching(Kind::KeyDown, 300, 20)).triggered,
+                    "the new application can form a fresh pair");
+        }
+
+        gesture.configure(mode.binding, mode.consumed);
+        gesture.handle(matching(Kind::KeyDown, 100));
+        gesture.cancel();
+        require(gesture.handle(matching(Kind::KeyUp, 150)).consumed == mode.consumed,
+                "cancellation retains ownership of intercepted key-up and leaves copy passive");
+        require(gesture.handle(matching(Kind::KeyDown, 200)).firstPress, "explicit cancellation disarms");
+        gesture.reset();
+        require(gesture.handle(matching(Kind::KeyDown, 250)).firstPress, "explicit reset disarms and releases held state");
+    }
+}
+
+static void testModifierRelease() {
     ShortcutGesture gesture;
     const auto binding = defaultShortcuts()[1];
-    gesture.configure(binding, true);
-    auto result = gesture.handle(event(Kind::KeyDown, 100));
-    require(result.firstPress && result.consumed && !result.triggered, "first Option-T is reserved but does not trigger");
-    result = gesture.handle(event(Kind::KeyUp, 150));
-    require(result.released && result.consumed, "release is swallowed with its down event");
-    result = gesture.handle(event(Kind::KeyDown, 500));
-    require(result.triggered && !result.firstPress && result.consumed, "400ms boundary triggers");
-    require(!gesture.handle(event(Kind::KeyDown, 501, 17, Option, 10, true)).triggered,
-            "repeat does not retrigger");
-    gesture.handle(event(Kind::KeyUp, 520));
-    require(gesture.handle(event(Kind::KeyDown, 550)).firstPress, "third tap starts a new pair");
-
-    gesture.configure(binding, true);
-    gesture.handle(event(Kind::KeyDown, 100));
-    require(!gesture.handle(event(Kind::KeyDown, 200)).triggered, "a release is required");
-    require(gesture.handle(event(Kind::KeyDown, 250, 17, Option, 10, true)).consumed,
-            "long-held key stays swallowed");
-    gesture.handle(event(Kind::KeyUp, 300));
-    require(gesture.handle(event(Kind::KeyDown, 350)).firstPress, "long hold cancels the old pair");
-
-    gesture.configure(binding, true);
-    gesture.handle(event(Kind::KeyDown, 100));
-    gesture.handle(event(Kind::KeyUp, 150));
-    require(gesture.handle(event(Kind::KeyDown, 501)).firstPress, "401ms starts a new pair");
-    gesture.handle(event(Kind::KeyUp, 510));
-    require(gesture.handle(event(Kind::KeyDown, 550)).triggered, "new pair remains usable");
-
-    for (auto interruption : {
-            event(Kind::KeyDown, 175, 0),
-            event(Kind::FlagsChanged, 175, 58, 0),
-            event(Kind::FlagsChanged, 175, 56, std::uint8_t(Option | Shift)),
-            event(Kind::KeyDown, 175, 17, std::uint8_t(Option | Command))}) {
+    for (auto modifiers : {std::uint8_t(0), std::uint8_t(Option | Shift)}) {
         gesture.configure(binding, true);
         gesture.handle(event(Kind::KeyDown, 100));
         gesture.handle(event(Kind::KeyUp, 150));
-        gesture.handle(interruption);
-        gesture.handle(event(Kind::KeyUp, 200, interruption.keyCode, interruption.modifiers));
+        gesture.handle(event(Kind::FlagsChanged, 175, 58, modifiers));
         require(gesture.handle(event(Kind::KeyDown, 250)).firstPress,
-                "other keys, Option release and added modifiers cancel a pair");
+                "releasing Option or adding a modifier cancels an intercepted pair");
     }
-
     gesture.configure(binding, true);
     gesture.handle(event(Kind::KeyDown, 100));
     gesture.handle(event(Kind::FlagsChanged, 120, 58, 0));
@@ -126,29 +177,16 @@ static void testDoublePress() {
     require(gesture.handle(event(Kind::KeyDown, 200)).firstPress,
             "Option release prevents completing a prior pair");
 
-    gesture.configure(binding, true);
-    gesture.handle(event(Kind::KeyDown, 100));
-    gesture.cancel();
-    require(gesture.handle(event(Kind::KeyUp, 150)).consumed, "cancellation retains swallowed key ownership");
-    require(gesture.handle(event(Kind::KeyDown, 200)).firstPress, "explicit cancellation disarms");
-
-    gesture.configure(binding, true);
-    gesture.handle(event(Kind::KeyDown, 100));
-    require(gesture.handle(event(Kind::KeyUp, 150, 17, Option, 20)).consumed,
-            "app switches do not leak a swallowed key-up");
-    require(gesture.handle(event(Kind::KeyDown, 200, 17, Option, 20)).firstPress,
-            "app switch cancels the old pair");
-    gesture.handle(event(Kind::KeyUp, 210, 17, Option, 20));
-    require(gesture.handle(event(Kind::KeyDown, 250, 17, Option, 20)).triggered,
-            "new app can form a fresh pair");
-
-    gesture.configure(binding, true);
-    gesture.handle(event(Kind::KeyDown, 100));
-    gesture.handle(event(Kind::KeyUp, 150));
-    require(gesture.handle(event(Kind::KeyDown, 90)).firstPress, "backwards timestamps cannot complete a pair");
+    gesture.configure(defaultShortcuts()[0], false);
+    auto result = gesture.handle(event(Kind::KeyDown, 100, 8, Command));
+    require(result.firstPress && !result.consumed, "default copy first press stays passive");
+    gesture.handle(event(Kind::KeyUp, 150, 8, 0));
+    gesture.handle(event(Kind::FlagsChanged, 180, 55, 0));
+    result = gesture.handle(event(Kind::KeyDown, 300, 8, Command));
+    require(result.triggered && !result.consumed, "Command may be re-pressed between passive copies");
 }
 
-static void testSingleAndPassive() {
+static void testSinglePress() {
     ShortcutGesture gesture;
     ShortcutBinding binding{true, 40, std::uint8_t(Control | Option), 1};
     gesture.configure(binding, true);
@@ -164,78 +202,12 @@ static void testSingleAndPassive() {
     gesture.configure(binding, true);
     result = gesture.handle(event(Kind::KeyDown, 100, 40, binding.modifiers));
     require(!result.triggered && !result.consumed, "disabled shortcut restores normal typing");
-
-    gesture.configure(defaultShortcuts()[0], false);
-    result = gesture.handle(event(Kind::KeyDown, 100, 8, Command));
-    require(result.firstPress && !result.consumed, "default copy first press stays passive");
-    gesture.handle(event(Kind::KeyUp, 150, 8, 0));
-    gesture.handle(event(Kind::FlagsChanged, 180, 55, 0));
-    result = gesture.handle(event(Kind::KeyDown, 300, 8, Command));
-    require(result.triggered && !result.consumed, "Command may be re-pressed between passive copies");
-    gesture.handle(event(Kind::KeyUp, 310, 8, Command));
-    gesture.handle(event(Kind::KeyDown, 400, 8, Command));
-    gesture.handle(event(Kind::KeyUp, 410, 8, Command));
-    gesture.handle(event(Kind::KeyDown, 450, 0, Command));
-    require(gesture.handle(event(Kind::KeyDown, 480, 8, Command)).firstPress,
-            "other keys cancel passive copy pairs too");
-}
-
-// Preserve the legacy copy cases against the state machine the app actually uses.
-static void testPassiveCopyRegressions() {
-    ShortcutGesture gesture;
-    const auto copy = [](Kind kind, std::uint64_t milliseconds,
-                         std::uint8_t modifiers = Command, std::int64_t app = 10,
-                         bool repeat = false) {
-        return event(kind, milliseconds, 8, modifiers, app, repeat);
-    };
-    const auto arm = [&] {
-        gesture.configure(defaultShortcuts()[0], false);
-        require(gesture.handle(copy(Kind::KeyDown, 100)).firstPress, "copy arms");
-        require(!gesture.handle(copy(Kind::KeyUp, 150)).triggered, "copy release does not trigger");
-    };
-    arm();
-    require(gesture.handle(copy(Kind::KeyDown, 500)).triggered, "passive copy includes 400ms boundary");
-    require(!gesture.handle(copy(Kind::KeyDown, 501, Command, 10, true)).triggered,
-            "passive repeat cannot retrigger");
-    gesture.handle(copy(Kind::KeyUp, 510));
-    require(gesture.handle(copy(Kind::KeyDown, 600)).firstPress, "third copy starts a new pair");
-
-    gesture.configure(defaultShortcuts()[0], false);
-    gesture.handle(copy(Kind::KeyDown, 100));
-    require(!gesture.handle(copy(Kind::KeyDown, 200)).triggered, "passive copy requires release");
-    gesture.handle(copy(Kind::KeyDown, 250, Command, 10, true));
-    gesture.handle(copy(Kind::KeyUp, 300));
-    require(gesture.handle(copy(Kind::KeyDown, 350)).firstPress, "passive long hold disarms");
-
-    arm();
-    require(gesture.handle(copy(Kind::KeyDown, 501)).firstPress, "expired passive copy starts new interval");
-    gesture.handle(copy(Kind::KeyUp, 510));
-    require(gesture.handle(copy(Kind::KeyDown, 550)).triggered, "new passive interval remains usable");
-    for (auto modifiers : {std::uint8_t(0), std::uint8_t(Shift), std::uint8_t(Command | Shift)}) {
-        arm();
-        require(!gesture.handle(copy(Kind::KeyDown, 200, modifiers)).triggered,
-                "ordinary or modified C cannot trigger passive copy");
-        gesture.handle(copy(Kind::KeyUp, 220, modifiers));
-        require(gesture.handle(copy(Kind::KeyDown, 250)).firstPress,
-                "ordinary or modified C disarms passive copy");
-    }
-    arm();
-    require(gesture.handle(copy(Kind::KeyDown, 250, Command, 20)).firstPress,
-            "application change disarms passive copy");
-    gesture.handle(copy(Kind::KeyUp, 270, Command, 20));
-    require(gesture.handle(copy(Kind::KeyDown, 300, Command, 20)).triggered,
-            "new application can form passive copy pair");
-    arm();
-    gesture.reset();
-    require(gesture.handle(copy(Kind::KeyDown, 200)).firstPress, "explicit reset disarms passive copy");
-    arm();
-    require(gesture.handle(copy(Kind::KeyDown, 90)).firstPress, "backwards timestamps cannot trigger passive copy");
 }
 
 int main() {
     testBindings();
     testDoublePress();
-    testSingleAndPassive();
-    testPassiveCopyRegressions();
+    testModifierRelease();
+    testSinglePress();
     std::cout << "Shortcut binding and gesture tests passed\n";
 }
