@@ -154,6 +154,18 @@ static void testDoublePress() {
     }
 }
 
+static void testNativeWindowCommands() {
+    for (const std::uint16_t key : {0, 6, 7, 8, 9, 13}) {
+        require(isNativeWindowShortcut(key, Command), "native editing and Close commands keep window priority");
+        require(!isNativeWindowShortcut(key, Option), "Option bindings remain global in the translator");
+        require(!isNativeWindowShortcut(key, Command | Option), "extra modifiers preserve custom global bindings");
+    }
+    require(isNativeWindowShortcut(6, Command | Shift), "native Redo keeps window priority");
+    require(!isNativeWindowShortcut(9, Command | Shift), "unrelated shifted bindings remain global");
+    require(!isNativeWindowShortcut(17, Option), "default Open Translator remains global in the translator");
+    require(!isNativeWindowShortcut(17, Command), "unrelated Command bindings remain global");
+}
+
 static void testModifierRelease() {
     ShortcutGesture gesture;
     const auto binding = defaultShortcuts()[1];
@@ -204,6 +216,7 @@ static void testSinglePress() {
 
 int main() {
     testBindings();
+    testNativeWindowCommands();
     testDoublePress();
     testModifierRelease();
     testSinglePress();

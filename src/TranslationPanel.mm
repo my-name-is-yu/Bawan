@@ -84,14 +84,12 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *c
 @property(nonatomic, strong) NSColor *fillColor;
 @property(nonatomic, strong) NSColor *borderColor;
 @property(nonatomic) CGFloat cornerRadius;
-@property(nonatomic) BOOL draggable;
 @property(nonatomic) BOOL textured;
 @property(nonatomic) BOOL masthead;
 @end
 
 @implementation BawanSurfaceView
 - (BOOL)isFlipped { return YES; }
-- (BOOL)mouseDownCanMoveWindow { return self.draggable; }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
@@ -379,7 +377,6 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
     BawanSurfaceView *header = SurfaceView(content, @"header", BawanHeader);
     header.masthead = YES;
-    header.draggable = YES;
     BawanSurfaceView *footer = SurfaceView(content, @"footer", BawanBackground);
     footer.textured = YES;
     BawanSurfaceView *footerLine = SurfaceView(content, @"footer-divider", BawanBorder);
@@ -441,6 +438,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     _copy.imageHugsTitle = YES;
     _shortcutHint = Label(@"Type or paste text to translate", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-hint";
+    _shortcutHint.selectable = NO;
     _shortcutHint.alignment = NSTextAlignmentCenter;
     _shortcutHint.maximumNumberOfLines = 2;
     [footer addSubview:_shortcutHint];

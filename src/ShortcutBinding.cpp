@@ -10,6 +10,17 @@ bool isPassiveCopy(const ShortcutBinding& binding) {
     return binding.keyCode == 8 && binding.modifiers == Command && binding.pressCount == 2;
 }
 
+bool isNativeWindowShortcut(std::uint16_t keyCode, std::uint8_t modifiers) {
+    if (modifiers == (Command | Shift)) return keyCode == 6; // Redo
+    if (modifiers != Command) return false;
+    switch (keyCode) {
+        case 0: case 6: case 7: case 8: case 9: case 13: // Select all, Undo, Cut, Copy, Paste, Close
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::uint8_t normalizeShortcutModifiers(std::uint8_t modifiers, std::uint16_t keyCode) {
     switch (keyCode) {
         case 64: case 79: case 80: case 90: case 96: case 97: case 98:

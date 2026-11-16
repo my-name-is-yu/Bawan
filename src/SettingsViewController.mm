@@ -204,6 +204,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *subtitle = Label(@"Settings", 12, NSFontWeightRegular,
                                   BawanColor(BawanHeaderText));
     subtitle.identifier = @"settings-subtitle";
+    subtitle.selectable = NO;
     subtitle.alignment = NSTextAlignmentLeft;
     [masthead addSubview:subtitle];
 

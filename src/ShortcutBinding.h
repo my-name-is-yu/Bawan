@@ -15,6 +15,8 @@ using ShortcutBindings = std::array<ShortcutBinding, 2>;
 enum class ShortcutError { None, InvalidKey, MissingModifier, InvalidPressCount, Reserved, Duplicate };
 ShortcutBindings defaultShortcuts();
 bool isPassiveCopy(const ShortcutBinding& binding);
+// These commands belong to the native responder chain while Bawan has a key window.
+bool isNativeWindowShortcut(std::uint16_t keyCode, std::uint8_t modifiers);
 // macOS marks function/navigation keys with Fn even without a held Fn key.
 std::uint8_t normalizeShortcutModifiers(std::uint8_t modifiers, std::uint16_t keyCode);
 ShortcutError validateShortcut(const ShortcutBinding& binding);
