@@ -1,0 +1,71 @@
+name: Temporary native UX validation
+
+on:
+  push:
+    branches: ['codex/validate-ux-*']
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Record environment and exact fix parent
+        run: |
+          set -euo pipefail
+          mkdir -p validation-logs
+          {
+            uname -a
+            test "$(uname -m)" = arm64
+            sw_vers
+            xcodebuild -version
+            cmake --version
+            printf 'validation_commit=%s\n' "$(git rev-parse HEAD)"
+            printf 'fix_commit=%s\n' "$(git rev-parse HEAD^)"
+            git diff-tree --no-commit-id --name-status -r HEAD
+          } 2>&1 | tee validation-logs/environment.log
+      - name: Configure native app and model-free tests
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=OFF 2>&1 | tee validation-logs/configure.log
+      - name: Build all targets
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel 3 2>&1 | tee validation-logs/build.log
+      - name: Verify signed Apple Silicon app
+        run: |
+          set -euo pipefail
+          {
+            file build/Bawan.app/Contents/MacOS/Bawan
+            lipo build/Bawan.app/Contents/MacOS/Bawan -verify_arch arm64
+            codesign --verify --deep --strict --verbose=2 build/Bawan.app
+          } 2>&1 | tee validation-logs/codesign.log
+      - name: Run all model-free CTests
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --show-only=json-v1 > validation-logs/test-manifest.json
+          ctest --test-dir build --output-on-failure --no-tests=error --output-log "$GITHUB_WORKSPACE/validation-logs/ctest-detail.log" --output-junit "$GITHUB_WORKSPACE/validation-logs/ctest-results.xml" 2>&1 | tee validation-logs/ctest.log
+      - name: Preserve build logs, test logs and native captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-native-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            validation-logs/
+            build/CMakeCache.txt
+            build/CMakeFiles/CMakeConfigureLog.yaml
+            build/Testing/Temporary/
+            build/panel-smoke/
+            build/settings-smoke/
+            build/mascot-smoke/
