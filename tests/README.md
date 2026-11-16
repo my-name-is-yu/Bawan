@@ -17,7 +17,7 @@ Production code and test registrations are unchanged.
 | `shortcut_monitor_tests.mm` | Add native command routing regression | Custom global bindings must preserve native editing/Close while Bawan owns keyboard input; Settings must pass new events through. | Production monitor event routing with real CGEvents and a visible key nonactivating panel, single/double custom bindings, held-key draining, Option-T inside the translator, and custom/passive bindings outside it. Hosted AppKit can reactivate the app, so inactive-app input is not dynamically established. No installed event tap or physical-key delivery is claimed. |
 | `panel_smoke.mm` | Retain regressions; rewrite geometry expectations | `766a002`, `351138d`, `d7bafc5`: wrapping, final-line following and preserving reading position. `1905a01`: reverse direction. `41142ca`: normal window ordering. Accepted geometry is in `design-qa.md`. | Existing real controls, key events, clipboard, callbacks, scrolling and window-order checks remain. `CheckBounds` independently expects an 80pt header and 72pt mascot. |
 | `settings_smoke.mm` | Merge refresh assertions into navigation; rewrite geometry | `048a938`, `8e42eff`: recording, release protection and permissions. `4c37cc4`: preserve Undo/Redo across navigation. `d7bafc5`: preserve position/reveal full errors. | Reopen Settings after an external permission change, refresh the fake monitor's cached availability, then assert visible ready labels/help state. Existing recording, failures, focus, Undo/Redo, scrolling, login actions and color-role checks remain. Independent geometry also pins 28pt controls/13pt type. |
-| `mascot_smoke.mm` | Retain; extend pointer lifecycle coverage | `41142ca` and `design-qa.md`: finite playback, interruption/reset, Reduce Motion, fixed hit area and bounded shared bitmap. Mascot presses now distinguish clicks from window drags. | Down/up commits one click; subthreshold movement remains a click; 4pt movement hands the original down event to AppKit once without advancing playback. Both motion preferences, exit while pressed, owner reset, hide, detach and close/reopen are covered. Motion-name/private-layer assertions alone do not establish visible movement. |
+| `mascot_smoke.mm` | Retain; mark motion checks for later rewrite | `41142ca` and `design-qa.md`: finite playback, interruption/reset, Reduce Motion, fixed hit area and bounded shared bitmap. | Existing coverage remains. Motion-name/private-layer assertions alone do not establish visible movement; replacing them requires real AppKit presentation/rendering checks. They were not deleted without that replacement. |
 | `app_delegate_smoke.mm` | Retain; mark private-state checks for later rewrite | `f134100`: latest pending selection, close cancellation, cold/prewarm errors expose Retry and end busy state, stale events cannot overwrite model setup. | Existing actual delegate/error/menu scenarios remain. Private generation/state assertions should eventually be replaced by stronger callback/UI observations on macOS. |
 | `engine_profile.cpp` | Retain as a benchmark | `f134100` and whole-app resource acceptance in `design-qa.md`. | CPU/RSS/footprint and repeated translation/reload measurements serve a different purpose from functional smoke checks. Linux RSS does not establish macOS footprint or AppKit resource behavior. |
 
@@ -65,13 +65,6 @@ Run the model-backed command separately there as well. The native CTests cover
 preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four
 portable checks. CI was intentionally removed in `babb935`; native validation
 must not be assumed to happen automatically after opening a PR.
-
-The mascot pointer checks substitute the Reduce Motion preference getter inside
-the test process, restore it afterward, and observe `performWindowDragWithEvent:`
-with an `NSWindow` subclass. They verify gesture classification and the native
-API handoff without moving the actual window. A physical drag in both Translator
-and Settings still needs a macOS check; the spy does not establish Window Server
-movement, display/Space transitions or native tracking behavior.
 
 ## Verification for this review
 

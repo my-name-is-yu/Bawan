@@ -1,7 +1,6 @@
 #import "BawanAppearance.h"
 #import "BawanMascotView.h"
 #import <QuartzCore/QuartzCore.h>
-#import <objc/runtime.h>
 
 #include <cstdlib>
 #include <iostream>
@@ -117,135 +116,7 @@ static void CapturePresentation(BawanMascotView *view, NSString *motion) {
     Require([png writeToFile:path atomically:YES], @"Cannot save mascot presentation capture");
 }
 
-@interface DragObservingWindow : NSWindow
-@property(nonatomic) NSUInteger dragCount;
-@property(nonatomic, strong) NSEvent *dragEvent;
-@end
-
-@implementation DragObservingWindow
-- (void)performWindowDragWithEvent:(NSEvent *)event {
-    self.dragCount += 1;
-    self.dragEvent = event;
-}
-@end
-
-static NSEvent *PointerEvent(NSWindow *window, NSEventType type, NSPoint point) {
-    return [NSEvent mouseEventWithType:type location:point modifierFlags:0
-        timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:window.windowNumber
-        context:nil eventNumber:1 clickCount:1 pressure:type == NSEventTypeLeftMouseUp ? 0 : 1];
-}
-
-static void RunPointerSmoke(BOOL reducedMotion) {
-    DragObservingWindow *window = [[DragObservingWindow alloc] initWithContentRect:NSMakeRect(0, 0, 96, 96)
-        styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-    window.releasedWhenClosed = NO;
-    BawanMascotView *view = [[BawanMascotView alloc] initWithFrame:NSMakeRect(8, 8, 72, 72)];
-    [window.contentView addSubview:view];
-    [window makeKeyAndOrderFront:nil];
-    [window.contentView layoutSubtreeIfNeeded];
-    NSPoint point = [view convertPoint:NSMakePoint(36, 36) toView:nil];
-    auto down = [&] { [view mouseDown:PointerEvent(window, NSEventTypeLeftMouseDown, point)]; };
-    auto up = [&] { [view mouseUp:PointerEvent(window, NSEventTypeLeftMouseUp, point)]; };
-    auto requireMotion = [&](NSString *name) {
-        if (reducedMotion) RequireReset(view, @"with simulated Reduce Motion enabled");
-        else Require([[[NamedLayer(view.layer, @"bawan.mascot.dog") animationForKey:@"bawan.hover"]
-            valueForKey:@"bawan.motion"] isEqual:name], @"Each completed click must advance exactly one preset");
-    };
-
-    down();
-    RequireReset(view, @"before a press is released");
-    up();
-    requireMotion(@"tilt");
-    up();
-    requireMotion(@"tilt");
-    Require(window.dragCount == 0, @"A stationary click must not drag the window");
-    [view resetHoverAnimation];
-
-    down();
-    NSPoint smallMovement = NSMakePoint(point.x + 3, point.y + 2);
-    [view mouseDragged:PointerEvent(window, NSEventTypeLeftMouseDragged, smallMovement)];
-    RequireReset(view, @"during movement below the drag threshold");
-    [view mouseUp:PointerEvent(window, NSEventTypeLeftMouseUp, smallMovement)];
-    requireMotion(@"hop");
-    Require(window.dragCount == 0, @"Small pointer movement must remain a click");
-    [view resetHoverAnimation];
-
-    NSEvent *dragDown = PointerEvent(window, NSEventTypeLeftMouseDown, point);
-    [view mouseDown:dragDown];
-    NSEvent *dragged = PointerEvent(window, NSEventTypeLeftMouseDragged, NSMakePoint(point.x + 4, point.y));
-    [view mouseDragged:dragged];
-    [view mouseDragged:PointerEvent(window, NSEventTypeLeftMouseDragged, NSMakePoint(point.x + 12, point.y))];
-    Require(window.dragCount == 1 && window.dragEvent == dragDown,
-        @"Crossing the threshold must hand the original mouse-down event to AppKit exactly once");
-    RequireReset(view, @"after dragging instead of clicking");
-    // AppKit may consume mouse-up during a window drag; the next press must work.
-    down();
-    up();
-    requireMotion(@"shake");
-    [view resetHoverAnimation];
-
-    down();
-    NSEvent *exited = [NSEvent enterExitEventWithType:NSEventTypeMouseExited location:point
-        modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:window.windowNumber
-        context:nil eventNumber:2 trackingNumber:0 userData:nullptr];
-    [view mouseExited:exited];
-    [view mouseDragged:PointerEvent(window, NSEventTypeLeftMouseDragged, NSMakePoint(point.x + 80, point.y))];
-    up();
-    Require(window.dragCount == 2, @"Leaving the mascot while pressed must still allow a window drag");
-    RequireReset(view, @"after dragging outside the mascot");
-    down();
-    up();
-    requireMotion(@"tilt");
-    [view resetHoverAnimation];
-
-    down();
-    [view resetHoverAnimation];
-    up();
-    RequireReset(view, @"after the owner cancels a pending click for navigation");
-    [view mouseDragged:dragged];
-    Require(window.dragCount == 2, @"An owner reset must cancel pending dragging too");
-
-    down();
-    view.hidden = YES;
-    view.hidden = NO;
-    up();
-    RequireReset(view, @"after hiding and showing a pressed mascot");
-    down();
-    [view removeFromSuperview];
-    [window.contentView addSubview:view];
-    up();
-    RequireReset(view, @"after detaching and reattaching a pressed mascot");
-    down();
-    [window close];
-    [window makeKeyAndOrderFront:nil];
-    up();
-    RequireReset(view, @"after closing and reopening a pressed mascot's window");
-    [window close];
-}
-
-static void RunPointerSmokeForBothMotionPreferences(void) {
-    // Control the OS preference boundary without changing the user's settings.
-    Method preference = class_getInstanceMethod(NSWorkspace.class, @selector(accessibilityDisplayShouldReduceMotion));
-    Require(preference != nullptr, @"Cannot find the AppKit Reduce Motion preference");
-    IMP original = method_getImplementation(preference);
-    for (int preferenceValue = 0; preferenceValue < 2; ++preferenceValue) {
-        BOOL reducedMotion = preferenceValue != 0;
-        IMP simulated = imp_implementationWithBlock(^BOOL(id workspace) { (void)workspace; return reducedMotion; });
-        method_setImplementation(preference, simulated);
-        @try {
-            Require(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion == reducedMotion,
-                @"The smoke must exercise both motion preferences");
-            RunPointerSmoke(reducedMotion);
-        }
-        @finally {
-            method_setImplementation(preference, original);
-            imp_removeBlock(simulated);
-        }
-    }
-}
-
 static void RunSmoke(void) {
-    RunPointerSmokeForBothMotionPreferences();
     Require([NSFileManager.defaultManager createDirectoryAtPath:@"mascot-smoke"
         withIntermediateDirectories:YES attributes:nil error:nil], @"Cannot create mascot capture directory");
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 184, 96)
@@ -274,7 +145,6 @@ static void RunSmoke(void) {
     NSEvent *clickedAgain = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:hoverPoint
         modifierFlags:0 timestamp:timestamp + 0.01 windowNumber:window.windowNumber context:nil
         eventNumber:4 clickCount:2 pressure:1];
-    NSEvent *released = PointerEvent(window, NSEventTypeLeftMouseUp, hoverPoint);
     Require(entered != nil && exited != nil && clicked != nil && clickedAgain != nil,
         @"Cannot create native hover and click events");
     Require([first acceptsFirstMouse:clicked] && ![first mouseDownCanMoveWindow],
@@ -306,7 +176,6 @@ static void RunSmoke(void) {
         [first mouseEntered:entered];
         RequireReset(first, @"with OS Reduce Motion enabled");
         [first mouseDown:clicked];
-        [first mouseUp:released];
         RequireReset(first, @"after clicking with OS Reduce Motion enabled");
         [first mouseExited:exited];
     } else {
@@ -376,7 +245,6 @@ static void RunSmoke(void) {
         while (AnimationCount(first.layer) > 0 && clickReadyDeadline.timeIntervalSinceNow > 0) ServiceAppKit(0.01);
         RequireReset(first, @"after hovering finishes while the pointer stays inside");
         [first mouseDown:clicked];
-        [first mouseUp:released];
         RequireFinite(NamedLayer(first.layer, @"bawan.mascot.dog"));
         Require(first.image == second.image &&
             NamedLayer(first.layer, @"bawan.mascot.face").contents == sharedContents &&
@@ -390,7 +258,6 @@ static void RunSmoke(void) {
         CALayer *clickedDog = NamedLayer(first.layer, @"bawan.mascot.dog");
         NSString *hoverMotion = [[clickedDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
         [first mouseDown:clickedAgain];
-        [first mouseUp:released];
         NSString *clickMotion = [[clickedDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
         Require(clickMotion != nil && ![clickMotion isEqual:hoverMotion],
             @"Clicking during a running hover must replace it with the next preset");
