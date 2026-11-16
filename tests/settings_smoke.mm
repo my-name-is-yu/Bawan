@@ -464,22 +464,29 @@ static void RunSmoke(void) {
     Require([source.string isEqualToString:original], @"The source edit must remain undoable after returning from Settings");
     [source.undoManager redo];
     Require([source.string isEqualToString:edited], @"Navigation must preserve the redo history too");
+    Settle(window);
+    NSUndoManager *swapUndo = source.undoManager;
+    BOOL swapGroupsByEvent = swapUndo.groupsByEvent;
+    swapUndo.groupsByEvent = NO;
     NSString *beforeSwapOutput = [output.string copy];
     [(NSButton *)FindView(translationRoot, @"swap") performClick:nil];
     [panel setOutput:@"The meeting has moved." direction:bawan::Direction::JapaneseToEnglish];
     [gear performClick:nil];
+    Require(window.undoManager == nil, @"Settings must hide the Swap undo manager");
+    [window makeFirstResponder:window];
     [NSApp sendAction:@selector(undo:) to:nil from:window];
     Require([source.string isEqualToString:beforeSwapOutput], @"Settings must not undo a hidden Swap");
     [back performClick:nil];
-    [NSApp sendAction:@selector(undo:) to:nil from:window];
+    [swapUndo undo];
     Require([source.string isEqualToString:edited] && [output.string isEqualToString:beforeSwapOutput],
         @"Swap must remain undoable after returning from Settings");
     [gear performClick:nil];
     [back performClick:nil];
-    [NSApp sendAction:@selector(redo:) to:nil from:window];
+    [swapUndo redo];
     Require([source.string isEqualToString:beforeSwapOutput] && [output.string isEqualToString:@"The meeting has moved."],
         @"Settings navigation must preserve the completed Swap's Redo too");
-    [NSApp sendAction:@selector(undo:) to:nil from:window];
+    [swapUndo undo];
+    swapUndo.groupsByEvent = swapGroupsByEvent;
     [panel setAvailable:YES busy:YES status:@"Translating…" kind:BawanStatusInformation];
     [gear performClick:nil];
     [panel setOutput:@"Hidden streaming update" direction:bawan::Direction::EnglishToJapanese];

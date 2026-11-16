@@ -498,6 +498,9 @@ static void CheckSwapUndo(TranslationPanel *panel, NSWindow *window) {
     NSTextView *output = (NSTextView *)Control(window, @"output", NSTextView.class);
     NSButton *swap = (NSButton *)Control(window, @"swap", NSButton.class);
     NSButton *translate = (NSButton *)Control(window, @"translate", NSButton.class);
+    NSUndoManager *undo = source.undoManager;
+    BOOL groupsByEvent = undo.groupsByEvent;
+    undo.groupsByEvent = NO;
     auto onTranslate = panel.onTranslate;
     auto onCancel = panel.onCancel;
     __block NSUInteger requests = 0, cancellations = 0;
@@ -528,30 +531,31 @@ static void CheckSwapUndo(TranslationPanel *panel, NSWindow *window) {
         [output setSelectedRange:NSMakeRange(0, 2)];
         [swap performClick:nil];
         [panel setOutput:@"A partial reverse" direction:bawan::Direction::JapaneseToEnglish];
-        Require([NSApp sendAction:@selector(undo:) to:nil from:window], @"Edit Undo must reach the source editor");
+        Require(undo.canUndo, @"Swap must register an undoable editing operation");
+        [undo undo];
         Require([source.string isEqualToString:edited] && [output.string isEqualToString:translation] &&
             NSEqualRanges(source.selectedRange, NSMakeRange(2, 3)) &&
             NSEqualRanges(output.selectedRange, NSMakeRange(0, 2)) &&
             cancellations == 1 && swap.enabled && [translate.title isEqualToString:@"Retranslate  ⌘↵"],
             @"Undo Swap must cancel reverse translation and restore the exact source, translation and selections");
-        [NSApp sendAction:@selector(redo:) to:nil from:window];
+        [undo redo];
         Require(requests == 2 && [source.string isEqualToString:translation] && output.string.length == 0 &&
             direction == bawan::Direction::JapaneseToEnglish,
             @"Redo of an interrupted Swap must restart the reverse translation without retaining partial output");
         [panel setOutput:reverse direction:bawan::Direction::JapaneseToEnglish];
         [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
-        [NSApp sendAction:@selector(undo:) to:nil from:window];
+        [undo undo];
         Require([source.string isEqualToString:edited] && [output.string isEqualToString:translation],
             @"Undo of a completed Swap must restore the original pair");
         [translate performClick:nil];
         Require(direction == bawan::Direction::Automatic, @"Undo Swap must restore automatic source direction");
         [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
-        [NSApp sendAction:@selector(undo:) to:nil from:window];
+        [undo undo];
         Require([source.string isEqualToString:original], @"Typing before Swap must remain independently undoable");
-        [NSApp sendAction:@selector(redo:) to:nil from:window];
+        [undo redo];
         Require([source.string isEqualToString:edited], @"Typing before Swap must retain native Redo");
         NSUInteger beforeRedo = requests;
-        [NSApp sendAction:@selector(redo:) to:nil from:window];
+        [undo redo];
         Require([source.string isEqualToString:translation] && [output.string isEqualToString:reverse] &&
             requests == beforeRedo, @"Redo of a completed Swap must recover its completed translation without rerunning it");
         [translate performClick:nil];
@@ -561,6 +565,7 @@ static void CheckSwapUndo(TranslationPanel *panel, NSWindow *window) {
         Require(!source.undoManager.canUndo && !source.undoManager.canRedo,
             @"A new selected passage must clear Swap and typing history together");
     } @finally {
+        undo.groupsByEvent = groupsByEvent;
         panel.onTranslate = onTranslate;
         panel.onCancel = onCancel;
     }

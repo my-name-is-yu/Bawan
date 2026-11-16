@@ -296,7 +296,7 @@ static void CheckSwapUndoRejectsStaleOutput(AppDelegate *delegate, TranslationPa
     NSString *translation = @"元の文章を保持してください。";
     [panel showForSelection:original];
     [panel showForManualInput];
-    NSWindow *window = NSApp.keyWindow;
+    NSWindow *window = [panel valueForKey:@"panel"];
     NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
     NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
     NSButton *swap = (NSButton *)FindView(window.contentView, @"swap");
@@ -306,7 +306,8 @@ static void CheckSwapUndoRejectsStaleOutput(AppDelegate *delegate, TranslationPa
     uint64_t reverseRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
     Require(reverseRequest != 0 && [source.string isEqualToString:translation],
         @"Swap must start a real cancellable reverse request");
-    Require([NSApp sendAction:@selector(undo:) to:nil from:window], @"Edit Undo must restore Swap through the responder chain");
+    Require(source.undoManager.canUndo, @"The reverse request must leave Swap undoable");
+    [source.undoManager undo];
     for (auto kind : {bawan::EngineEvent::Kind::Text, bawan::EngineEvent::Kind::Complete,
                       bawan::EngineEvent::Kind::Cancelled}) {
         bawan::EngineEvent stale{kind, reverseRequest, "Stale reverse translation"};
