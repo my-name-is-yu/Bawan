@@ -172,6 +172,7 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
 }
 
 static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *panel) {
+    [delegate retryModel:nil];
     [panel showForSelection:@"A source sentence"];
     NSWindow *window = nil;
     for (NSWindow *candidate in NSApp.windows) {
@@ -183,12 +184,12 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
     Require(output && status && primary, @"Retained result checks require the real panel controls");
 
     auto beginRequest = [&](uint64_t requestId) {
-        NSString *previousStatus = status.stringValue;
         [delegate setValue:@NO forKey:@"modelAvailable"];
+        [delegate setValue:@NO forKey:@"modelFailed"];
+        [delegate setValue:@"Checking the model…" forKey:@"modelStatus"];
         [delegate translateText:@"A source sentence" direction:bawan::Direction::EnglishToJapanese];
-        Require(output.string.length == 0 &&
-            (previousStatus.length == 0 || ![status.stringValue isEqualToString:previousStatus]),
-            @"A new translation must clear the retained output and its previous result notice");
+        Require(output.string.length == 0 && [status.stringValue isEqualToString:@"Checking the model…"],
+            @"A new queued translation must replace its prior result notice with model preparation status");
         [delegate setValue:nil forKey:@"pendingText"];
         [delegate setValue:@YES forKey:@"modelAvailable"];
         [delegate setValue:@(requestId) forKey:@"activeRequestId"];
@@ -201,7 +202,7 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
     };
     auto reopenAndWarm = [&](NSString *expectedOutput, NSString *expectedStatus) {
         [panel close];
-        [delegate openTranslation:nil];
+        [panel showForManualInput];
         requireResult(expectedOutput, expectedStatus);
         [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Loading, 0}];
         requireResult(expectedOutput, expectedStatus);
@@ -239,7 +240,7 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
     beginRequest(105);
     [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Complete, 105, "Complete translation"}];
     [panel close];
-    [delegate openTranslation:nil];
+    [panel showForManualInput];
     Require([output.string isEqualToString:@"Complete translation"] && status.hidden,
         @"A complete new translation must remain free of the previous result notice after reopening");
     beginRequest(106);
@@ -249,7 +250,7 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
         @"Clearing output outside a translation request must discard its result notice");
     [panel setOutput:@"Complete translation" direction:bawan::Direction::EnglishToJapanese];
     [panel close];
-    [delegate openTranslation:nil];
+    [panel showForManualInput];
     Require([output.string isEqualToString:@"Complete translation"] && status.hidden,
         @"Restoring different output must not restore a notice from the discarded result");
 
@@ -259,7 +260,7 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
     [panel setOutput:@"" direction:bawan::Direction::Automatic];
     [panel setOutput:@"Partial translation" direction:bawan::Direction::EnglishToJapanese];
     [panel close];
-    [delegate openTranslation:nil];
+    [panel showForManualInput];
     Require([output.string isEqualToString:@"Partial translation"] && status.hidden,
         @"Clearing then restoring the same output must not resurrect its old cancellation notice");
     [delegate setValue:@NO forKey:@"modelAvailable"];
