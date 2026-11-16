@@ -240,8 +240,8 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.enabled = _modelFailed;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
     if (!_busy) [_translationPanel setAvailable:_modelAvailable busy:NO
-        status:_resultStatus ?: (_modelAvailable ? @"" : _modelItem.title)
-        kind:_resultStatus ? _resultStatusKind : (_modelFailed ? BawanStatusError : BawanStatusInformation)];
+        status:_modelFailed ? _modelItem.title : (_resultStatus ?: (_modelAvailable ? @"" : _modelItem.title))
+        kind:_modelFailed ? BawanStatusError : (_resultStatus ? _resultStatusKind : BawanStatusInformation)];
     else if (!_modelAvailable) [_translationPanel setAvailable:NO busy:YES status:_modelItem.title
                                                         kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
 }
@@ -343,7 +343,7 @@ static NSString *StringFromUTF8(const std::string &text) {
             _modelStatus = StringFromUTF8(event.text);
         }
         [self updateStatus];
-        if (!_resultStatus) [_translationPanel setAvailable:_modelAvailable busy:_busy
+        if (!_resultStatus || event.kind == Kind::Error) [_translationPanel setAvailable:_modelAvailable busy:_busy
             status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _modelStatus
             kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;

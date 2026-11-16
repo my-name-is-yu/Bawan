@@ -221,6 +221,10 @@ static void CheckRetainedResultStatus(AppDelegate *delegate, TranslationPanel *p
     NSString *truncated = @"Output limit reached. The translation is incomplete. Select less text and try again.";
     requireResult(@"Limited translation", truncated);
     reopenAndWarm(@"Limited translation", truncated);
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Error, 0, "Model warm-up failed"}];
+    requireResult(@"Limited translation", @"Model warm-up failed");
+    [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Ready, 0}];
+    requireResult(@"Limited translation", truncated);
 
     beginRequest(103);
     [delegate handleEngineEvent:bawan::EngineEvent{bawan::EngineEvent::Kind::Text, 103, "Translation before error"}];
