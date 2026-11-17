@@ -3,9 +3,11 @@
 #include <cstdlib>
 #include <iostream>
 
-static void require(bool condition, const char *message) {
+static void require(bool condition, const char *message, NSString *context = nil) {
     if (!condition) {
-        std::cerr << "FAIL: " << message << '\n';
+        std::cerr << "FAIL: " << message;
+        if (context) std::cerr << " (" << context.UTF8String << ')';
+        std::cerr << '\n';
         std::exit(1);
     }
 }
@@ -19,6 +21,11 @@ int main() {
         auto initial = bawan::defaultShortcuts();
         require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "selection default");
         require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "panel default");
+        NSDictionary *defaultStored = @{@"version": @1, @"bindings": @{
+            @"translateSelection": @{@"enabled": @YES, @"keyCode": @8, @"modifiers": @1, @"pressCount": @2},
+            @"openPanel": @{@"enabled": @YES, @"keyCode": @17, @"modifiers": @2, @"pressCount": @2}}};
+        require([[defaults persistentDomainForName:suite] isEqual:@{@"globalShortcuts": defaultStored}],
+                "first launch saves the complete default settings");
         require(![preferences bindingForAction:static_cast<bawan::ShortcutAction>(initial.size())].enabled,
                 "an unknown action reads as a disabled binding instead of throwing");
 
@@ -65,20 +72,85 @@ int main() {
         require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "obsolete setting must not override selection default");
         require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "obsolete setting must not override panel default");
 
-        [defaults setObject:@{@"version": @1, @"bindings": @{
-            @"translateSelection": @{@"enabled": @YES, @"keyCode": @"C", @"modifiers": @1, @"pressCount": @2},
-            @"openPanel": @{@"enabled": @YES, @"keyCode": @17, @"modifiers": @2, @"pressCount": @1.5}}}
-            forKey:@"globalShortcuts"];
+        NSDictionary *selectionRow = @{@"enabled": @YES, @"keyCode": @2, @"modifiers": @4, @"pressCount": @1};
+        NSDictionary *panelRow = @{@"enabled": @NO, @"keyCode": @5, @"modifiers": @2, @"pressCount": @2};
+        NSDictionary *validStored = @{@"version": @1, @"bindings": @{
+            @"translateSelection": selectionRow, @"openPanel": panelRow}};
+        [defaults setObject:validStored forKey:@"globalShortcuts"];
+        [defaults setObject:@{@"keep": @[@1, @"unrelated"]} forKey:@"otherPreferences"];
+        NSDictionary *validDomain = [defaults persistentDomainForName:suite];
         preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "corrupt row falls back to current default");
-        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "fractional count falls back to default");
+        bawan::ShortcutBindings expectedStored{{{true, 2, bawan::Control, 1}, {false, 5, bawan::Option, 2}}};
+        require([preferences bindings] == expectedStored, "valid v1 loads both custom bindings including disabled state");
+        require([[defaults persistentDomainForName:suite] isEqual:validDomain], "valid v1 retains saved settings");
 
-        NSDictionary *sameRow = @{@"enabled": @YES, @"keyCode": @8, @"modifiers": @1, @"pressCount": @2};
-        [defaults setObject:@{@"version": @1, @"bindings": @{@"translateSelection": sameRow, @"openPanel": sameRow}}
+        NSDictionary *disabledDuplicate = @{@"enabled": @NO, @"keyCode": @2, @"modifiers": @4, @"pressCount": @2};
+        [defaults setObject:@{@"version": @1, @"bindings": @{
+            @"translateSelection": selectionRow, @"openPanel": disabledDuplicate}}
             forKey:@"globalShortcuts"];
         preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled, "valid stored selection survives conflict");
-        require(![preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled, "corrupt stored conflict disables duplicate reservation");
+        bawan::ShortcutBindings expectedDisabledDuplicate{{{true, 2, bawan::Control, 1}, {false, 2, bawan::Control, 2}}};
+        require([preferences bindings] == expectedDisabledDuplicate, "a disabled duplicate remains a valid stored binding");
+
+        NSMutableDictionary<NSString *, id> *rejectedPayloads = [@{
+            @"unknown version": @{@"version": @2, @"bindings": validStored[@"bindings"], @"future": @[@"preserve", @3]},
+            @"string payload": @"keep this value",
+            @"array payload": @[validStored],
+            @"number payload": @7,
+            @"missing version": @{@"bindings": validStored[@"bindings"]},
+            @"string version": @{@"version": @"1", @"bindings": validStored[@"bindings"]},
+            @"fractional version": @{@"version": @1.5, @"bindings": validStored[@"bindings"]},
+            @"missing bindings": @{@"version": @1},
+            @"non-dictionary bindings": @{@"version": @1, @"bindings": @[selectionRow, panelRow]},
+            @"missing first row": @{@"version": @1, @"bindings": @{@"openPanel": panelRow}},
+            @"missing second row": @{@"version": @1, @"bindings": @{@"translateSelection": selectionRow}},
+            @"invalid first row": @{@"version": @1, @"bindings": @{@"translateSelection": @"bad", @"openPanel": panelRow}},
+            @"invalid second row": @{@"version": @1, @"bindings": @{@"translateSelection": selectionRow, @"openPanel": @[]}},
+            @"enabled duplicate": @{@"version": @1, @"bindings": @{@"translateSelection": selectionRow, @"openPanel": selectionRow}}
+        } mutableCopy];
+        NSDictionary<NSString *, NSDictionary *> *invalidFields = @{
+            @"string enabled": @{@"enabled": @"YES"},
+            @"invalid enabled": @{@"enabled": @2},
+            @"string key": @{@"keyCode": @"D"},
+            @"unsupported key": @{@"keyCode": @52},
+            @"negative key": @{@"keyCode": @-1},
+            @"string modifiers": @{@"modifiers": @"4"},
+            @"invalid modifiers": @{@"modifiers": @16},
+            @"string count": @{@"pressCount": @"1"},
+            @"fractional count": @{@"pressCount": @1.5},
+            @"zero count": @{@"pressCount": @0}
+        };
+        for (NSString *name in invalidFields) {
+            NSMutableDictionary *row = [selectionRow mutableCopy];
+            [row addEntriesFromDictionary:invalidFields[name]];
+            rejectedPayloads[name] = @{@"version": @1, @"bindings": @{
+                @"translateSelection": row, @"openPanel": panelRow}};
+        }
+        bawan::ShortcutBinding edited{true, 5, bawan::Option, 1};
+        bawan::ShortcutBindings expectedEdited{{initial[0], edited}};
+        NSDictionary *editedStored = @{@"version": @1, @"bindings": @{
+            @"translateSelection": defaultStored[@"bindings"][@"translateSelection"],
+            @"openPanel": @{@"enabled": @YES, @"keyCode": @5, @"modifiers": @2, @"pressCount": @1}}};
+        for (NSString *name in rejectedPayloads) {
+            [defaults setObject:rejectedPayloads[name] forKey:@"globalShortcuts"];
+            NSDictionary *beforeLoad = [defaults persistentDomainForName:suite];
+            preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+            require([preferences bindings] == initial, "rejected saved settings use all defaults without partial loading", name);
+            require([[defaults persistentDomainForName:suite] isEqual:beforeLoad], "rejected saved settings preserve the entire defaults domain", name);
+
+            __block unsigned editedNotifications = 0;
+            observer = [NSNotificationCenter.defaultCenter addObserverForName:BawanShortcutsDidChangeNotification
+                object:preferences queue:nil usingBlock:^(NSNotification *) { ++editedNotifications; }];
+            require([preferences setBinding:edited forAction:bawan::ShortcutAction::OpenPanel error:&error],
+                    "explicit edit after rejected startup data is accepted", name);
+            require(error == nil && editedNotifications == 1, "explicit edit after rejected startup data notifies once", name);
+            NSMutableDictionary *expectedDomain = [beforeLoad mutableCopy];
+            expectedDomain[@"globalShortcuts"] = editedStored;
+            require([[defaults persistentDomainForName:suite] isEqual:expectedDomain], "explicit edit replaces rejected data and preserves other settings", name);
+            reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+            require([reloaded bindings] == expectedEdited, "explicit edit after rejected startup data survives reload", name);
+            [NSNotificationCenter.defaultCenter removeObserver:observer];
+        }
         require(ShortcutModifiersFromFlags(NSEventModifierFlagCommand | NSEventModifierFlagCapsLock) == bawan::Command,
                 "Caps Lock does not change chord");
         require((ShortcutModifiersFromFlags(NSEventModifierFlagFunction) & bawan::Function) != 0,

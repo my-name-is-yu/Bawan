@@ -167,15 +167,18 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
     _defaults = defaults;
     _bindings = bawan::defaultShortcuts();
     id stored = [_defaults objectForKey:PreferencesKey];
-    if ([stored isKindOfClass:NSDictionary.class]) {
+    if (stored) {
+        if (![stored isKindOfClass:NSDictionary.class]) return self;
         unsigned version = 0;
         id rows = stored[@"bindings"];
-        if (ReadInteger(stored[@"version"], 1, version) && version == 1 && [rows isKindOfClass:NSDictionary.class]) {
-            ReadBinding(rows[@"translateSelection"], _bindings[0]);
-            ReadBinding(rows[@"openPanel"], _bindings[1]);
-        }
+        if (!ReadInteger(stored[@"version"], 1, version) || version != 1 ||
+            ![rows isKindOfClass:NSDictionary.class]) return self;
+        bawan::ShortcutBindings candidate = _bindings;
+        if (!ReadBinding(rows[@"translateSelection"], candidate[0]) ||
+            !ReadBinding(rows[@"openPanel"], candidate[1]) ||
+            bawan::validateShortcuts(candidate) != bawan::ShortcutError::None) return self;
+        _bindings = candidate;
     }
-    if (bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[1].enabled = false;
     [self save];
     return self;
 }
