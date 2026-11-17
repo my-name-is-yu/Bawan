@@ -1,6 +1,7 @@
 #pragma once
 
 #import <AppKit/AppKit.h>
+#import <QuartzCore/CALayer.h>
 
 #include <cmath>
 #include <stdexcept>
@@ -53,9 +54,14 @@ inline void Check(NSButton *control, NSPoint facePoint, BOOL changesWithAppearan
     CGFloat lightFace = 0;
     for (NSAppearanceName name in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
         control.window.appearance = [NSAppearance appearanceNamed:name];
+        [control displayIfNeeded];
+        [control.layer displayIfNeeded];
         control.needsDisplay = NO;
+        Require(!control.needsDisplay && !control.layer.needsDisplay, control,
+            @"The appearance callback must start without a pending view or layer repaint");
         [control viewDidChangeEffectiveAppearance];
-        Require(control.needsDisplay, control, @"An appearance change must request repainting");
+        Require(control.needsDisplay || control.layer.needsDisplay, control,
+            @"An appearance change must request a view or layer repaint");
         for (NSNumber *enabled in @[@YES, @NO]) {
             control.enabled = enabled.boolValue;
             NSBitmapImageRep *bitmap = Render(control);
