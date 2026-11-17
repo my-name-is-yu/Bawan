@@ -79,6 +79,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_resume(_memoryPressure);
 
     _modelStore = [[ModelStore alloc] init];
+    _modelStore.onStateChange = ^(ModelStoreState state) {
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner modelDownloadStateDidChange:state];
+    };
     _modelStore.onProgress = ^(double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
         if (owner && !owner->_terminating) [owner modelFileDidProgress:progress message:message];
@@ -123,6 +127,18 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self startInitialSetup];
 }
 
+- (void)modelDownloadStateDidChange:(ModelStoreState)state {
+    switch (state) {
+        case ModelStoreDownloading: _model.fileDownloading(); break;
+        case ModelStorePaused: _model.filePaused(); break;
+        case ModelStoreVerifying: _model.fileVerifying(); break;
+        case ModelStoreIdle:
+        case ModelStoreReady:
+        case ModelStoreFailed: return;
+    }
+    [self updateStatus];
+}
+
 - (void)modelFileDidProgress:(double)progress message:(NSString *)message {
     _model.fileProgress(progress, message);
     [self updateStatus];
@@ -140,7 +156,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)modelFileDidFail:(NSString *)message {
-    _model.fileFailed(message);
+    _model.fileFailed(message, _modelStore.canResume);
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     _busy = NO;
@@ -193,7 +209,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _onboardingViewController = [[OnboardingViewController alloc]
             initWithPreferences:_shortcutPreferences monitor:_shortcut];
         __weak AppDelegate *weakSelf = self;
-        _onboardingViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
+        _onboardingViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
         _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
         _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
     }
@@ -316,7 +332,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _panelShortcutItem = [self menuItem:@"Open Translator with Double ⌥T" action:@selector(toggleShortcut:) key:@""];
     _panelShortcutItem.tag = static_cast<NSInteger>(bawan::ShortcutAction::OpenPanel);
     [menu addItem:_panelShortcutItem];
-    _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(retryModel:) key:@""];
+    _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(performModelAction:) key:@""];
     _retryItem.hidden = YES;
     [menu addItem:_retryItem];
     [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
@@ -356,8 +372,11 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelItem.title = _model.message();
     BOOL failed = [self modelFailed];
     BOOL available = [self hasVerifiedModelFile];
-    _retryItem.hidden = !failed;
-    _retryItem.enabled = failed;
+    const BawanModelSetupPhase phase = _model.phase();
+    const BOOL hasModelAction = failed || phase == BawanModelSetupDownloading || phase == BawanModelSetupPaused;
+    _retryItem.title = BawanPresentModel(phase).actionTitle;
+    _retryItem.hidden = !hasModelAction;
+    _retryItem.enabled = hasModelAction;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
     BOOL hasModelMessage = _model.phase() != BawanModelSetupReady;
     if (hasModelMessage || _showingModelStatus) {
@@ -544,6 +563,27 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateShortcutItem];
 }
 
+- (void)performModelAction:(id)sender {
+    switch (_model.phase()) {
+        case BawanModelSetupDownloading:
+            [_modelStore pause];
+            return;
+        case BawanModelSetupPaused:
+        case BawanModelSetupResumableFailure:
+            _model.beginPreparing();
+            [self updateStatus];
+            [_modelStore resume];
+            return;
+        case BawanModelSetupPreparing:
+        case BawanModelSetupReady:
+            return;
+        case BawanModelSetupNeedsDownload:
+        case BawanModelSetupFailed:
+            [self beginModelSetup];
+            return;
+    }
+}
+
 - (void)retryModel:(id)sender {
     [self cancelTranslation];
     ++_engineGeneration;
@@ -574,7 +614,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
         _settingsViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
-        _settingsViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
+        _settingsViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];

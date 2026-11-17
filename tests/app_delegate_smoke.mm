@@ -4,6 +4,7 @@
 #import "OnboardingViewController.h"
 #import "BawanAppearance.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
@@ -20,6 +21,8 @@
 - (void)ensureEngine;
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
+- (void)performModelAction:(id)sender;
+- (void)modelDownloadStateDidChange:(ModelStoreState)state;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 - (void)handleSelectionText:(NSString *)text;
 - (void)modelFileDidProgress:(double)progress message:(NSString *)message;
@@ -51,11 +54,33 @@
 @interface SetupSmokeStore : ModelStore
 @property(nonatomic) NSUInteger preparations;
 @property(nonatomic) NSUInteger revalidations;
+@property(nonatomic) NSUInteger pauses;
+@property(nonatomic) NSUInteger resumes;
+@property(nonatomic) ModelStoreState fakeState;
+@property(nonatomic) BOOL resumable;
+- (void)emitState:(ModelStoreState)state;
 @end
 
 @implementation SetupSmokeStore
 - (void)prepare { ++_preparations; }
 - (void)revalidate { ++_revalidations; ++_preparations; }
+- (ModelStoreState)state { return _fakeState; }
+- (BOOL)canResume { return _resumable; }
+- (void)emitState:(ModelStoreState)state {
+    _fakeState = state;
+    if (self.onStateChange) self.onStateChange(state);
+}
+- (void)pause {
+    ++_pauses;
+    _resumable = YES;
+    [self emitState:ModelStorePaused];
+    if (self.onProgress) self.onProgress(0.4, @"Download paused · 40%");
+}
+- (void)resume {
+    ++_resumes;
+    [self emitState:ModelStoreDownloading];
+    if (self.onProgress) self.onProgress(0.4, @"Downloading the model… 40%");
+}
 - (void)cancel {}
 @end
 
@@ -640,6 +665,109 @@ static void CheckModelLicenseSheet(void) {
     }
 }
 
+static void CheckDownloadActions(void) {
+    NSString *suite = [@"local.bawan.DownloadActionsSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults removePersistentDomainForName:suite];
+    [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+    SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] init];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:preferences forKey:@"shortcutPreferences"];
+    [delegate setValue:monitor forKey:@"shortcut"];
+    [delegate setValue:store forKey:@"modelStore"];
+    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate buildMenus];
+    __weak SetupSmokeDelegate *weakDelegate = delegate;
+    store.onStateChange = ^(ModelStoreState state) { [weakDelegate modelDownloadStateDidChange:state]; };
+    store.onProgress = ^(double progress, NSString *message) { [weakDelegate modelFileDidProgress:progress message:message]; };
+    @try {
+        [delegate startInitialSetup];
+        Require(store.preparations == 1 && delegate.licenseViews == 0,
+            @"Accepted model setup must start once before exercising transfer controls");
+        [store emitState:ModelStoreDownloading];
+        [delegate modelFileDidProgress:0.4 message:@"Downloading the model… 40%"];
+        NSMenuItem *action = [delegate valueForKey:@"retryItem"];
+        NSWindow *window = panel.window;
+        NSButton *footerControl = (NSButton *)FindView(window.contentView, @"onboarding-model-control");
+        Require(action.enabled && !action.hidden && [action.title isEqualToString:@"Pause Download"] &&
+            !footerControl.hiddenOrHasHiddenAncestor && [footerControl.title isEqualToString:@"Pause Download"],
+            @"The menu and onboarding footer must offer Pause only while a transfer is downloading");
+        Require([NSApp sendAction:action.action to:action.target from:action],
+            @"The menu's Pause selector must reach its delegate");
+        Require(store.pauses == 1 && store.resumes == 0 && !action.hidden &&
+            [action.title isEqualToString:@"Resume Download"] && [footerControl.title isEqualToString:@"Resume Download"] &&
+            [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Download paused · 40%"],
+            @"Pausing from the menu must preserve progress and update both controls to Resume");
+        [footerControl performClick:nil];
+        Require(store.resumes == 1 && store.preparations == 1 && store.revalidations == 0 &&
+            [action.title isEqualToString:@"Pause Download"] && !Flag(delegate, @"modelFailed"),
+            @"The onboarding footer must resume the existing transfer without starting fresh setup or revalidation");
+        [footerControl performClick:nil];
+        Require(store.pauses == 2, @"Onboarding Pause must reach the store");
+        [delegate openSettings:nil];
+        NSButton *settingsAction = (NSButton *)FindView(window.contentView, @"settings-model-setup");
+        NSProgressIndicator *settingsProgress = (NSProgressIndicator *)FindView(window.contentView, @"settings-model-progress");
+        Require(!settingsAction.hiddenOrHasHiddenAncestor && [settingsAction.title isEqualToString:@"Resume Download"] &&
+            !settingsProgress.hidden && std::abs(settingsProgress.doubleValue - 0.4) < 0.001,
+            @"Settings opened during pause must expose Resume with the saved progress");
+        [settingsAction performClick:nil];
+        Require(store.resumes == 2 && [settingsAction.title isEqualToString:@"Pause Download"],
+            @"Settings Resume must route to the same active transfer and update its next action");
+
+        store.resumable = YES;
+        [store emitState:ModelStoreFailed];
+        [delegate modelFileDidFail:@"Connection lost. Resume the download."];
+        Require(Flag(delegate, @"modelFailed") && [action.title isEqualToString:@"Resume Download"] &&
+            [settingsAction.title isEqualToString:@"Resume Download"],
+            @"A failed transfer with retained bytes must offer Resume in Settings and the menu");
+        [delegate modelFileDidProgress:1 message:@"Late progress must stay hidden"];
+        Require([[delegate valueForKey:@"modelStatus"] isEqualToString:@"Connection lost. Resume the download."],
+            @"Late progress must not overwrite a transfer failure");
+        [delegate showOnboarding];
+        NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+        NSTextField *failure = (NSTextField *)FindView(window.contentView, @"onboarding-model-message");
+        Require([primary.title hasPrefix:@"Resume Download"] &&
+            [failure.stringValue isEqualToString:@"Connection lost. Resume the download."],
+            @"Onboarding must show the failed transfer's error and make Resume its primary action");
+        [primary performClick:nil];
+        Require(store.resumes == 3 && !Flag(delegate, @"modelFailed") &&
+            [primary.title hasPrefix:@"Set Up Later"] && delegate.licenseViews == 0,
+            @"Resuming a transfer failure must clear the failure and return to optional setup without new consent");
+
+        [store emitState:ModelStoreVerifying];
+        [delegate modelFileDidProgress:1 message:@"Download complete. Verifying SHA256…"];
+        Require(action.hidden && footerControl.hiddenOrHasHiddenAncestor &&
+            !Flag(delegate, @"hasVerifiedModelFile") &&
+            [[delegate valueForKey:@"modelStatus"] containsString:@"SHA256"],
+            @"Verification must hide transfer controls and keep the file unavailable");
+        [delegate performModelAction:nil];
+        Require(store.pauses == 2 && store.resumes == 3 && store.preparations == 1,
+            @"A stale transfer action during verification must not pause, resume or restart setup");
+        [delegate openSettings:nil];
+        Require(settingsAction.hidden, @"Settings must hide the transfer action during verification");
+
+        store.resumable = NO;
+        [store emitState:ModelStoreFailed];
+        [delegate modelFileDidFail:@"The resumed model failed SHA256 verification. Download it again."];
+        Require([action.title isEqualToString:@"Retry Model Setup"] && !action.hidden &&
+            [settingsAction.title isEqualToString:@"Retry Model Setup"],
+            @"Verification failure without retained bytes must offer a fresh Retry instead of Resume");
+        SetAvailableModel(delegate);
+        [delegate modelFileDidProgress:0.4 message:@"Stale download progress"];
+        Require(action.hidden && settingsAction.hidden && Flag(delegate, @"hasVerifiedModelFile") &&
+            !Flag(delegate, @"modelFailed"),
+            @"A ready file must clear transfer actions and reject stale progress");
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
 int main() {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -672,7 +800,8 @@ int main() {
                 CheckModelRevalidationOnRetry(delegate);
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation and the license sheet\n";
+                CheckDownloadActions();
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation, the license sheet and contextual download actions\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;

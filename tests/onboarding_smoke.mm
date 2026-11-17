@@ -84,7 +84,7 @@ static void CheckBounds(NSWindow *window) {
     for (NSString *identifier in @[@"onboarding-header", @"onboarding-mascot", @"onboarding-footer",
             @"onboarding-footer-note", @"onboarding-step-model", @"onboarding-step-shortcut",
             @"onboarding-title", @"onboarding-model-status", @"onboarding-model-message",
-            @"onboarding-primary", @"onboarding-model-license", @"onboarding-shortcut-title",
+            @"onboarding-primary", @"onboarding-model-license", @"onboarding-model-control", @"onboarding-shortcut-title",
             @"onboarding-shortcut-selection-title", @"onboarding-shortcut-selection-key",
             @"onboarding-shortcut-selection-status", @"onboarding-shortcut-selection-setup",
             @"onboarding-shortcut-panel-title", @"onboarding-shortcut-panel-key",
@@ -102,7 +102,7 @@ static void CheckBounds(NSWindow *window) {
     Require(document.bounds.size.width <= scroll.contentView.bounds.size.width + 1,
         @"Onboarding must remain readable without horizontal scrolling at minimum size");
     NSView *footer = FindView(root, @"onboarding-footer");
-    for (NSString *identifier in @[@"onboarding-primary", @"onboarding-model-license"]) {
+    for (NSString *identifier in @[@"onboarding-primary", @"onboarding-model-license", @"onboarding-model-control"]) {
         NSView *button = FindView(root, identifier);
         Require([button isDescendantOf:footer] && ![button isDescendantOf:document],
             [identifier stringByAppendingString:@" must stay in the fixed footer, visible without scrolling"]);
@@ -159,6 +159,7 @@ static void RunSmoke(void) {
         // One footer button serves both steps: Download or Retry, then Set Up Later or Start.
         NSButton *primary = (NSButton *)FindView(root, @"onboarding-primary");
         NSButton *license = (NSButton *)FindView(root, @"onboarding-model-license");
+        NSButton *modelControl = (NSButton *)FindView(root, @"onboarding-model-control");
         NSTextField *note = (NSTextField *)FindView(root, @"onboarding-footer-note");
         NSTextField *modelMessage = (NSTextField *)FindView(root, @"onboarding-model-message");
         NSButton *selectionSetup = (NSButton *)FindView(root, @"onboarding-shortcut-selection-setup");
@@ -166,7 +167,7 @@ static void RunSmoke(void) {
         NSButton *panelSetup = (NSButton *)FindView(root, @"onboarding-shortcut-panel-setup");
         NSTextField *panelStatus = (NSTextField *)FindView(root, @"onboarding-shortcut-panel-status");
         NSTextField *shortcutError = (NSTextField *)FindView(root, @"onboarding-error");
-        Require(modelStep && shortcutStep && primary && license && note && modelMessage &&
+        Require(modelStep && shortcutStep && primary && license && modelControl && note && modelMessage &&
             selectionSetup && selectionStatus && panelSetup && panelStatus && shortcutError,
             @"The first-run page must expose each setup control");
         [onboarding refresh];
@@ -211,13 +212,15 @@ static void RunSmoke(void) {
         // The footer repeats ModelStore's own words, so checking and verifying never read as downloading.
         [onboarding setModelPhase:BawanModelSetupPreparing message:@"Checking the saved model…" progress:0];
         Settle(window);
-        Require([note.stringValue isEqualToString:@"Checking the saved model…"],
+        Require([note.stringValue isEqualToString:@"Checking the saved model…"] && !IsShown(modelControl),
             @"Checking a saved model must not be reported as a download");
-        [onboarding setModelPhase:BawanModelSetupPreparing message:@"Downloading the model… 37%" progress:0.37];
+        [onboarding setModelPhase:BawanModelSetupDownloading message:@"Downloading the model… 37%" progress:0.37];
         Settle(window);
         Require(!IsShown(modelStep) && IsShown(shortcutStep) && IsShown(primary) && primary.enabled &&
-            !IsShown(license) && [note.stringValue isEqualToString:@"Downloading the model… 37%"],
-            @"Downloading must show the shortcut step, its progress in the footer, and an enabled continue action");
+            !IsShown(license) && IsShown(modelControl) && modelControl.enabled &&
+            [modelControl.title isEqualToString:@"Pause Download"] &&
+            [note.stringValue isEqualToString:@"Downloading the model… 37%"],
+            @"Downloading must show the shortcut step, its progress, Pause, and an enabled continue action");
         Require([primary.title hasPrefix:@"Set Up Later"] && [selectionStatus.stringValue containsString:@"Input Monitoring"] &&
             [panelStatus.stringValue containsString:@"Accessibility"],
             @"While either shortcut needs permission, the single footer action must read Set Up Later");
@@ -225,6 +228,21 @@ static void RunSmoke(void) {
         Capture(window, @"preparing");
         [primary performClick:nil];
         Require(finishes == 1, @"Set Up Later must leave onboarding even while the model is still downloading");
+
+        [modelControl performClick:nil];
+        Require(setups == 3 && finishes == 1, @"Footer Pause must reach the model owner without finishing onboarding");
+        [onboarding setModelPhase:BawanModelSetupPaused message:@"Download paused · 37%" progress:0.37];
+        Settle(window);
+        Require(IsShown(shortcutStep) && IsShown(modelControl) &&
+            [modelControl.title isEqualToString:@"Resume Download"] && primary.enabled &&
+            [note.stringValue isEqualToString:@"Download paused · 37%"],
+            @"Pausing must keep shortcut setup and continuation available beside Resume and saved progress");
+        CheckBounds(window);
+        [modelControl performClick:nil];
+        Require(setups == 4 && finishes == 1, @"Footer Resume must reach the model owner");
+        [onboarding setModelPhase:BawanModelSetupPreparing message:@"Download complete. Verifying SHA256…" progress:1];
+        Require(!IsShown(modelControl) && [note.stringValue containsString:@"SHA256"],
+            @"Verification must hide Pause and Resume while preserving its own status");
 
         [selectionSetup performClick:nil];
         Require(monitor.permissionRequests == 1 &&
@@ -267,7 +285,17 @@ static void RunSmoke(void) {
             @"A failed download must return to the model step with its error and Retry");
         Capture(window, @"failed");
         [primary performClick:nil];
-        Require(setups == 3 && finishes == 1, @"Retry must reach setup without finishing onboarding");
+        Require(setups == 5 && finishes == 1, @"Retry must reach setup without finishing onboarding");
+
+        [onboarding setModelPhase:BawanModelSetupResumableFailure
+            message:@"Connection lost. Resume the download." progress:0.37];
+        Settle(window);
+        Require(IsShown(modelStep) && IsShown(license) && !IsShown(modelControl) &&
+            [primary.title hasPrefix:@"Resume Download"] &&
+            [modelMessage.stringValue isEqualToString:@"Connection lost. Resume the download."],
+            @"A connection failure with retained bytes must show its error with Resume as the primary action");
+        [primary performClick:nil];
+        Require(setups == 6 && finishes == 1, @"Resuming a connection failure must reach the model owner");
 
         // Once the shortcut works, the same footer action simply starts translating.
         [onboarding setModelPhase:BawanModelSetupReady message:BawanModelReadyStatus progress:1];
@@ -276,7 +304,7 @@ static void RunSmoke(void) {
         Require(IsShown(shortcutStep) && [selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
             [panelStatus.stringValue isEqualToString:@"Shortcut ready"] && !IsShown(selectionSetup) &&
             !IsShown(panelSetup) && [primary.title hasPrefix:@"Start Translating"] &&
-            [note.stringValue isEqualToString:BawanModelReadyStatus],
+            [note.stringValue isEqualToString:BawanModelReadyStatus] && !IsShown(modelControl),
             @"A working shortcut and ready model must turn the footer action into Start Translating");
         [onboarding performPrimaryAction];
         Require(finishes == 2 && backs == 0, @"⌘Return on the shortcut step must finish onboarding");

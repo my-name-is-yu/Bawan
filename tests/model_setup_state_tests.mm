@@ -38,6 +38,36 @@ int main() {
         Expect(state.progress() == 0.25 && [state.message() isEqualToString:@"Downloading the model… 25%"],
             "Progress keeps ModelStore's own message");
 
+        state.fileDownloading();
+        Expect(state.phase() == BawanModelSetupDownloading && state.canFinishSetup() &&
+            !state.canEnterTranslator() && state.progress() == 0.25,
+            "Downloading exposes its own phase without losing progress or claiming a verified file");
+        state.filePaused();
+        state.fileProgress(0.25, @"Download paused · 25%");
+        Expect(state.phase() == BawanModelSetupPaused && !state.failed() && state.canFinishSetup() &&
+            !state.canEnterTranslator() && state.progress() == 0.25 &&
+            [state.message() isEqualToString:@"Download paused · 25%"],
+            "Pausing retains progress and lets the user finish optional shortcut setup");
+        state.fileDownloading();
+        state.fileProgress(0.75, @"Downloading the model… 75%");
+        Expect(state.phase() == BawanModelSetupDownloading && state.progress() == 0.75,
+            "Resuming returns to download progress");
+        state.fileFailed(@"Connection lost. Resume the download.", true);
+        Expect(state.failed() && state.phase() == BawanModelSetupResumableFailure && state.progress() == 0.75 &&
+            !state.canEnterTranslator() && !state.canFinishSetup() && state.url() == nil,
+            "A failed transfer with retained bytes offers resume while blocking model use");
+        state.fileProgress(1, @"Late progress");
+        Expect(state.phase() == BawanModelSetupResumableFailure &&
+            [state.message() isEqualToString:@"Connection lost. Resume the download."],
+            "Late progress must not hide a resumable transfer failure");
+        state.beginPreparing();
+        state.fileDownloading();
+        state.fileVerifying();
+        state.fileProgress(1, @"Download complete. Verifying SHA256…");
+        Expect(state.phase() == BawanModelSetupPreparing && !state.hasVerifiedFile() &&
+            !state.canEnterTranslator() && [state.message() containsString:@"SHA256"],
+            "A finished transfer remains unavailable while full SHA256 verification runs");
+
         state.fileReady(url);
         Expect(state.hasVerifiedFile() && state.canEnterTranslator() && [state.url() isEqual:url] &&
             state.phase() == BawanModelSetupReady && [state.message() isEqualToString:BawanModelReadyStatus],

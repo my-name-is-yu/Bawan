@@ -687,6 +687,25 @@ static void RunSmoke(void) {
         @"An unprepared model must expose setup without claiming readiness");
     [modelSetup performClick:nil];
     Require(modelSetups == 1, @"The model setup action must reach its owner");
+    [settings setModelPhase:BawanModelSetupDownloading message:@"Downloading the model… 37%" progress:0.37];
+    Require(!modelSetup.hidden && modelSetup.enabled && [modelSetup.title isEqualToString:@"Pause Download"] &&
+        !modelProgress.hidden && !modelProgress.indeterminate && std::abs(modelProgress.doubleValue - 0.37) < 0.001,
+        @"Downloading must expose Pause beside the current measurable progress");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 2, @"The model row's Pause action must reach its owner");
+    [settings setModelPhase:BawanModelSetupPaused message:@"Download paused · 37%" progress:0.37];
+    Require(!modelSetup.hidden && modelSetup.enabled && [modelSetup.title isEqualToString:@"Resume Download"] &&
+        !modelProgress.hidden && !modelProgress.indeterminate && std::abs(modelProgress.doubleValue - 0.37) < 0.001 &&
+        [modelMessage.stringValue containsString:@"paused"],
+        @"A paused download must retain its percentage and offer Resume");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 3, @"The model row's Resume action must reach its owner");
+    [settings setModelPhase:BawanModelSetupResumableFailure message:@"Connection lost. Resume the download." progress:0.37];
+    Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Resume Download"] &&
+        !modelMessage.hidden && [modelMessage.stringValue containsString:@"Connection lost"],
+        @"A recoverable connection failure must offer Resume while keeping the failure visible");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 4, @"Resuming a failed transfer must reach its owner");
     [settings setModelPhase:BawanModelSetupPreparing message:@"Verifying the saved model…" progress:0.4];
     Require(!modelProgress.hidden && std::abs(modelProgress.doubleValue - 0.4) < 0.001 && modelSetup.hidden &&
         [modelMessage.stringValue containsString:@"Verifying"],
@@ -703,7 +722,7 @@ static void RunSmoke(void) {
         [modelStatus.stringValue isEqualToString:@"Needs attention"],
         @"Model setup failures must retain their message and expose Retry");
     [modelSetup performClick:nil];
-    Require(modelSetups == 2, @"Retrying model setup must reach the same owner action");
+    Require(modelSetups == 5, @"Retrying model setup must reach the same owner action");
     [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
     Require(modelMessage.hidden && modelProgress.hidden && modelSetup.hidden,
         @"A recovered model must clear stale progress and error actions");

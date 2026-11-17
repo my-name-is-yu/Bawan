@@ -112,3 +112,41 @@ in an isolated translation probe produced another acceptable answer (`一時的`
 that internal prompt change is not claimed as a detected behavioral regression.
 These samples do not establish translation quality for all inputs or Metal
 backends. No native fault-injection result is claimed.
+
+## Model download pause/resume (Issue #35)
+
+`model_download_response` is a portable CTest for the production HTTP response
+policy: 200 replacement, exact 206 range/total/length checks, strong ETag
+matching, malformed/overflowing headers, and bounded 416 recovery decisions.
+
+The native `model_store` CTest uses the actual ModelStore, an isolated temporary
+Application Support directory, an injected NSURLProtocol, and a 19-byte fixture
+with a known SHA256. A held response emits a fixed prefix and stays open until
+the test pauses, cancels, or injects a connection failure after persisted
+progress. Requests must contain the exact saved offset and If-Range ETag; the
+verified final file must equal the fixture. Cases cover a recreated store,
+ignored Range (200), fresh and resumed 206, missing/invalid partial metadata,
+weak/missing/changing validators, rejected Content-Range, one fresh retry after
+416, repeated 416 termination, complete partial verification without HTTP, and
+same-size corruption after resume followed by a clean retry. No real model or
+external server is used.
+
+`model_setup_state`, `settings_navigation`, `onboarding`, and
+`app_delegate_smoke` additionally exercise contextual Pause/Resume/Retry,
+retained progress, error presentation, checking/verification guards, and stale
+progress isolation. Existing saved-model verification-stamp tests remain.
+
+Cloud verification (2026-11-17, Linux x86_64/GCC 14.2): the Release build with
+`BAWAN_WARNINGS_AS_ERRORS=ON` and all five portable CTests passed. The response
+policy also passed a direct ASan/UBSan build/run. A HEAD-only upstream probe
+reported the pinned 573126848-byte size, a strong ETag, and `Accept-Ranges:
+bytes`; it does not establish NSURLSession redirect behavior.
+
+The native ModelStore and
+AppKit checks require macOS and are **not compiled or executed here**. On an
+Apple Silicon Mac, run `./scripts/check.sh`, then manually pause/resume from
+each of the three UI entry points and quit/relaunch mid-download. Real network
+redirects, native rendering, physical UI interaction, and disk/power failure
+recovery remain unverified until those checks are performed. No full model or
+model-backed inference smoke is required for the fixture suite. The repository
+has no CI workflow; opening a PR does not establish native validation.

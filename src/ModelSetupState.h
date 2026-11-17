@@ -4,6 +4,9 @@
 typedef NS_ENUM(NSInteger, BawanModelSetupPhase) {
     BawanModelSetupNeedsDownload,
     BawanModelSetupPreparing,
+    BawanModelSetupDownloading,
+    BawanModelSetupPaused,
+    BawanModelSetupResumableFailure,
     BawanModelSetupReady,
     BawanModelSetupFailed
 };
@@ -19,20 +22,26 @@ static NSString *const BawanModelReadyStatus = @"Ready to translate · On-device
 // an engine failure keeps the verified file available for another load attempt.
 class BawanModelState {
 public:
-    enum class File { Missing, Preparing, Failed, Present };
+    enum class File { Missing, Preparing, Downloading, Paused, Failed, ResumableFailure, Present };
     enum class Engine { Idle, Loading, Failed };
 
     // ModelStore rejects callbacks from earlier preparations using its generation.
     // This state also ignores progress outside preparation so it cannot overwrite
     // the status of a verified file or a reported failure.
     void beginPreparing() { reset(File::Preparing, nil, 0, BawanModelCheckingStatus); }
+    void fileDownloading() { file_ = File::Downloading; }
+    void filePaused() { file_ = File::Paused; }
+    void fileVerifying() { file_ = File::Preparing; }
     void fileProgress(double progress, NSString *message) {
-        if (file_ != File::Preparing) return;
+        if (file_ != File::Preparing && file_ != File::Downloading && file_ != File::Paused) return;
         progress_ = progress;
         message_ = [message copy];
     }
     void fileReady(NSURL *url) { reset(File::Present, url, 1, nil); }
-    void fileFailed(NSString *message) { reset(File::Failed, nil, 0, message); }
+    void fileFailed(NSString *message, bool resumable = false) {
+        const double savedProgress = progress_;
+        reset(resumable ? File::ResumableFailure : File::Failed, nil, resumable ? savedProgress : 0, message);
+    }
 
     // Engine transitions. They are ignored unless the file is present.
     void engineLoading() { setEngine(Engine::Loading, nil); }
@@ -47,7 +56,7 @@ public:
     bool hasVerifiedFile() const { return file_ == File::Present; }
     // No preparation has started in this process; a saved file may still exist.
     bool setupNotStarted() const { return file_ == File::Missing; }
-    bool failed() const { return file_ == File::Failed || engine_ == Engine::Failed; }
+    bool failed() const { return file_ == File::Failed || file_ == File::ResumableFailure || engine_ == Engine::Failed; }
     // Escape/Open Translator can leave setup once the file is verified. A load
     // may still be running, but a reported engine failure needs attention first.
     bool canEnterTranslator() const { return hasVerifiedFile() && engine_ != Engine::Failed; }
@@ -56,12 +65,16 @@ public:
 
     BawanModelSetupPhase phase() const {
         if (setupNotStarted()) return BawanModelSetupNeedsDownload;
+        if (file_ == File::ResumableFailure) return BawanModelSetupResumableFailure;
         if (failed()) return BawanModelSetupFailed;
+        if (file_ == File::Downloading) return BawanModelSetupDownloading;
+        if (file_ == File::Paused) return BawanModelSetupPaused;
         if (file_ == File::Preparing || engine_ == Engine::Loading) return BawanModelSetupPreparing;
         return BawanModelSetupReady;
     }
 
-    // A fraction in [0, 1] while preparing; negative while a load has no measurable progress.
+    // A fraction in [0, 1] during transfer/checking, retained while paused or resumable.
+    // Negative while an engine load has no measurable progress.
     double progress() const {
         if (file_ == File::Present) return engine_ == Engine::Loading ? -1 : 1;
         return progress_;
@@ -70,7 +83,10 @@ public:
     NSString *message() const {
         switch (file_) {
             case File::Missing: return BawanModelNeedsSetupStatus;
+            case File::Downloading: return message_.length ? message_ : @"Downloading the model…";
+            case File::Paused: return message_.length ? message_ : @"Model download paused.";
             case File::Preparing: return message_.length ? message_ : BawanModelCheckingStatus;
+            case File::ResumableFailure:
             case File::Failed: return message_.length ? message_ : BawanModelFailedStatus;
             case File::Present: break;
         }
