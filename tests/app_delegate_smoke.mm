@@ -15,6 +15,7 @@
 - (void)updateStatus;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
+- (void)ensureEngine;
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
@@ -127,6 +128,12 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     Require([translate.title isEqualToString:@"Translate  ⌘↵"] && !copy.enabled && !swap.enabled,
         @"Model availability after an edit must leave the revised source ready for an explicit translation");
 
+    // The fixture model is missing, so the real engine's load failure would race the
+    // scripted events below. Create the engine and detach its callbacks until this
+    // check finishes; the next check waits for that engine's real failure.
+    [delegate ensureEngine];
+    const uint64_t engineGeneration = [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue];
+    [delegate setValue:@(engineGeneration + 1) forKey:@"engineGeneration"];
     [translate performClick:nil];
     uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
     Require(oldRequest != 0 && Flag(delegate, @"busy"), @"The edit fixture must start a real active request");
@@ -171,6 +178,7 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     [delegate handleEngineEvent:revisedComplete];
     Require([output.string isEqualToString:@"Revised output"] && copy.enabled && swap.enabled && !Flag(delegate, @"busy"),
         @"The revised source's own completion must still enable Copy and Swap");
+    [delegate setValue:@(engineGeneration) forKey:@"engineGeneration"];
 }
 
 static void CheckColdRequestAndRetry(AppDelegate *delegate) {
