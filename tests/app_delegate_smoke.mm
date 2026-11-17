@@ -11,6 +11,7 @@
 #include <sys/xattr.h>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
@@ -34,7 +35,22 @@
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 @end
 
-@interface SetupSmokeDelegate : AppDelegate
+@interface SmokeAppDelegate : AppDelegate
+@end
+
+@implementation SmokeAppDelegate
+- (void)buildMenus {
+    // Exercise menu presentation without registering a system status item.
+    for (NSString *key in @[@"modelItem", @"retryItem", @"shortcutItem", @"panelShortcutItem"]) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""];
+        [self setValue:item forKey:key];
+    }
+    [[self valueForKey:@"shortcutItem"] setTag:static_cast<NSInteger>(bawan::ShortcutAction::TranslateSelection)];
+    [[self valueForKey:@"panelShortcutItem"] setTag:static_cast<NSInteger>(bawan::ShortcutAction::OpenPanel)];
+}
+@end
+
+@interface SetupSmokeDelegate : SmokeAppDelegate
 @property(nonatomic) BOOL allowLicense;
 @property(nonatomic) NSUInteger licenseViews;
 @property(nonatomic) NSUInteger warmUps;
@@ -48,7 +64,7 @@
 - (void)warmUpEngine { ++_warmUps; }
 @end
 
-@interface SelectionSetupSmokeDelegate : AppDelegate
+@interface SelectionSetupSmokeDelegate : SmokeAppDelegate
 @end
 
 @implementation SelectionSetupSmokeDelegate
@@ -708,8 +724,8 @@ static void CheckModelLicenseSheet(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
     SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-    // A plain AppDelegate keeps the real license presentation.
-    AppDelegate *delegate = [[AppDelegate alloc] init];
+    // Keep the real license presentation.
+    AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
@@ -745,16 +761,26 @@ static void CheckModelLicenseSheet(void) {
     }
 }
 
-int main() {
+int main(int argc, const char *argv[]) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        if (argc == 2 && std::string(argv[1]) == "--first-run-selection") {
+            try {
+                CheckFirstRunSelection();
+                std::cout << "PASS: first-run selection translation, replacement, editing, cancellation and no replay\n";
+                return EXIT_SUCCESS;
+            } catch (const std::exception &error) {
+                std::cerr << "FAIL: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
         NSString *suite = [@"local.bawan.AppDelegateSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         [defaults removePersistentDomainForName:suite];
         [defaults setBool:YES forKey:@"firstLaunchShown"];
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
-        AppDelegate *delegate = [[AppDelegate alloc] init];
+        AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
         [delegate setValue:defaults forKey:@"defaults"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:panel forKey:@"translationPanel"];
