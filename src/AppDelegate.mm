@@ -50,7 +50,7 @@ static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown2
     return self;
 }
 
-- (BOOL)modelAvailable { return _model.available(); }
+- (BOOL)hasVerifiedModelFile { return _model.hasVerifiedFile(); }
 - (BOOL)modelFailed { return _model.failed(); }
 - (NSURL *)modelURL { return _model.url(); }
 - (NSString *)modelStatus { return _model.message(); }
@@ -102,7 +102,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
         [owner->_translationPanel showWithoutChangingInput];
-        [owner->_translationPanel setAvailable:[owner modelAvailable] busy:owner->_busy status:message kind:BawanStatusWarning];
+        [owner->_translationPanel setAvailable:[owner hasVerifiedModelFile] busy:owner->_busy status:message kind:BawanStatusWarning];
         owner->_statusItem.button.toolTip = message;
     };
     _shortcut.onOpenPanel = ^{
@@ -178,7 +178,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 // A first setup prepares the model; any later request revalidates it from scratch.
 - (void)prepareModel {
-    if (!_model.needsDownload()) {
+    if (!_model.setupNotStarted()) {
         [self retryModel:nil];
         return;
     }
@@ -204,7 +204,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 // The shortcut step's button: leave for the translator even while the model is
 // still downloading. The translator shows preparation and translates once ready.
 - (void)finishOnboardingFromShortcuts {
-    if (!_model.settingUpOrReady()) return;
+    if (!_model.canFinishSetup()) return;
     [self markOnboardingComplete];
     [_translationPanel showForManualInput];
     [self warmUpEngine];
@@ -212,7 +212,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 // Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
 - (void)finishOnboarding {
-    if (!_model.ready()) {
+    if (!_model.canEnterTranslator()) {
         [_translationPanel close];
         return;
     }
@@ -354,7 +354,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self refreshSetupPages];
     _modelItem.title = _model.message();
     BOOL failed = [self modelFailed];
-    BOOL available = [self modelAvailable];
+    BOOL available = [self hasVerifiedModelFile];
     _retryItem.hidden = !failed;
     _retryItem.enabled = failed;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
@@ -419,14 +419,14 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)warmUpEngine {
     if (_terminating) return;
-    _warmUpWhenAvailable = ![self modelAvailable];
+    _warmUpWhenAvailable = ![self hasVerifiedModelFile];
     [self ensureEngine];
     if (_engine) _engine->warmUp();
 }
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
     if (_terminating) return;
-    if (![self modelAvailable]) {
+    if (![self hasVerifiedModelFile]) {
         if ([self modelFailed]) { [self updateStatus]; return; }
         _pendingText = [text copy];
         _pendingDirection = direction;
@@ -456,7 +456,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) _model.engineIdle();
         else if (event.kind == Kind::Error) _model.engineFailed(StringFromUTF8(event.text));
         [self updateStatus];
-        [_translationPanel setAvailable:[self modelAvailable] busy:_busy
+        [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy
             status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _model.message()
             kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;
@@ -470,19 +470,19 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [_translationPanel setAvailable:[self modelAvailable] busy:NO status:event.truncated ?
+            [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
                                       kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:[self modelAvailable] busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+            [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:[self modelAvailable] busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
+            [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
             break;
         default: break;
     }
@@ -497,12 +497,12 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = NO;
     [self updateStatus];
-    [_translationPanel setAvailable:[self modelAvailable] busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+    [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
 }
 
 - (void)openTranslation:(id)sender {
     if ([self needsOnboarding]) {
-        if (_model.ready()) {
+        if (_model.canEnterTranslator()) {
             [self finishOnboarding];
             [self warmUpEngine];
         } else {
@@ -516,7 +516,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleSelectionText:(NSString *)text {
     [_translationPanel showForSelection:text];
-    if (_model.needsDownload()) {
+    if (_model.setupNotStarted()) {
         [self showOnboarding];
         return;
     }

@@ -14,17 +14,17 @@ static NSString *const BawanModelLoadingStatus = @"Loading the model…";
 static NSString *const BawanModelFailedStatus = @"The model could not be prepared. Please try again.";
 static NSString *const BawanModelReadyStatus = @"Ready to translate · On-device processing";
 
-// The model's whole lifecycle in one place: the file on disk first, then the
-// engine that loads it. The URL exists exactly while the file is present, and
-// engine state only applies to a present file, so the two can never disagree.
+// Tracks a verified model file separately from the engine that loads it.
+// The URL is retained after verification until setup is restarted or fails;
+// an engine failure keeps the verified file available for another load attempt.
 class BawanModelState {
 public:
     enum class File { Missing, Preparing, Failed, Present };
     enum class Engine { Idle, Loading, Failed };
 
-    // File transitions. Only an explicit setup or Retry starts preparing; ModelStore's
-    // progress, ready and error reports then apply to that preparation alone, so a
-    // late report can never undo a finished one.
+    // ModelStore rejects callbacks from earlier preparations using its generation.
+    // This state also ignores progress outside preparation so it cannot overwrite
+    // the status of a verified file or a reported failure.
     void beginPreparing() { reset(File::Preparing, nil, 0, BawanModelCheckingStatus); }
     void fileProgress(double progress, NSString *message) {
         if (file_ != File::Preparing) return;
@@ -44,16 +44,18 @@ public:
     File file() const { return file_; }
     Engine engine() const { return engine_; }
     NSURL *url() const { return url_; }
-    bool available() const { return file_ == File::Present; }
-    bool needsDownload() const { return file_ == File::Missing; }
+    bool hasVerifiedFile() const { return file_ == File::Present; }
+    // No preparation has started in this process; a saved file may still exist.
+    bool setupNotStarted() const { return file_ == File::Missing; }
     bool failed() const { return file_ == File::Failed || engine_ == Engine::Failed; }
-    // Usable for translation now: present and not failed (a load may still be running).
-    bool ready() const { return available() && engine_ != Engine::Failed; }
-    // The user has nothing to do: the model is being prepared or is ready.
-    bool settingUpOrReady() const { return !needsDownload() && !failed(); }
+    // Escape/Open Translator can leave setup once the file is verified. A load
+    // may still be running, but a reported engine failure needs attention first.
+    bool canEnterTranslator() const { return hasVerifiedFile() && engine_ != Engine::Failed; }
+    // The explicit setup footer action may continue while preparation is running.
+    bool canFinishSetup() const { return !setupNotStarted() && !failed(); }
 
     BawanModelSetupPhase phase() const {
-        if (needsDownload()) return BawanModelSetupNeedsDownload;
+        if (setupNotStarted()) return BawanModelSetupNeedsDownload;
         if (failed()) return BawanModelSetupFailed;
         if (file_ == File::Preparing || engine_ == Engine::Loading) return BawanModelSetupPreparing;
         return BawanModelSetupReady;

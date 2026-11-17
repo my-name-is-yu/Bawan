@@ -262,7 +262,7 @@ static void CheckColdRequestAndRetry(AppDelegate *delegate) {
     [delegate handleEngineEvent:staleError];
     NSMenuItem *retry = [delegate valueForKey:@"retryItem"];
     Require(!Flag(delegate, @"busy") && !Flag(delegate, @"modelFailed") &&
-        !Flag(delegate, @"modelAvailable") && [delegate valueForKey:@"modelURL"] == nil &&
+        !Flag(delegate, @"hasVerifiedModelFile") && [delegate valueForKey:@"modelURL"] == nil &&
         [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the model…"] && retry.hidden,
         @"Old engine events must not overwrite model setup after Retry");
 }
