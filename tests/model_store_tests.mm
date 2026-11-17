@@ -118,10 +118,11 @@ struct Fixture {
     NSURL *readyURL = nil;
     double progress = 0;
     bool callbacksOnMain = true;
+    const bool ownsSupportDirectory;
 
-    Fixture() {
+    explicit Fixture(NSURL *sharedSupport = nil) : ownsSupportDirectory(sharedSupport == nil) {
         files = [[DownloadFixtureFiles alloc] init];
-        files.supportDirectory = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+        files.supportDirectory = sharedSupport ?: [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
             URLByAppendingPathComponent:[@"bawan-model-test-" stringByAppendingString:NSUUID.UUID.UUIDString]
                            isDirectory:YES];
         source = [NSURL URLWithString:@"https://model.test/fixture.gguf"];
@@ -134,7 +135,7 @@ struct Fixture {
     }
     ~Fixture() {
         [store cancel];
-        [files removeItemAtURL:files.supportDirectory error:nil];
+        if (ownsSupportDirectory) [files removeItemAtURL:files.supportDirectory error:nil];
     }
     void recreateStore() {
         [store cancel];
@@ -219,6 +220,32 @@ static void CheckPauseAndResume() {
     [f.store resume];
     f.awaitReady();
     RequireResumeRequest();
+}
+
+static void CheckConcurrentDownloadsPreserveProgress() {
+    Fixture first;
+    Fixture second(first.files.supportDirectory);
+    NSData *restartPrefix = [first.body subdataWithRange:NSMakeRange(0, 2)];
+    // A second downloader would accept a 200 restart and truncate the live prefix.
+    [DownloadFixtureProtocol setResponses:@[first.response(200, first.prefix(), nil, true),
+                                            second.response(200, restartPrefix, nil, true)]];
+    [first.store prepare];
+    first.awaitPrefix();
+    [second.store prepare];
+    WaitFor([&] { return second.errors || second.progress == 2.0 / first.body.length; },
+            "Concurrent preparation did not report failure or restart the transfer");
+    Require([[NSData dataWithContentsOfURL:first.partial] isEqual:first.prefix()],
+            "A second instance must not truncate the active model download");
+    Require(second.errors == 1 && second.store.state == ModelStoreFailed &&
+            DownloadFixtureProtocol.requests.count == 1,
+            "A second instance must report that the model download is busy without contacting the server");
+
+    [first.store pause];
+    [DownloadFixtureProtocol setResponses:@[second.continuation()]];
+    second.errors = 0;
+    [second.store prepare];
+    second.awaitReady();
+    RequireResumeRequest(0);
 }
 
 static void CheckProcessRestart() {
@@ -418,6 +445,7 @@ int main() {
     @autoreleasepool {
         try {
             CheckPauseAndResume();
+            CheckConcurrentDownloadsPreserveProgress();
             CheckProcessRestart();
             CheckNetworkFailure();
             CheckRangeIgnored();

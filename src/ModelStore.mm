@@ -4,12 +4,14 @@
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <dispatch/dispatch.h>
@@ -26,6 +28,43 @@ static const char ModelSHA256[] =
     "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6";
 
 enum class Verification { Valid, Invalid, Failed, Cancelled };
+
+class PartialDownloadLock {
+public:
+    enum class Result { Acquired, Busy, Failed };
+
+    PartialDownloadLock() = default;
+    ~PartialDownloadLock() { release(); }
+    PartialDownloadLock(const PartialDownloadLock &) = delete;
+    PartialDownloadLock &operator=(const PartialDownloadLock &) = delete;
+
+    Result acquire(NSURL *url) {
+        const int fd = open(url.fileSystemRepresentation, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (fd < 0) return Result::Failed;
+        struct stat info {};
+        if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
+            close(fd);
+            return Result::Failed;
+        }
+        if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+            const int error = errno;
+            close(fd);
+            return error == EWOULDBLOCK ? Result::Busy : Result::Failed;
+        }
+        fd_ = fd;
+        return Result::Acquired;
+    }
+
+    void release() {
+        if (fd_ < 0) return;
+        // Keep the file so every instance locks the same inode. Closing releases the lock.
+        close(fd_);
+        fd_ = -1;
+    }
+
+private:
+    int fd_ = -1;
+};
 
 static const char VerifiedAttribute[] = "local.bawan.verified-sha256";
 
@@ -120,6 +159,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSString *_expectedSHA256;
     NSString *_etag;
     FILE *_partialFile;
+    PartialDownloadLock _partialLock;
     int64_t _receivedBytes;
     int64_t _requestOffset;
     BOOL _retriedRange;
@@ -196,6 +236,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
     ++_generation;
     [self stopTransfer];
+    _partialLock.release();
     [self setState:ModelStoreIdle];
 }
 
@@ -205,6 +246,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     ++_generation;
     const uint64_t generation = _generation.load();
     [self stopTransfer];
+    _partialLock.release();
     [self setState:ModelStorePaused];
     [self reportProgress:static_cast<double>(_receivedBytes) / _expectedSize
         message:self.canResume ? @"Model download paused. Resume to continue."
@@ -278,7 +320,21 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     _modelURL = [directory URLByAppendingPathComponent:ModelFilename];
     _partialURL = [directory URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", ModelFilename]];
     _metadataURL = [_partialURL URLByAppendingPathExtension:@"plist"];
-    if ([_files fileExistsAtPath:_modelURL.path]) {
+    BOOL hasSavedModel = [_files fileExistsAtPath:_modelURL.path];
+    if (!hasSavedModel) {
+        // Own the shared partial from inspection through transfer and installation.
+        const auto lock = _partialLock.acquire([_partialURL URLByAppendingPathExtension:@"lock"]);
+        // A peer may have installed the model while we were acquiring the lock.
+        hasSavedModel = [_files fileExistsAtPath:_modelURL.path];
+        if (lock != PartialDownloadLock::Result::Acquired && !hasSavedModel) {
+            [self reportError:lock == PartialDownloadLock::Result::Busy
+                ? @"Another Bawan instance is preparing the model. Pause it or wait for it to finish, then try again."
+                : @"Unable to lock the model download. Check the folder permissions and try again."
+                generation:generation];
+            return;
+        }
+    }
+    if (hasSavedModel) {
         [self setState:ModelStoreVerifying];
         [self reportProgress:0 message:@"Checking the saved model…" generation:generation];
         if (_generation.load() == generation)
@@ -327,6 +383,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
 
 - (void)reportError:(NSString *)message generation:(uint64_t)generation {
     if (_generation.load() != generation) return;
+    _partialLock.release();
     [self setState:ModelStoreFailed];
     if (_generation.load() == generation && self.onError) self.onError(message);
 }
@@ -380,6 +437,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                     self->_receivedBytes = 0;
                     self->_etag = nil;
                 }
+                self->_partialLock.release();
                 [self setState:ModelStoreReady];
                 [self reportProgress:1 message:@"Model verification complete." generation:generation];
                 if (self->_generation.load() == generation && self.onReady) self.onReady(destination);
