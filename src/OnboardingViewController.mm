@@ -7,22 +7,22 @@
 #include <cmath>
 
 namespace {
-NSString *ShortcutID(NSString *part) {
-    return [@"onboarding-shortcut-selection-" stringByAppendingString:part];
+NSString *ShortcutID(NSUInteger index, NSString *part) {
+    return [NSString stringWithFormat:@"onboarding-shortcut-%@-%@", index == 0 ? @"selection" : @"panel", part];
 }
 
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColorRole role) {
     return BawanLabel(text, size, weight, BawanColor(role));
 }
 
-// The first step is the required model; the second offers the selection shortcut
+// The first step is the required model; the second offers the global shortcuts
 // while the model downloads. The step follows the model phase, so a failed
 // download returns to the model step with Retry.
 bool IsModelStep(BawanModelSetupPhase phase) {
     return phase == BawanModelSetupNeedsDownload || phase == BawanModelSetupFailed;
 }
 
-constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
+constexpr NSUInteger ShortcutCount = 2;
 }
 
 @interface OnboardingViewController () {
@@ -38,10 +38,10 @@ constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
     NSTextField *_modelStatus;
     NSTextField *_modelMessage;
     NSImageView *_modelIcon;
-    NSTextField *_shortcutKey;
-    NSTextField *_shortcutPresses;
-    NSTextField *_shortcutStatus;
-    NSButton *_shortcutSetup;
+    NSMutableArray<NSTextField *> *_shortcutKeys;
+    NSMutableArray<NSTextField *> *_shortcutPresses;
+    NSMutableArray<NSTextField *> *_shortcutStatuses;
+    NSMutableArray<NSButton *> *_shortcutSetup;
     NSTextField *_error;
     NSButton *_download;
     NSButton *_start;
@@ -59,6 +59,10 @@ constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
     _preferences = preferences;
     _monitor = monitor;
     _modelPhase = BawanModelSetupNeedsDownload;
+    _shortcutKeys = [NSMutableArray array];
+    _shortcutPresses = [NSMutableArray array];
+    _shortcutStatuses = [NSMutableArray array];
+    _shortcutSetup = [NSMutableArray array];
 
     BawanSurfaceView *root = BawanMakeWindowSurface(@"bawan-onboarding", NSMakeRect(0, 0, 720, 500));
     self.view = root;
@@ -161,45 +165,52 @@ constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
 - (NSView *)buildShortcutStep {
     NSTextField *title = BawanSetupHeading(@"Translate Anywhere", BawanSetupTitleSize);
     title.identifier = @"onboarding-shortcut-title";
-    NSTextField *detail = Label(@"Select text in any app and press ⌘C twice. Bawan opens with the translation.",
+    NSTextField *detail = Label(@"Translate selected text from any app, or open Bawan from anywhere, with a quick double press.",
         BawanSetupBodySize, NSFontWeightRegular, BawanSecondaryText);
     NSStackView *hero = [self heroWithIdentifier:@"onboarding-shortcut-hero" title:title detail:detail];
     [detail.widthAnchor constraintEqualToAnchor:title.widthAnchor].active = YES;
-
-    NSTextField *name = Label(ShortcutActionTitle(SelectionAction), BawanSetupRowTitleSize, NSFontWeightSemibold, BawanText);
-    name.identifier = ShortcutID(@"title");
-    _shortcutStatus = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanSecondaryText);
-    _shortcutStatus.identifier = ShortcutID(@"status");
-    _shortcutKey = [[BawanSetupKeycap alloc] initWithFrame:NSZeroRect];
-    _shortcutKey.translatesAutoresizingMaskIntoConstraints = NO;
-    _shortcutKey.identifier = ShortcutID(@"key");
-    _shortcutPresses = [[BawanSetupKeycap alloc] initWithFrame:NSZeroRect];
-    _shortcutPresses.translatesAutoresizingMaskIntoConstraints = NO;
-    _shortcutPresses.identifier = ShortcutID(@"presses");
-    [NSLayoutConstraint activateConstraints:@[
-        [_shortcutKey.widthAnchor constraintEqualToConstant:BawanSetupKeyWidth],
-        [_shortcutKey.heightAnchor constraintEqualToConstant:BawanInputHeight],
-        [_shortcutPresses.widthAnchor constraintEqualToConstant:BawanSetupCountWidth],
-        [_shortcutPresses.heightAnchor constraintEqualToConstant:BawanInputHeight]
-    ]];
-    _shortcutSetup = BawanSetupButton(ShortcutID(@"setup"), @"Set Up…", BawanSetupActionWidth,
-        self, @selector(setUpShortcut:));
-    NSView *row = BawanSetupInsetRow(ShortcutID(@"row"), name, _shortcutStatus,
-        @[_shortcutKey, _shortcutPresses, _shortcutSetup], 16, 12);
+    NSMutableArray<NSView *> *views = [NSMutableArray arrayWithObjects:hero, BawanSetupRule(), nil];
+    for (NSUInteger index = 0; index < ShortcutCount; ++index) {
+        [views addObject:[self shortcutRow:index]];
+        [views addObject:BawanSetupRule()];
+    }
     _error = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanError);
     _error.identifier = @"onboarding-error";
     _error.hidden = YES;
-    NSTextField *more = Label(@"Open Translator and other shortcuts are in Settings.",
-        BawanSetupCaptionSize, NSFontWeightRegular, BawanSecondaryText);
-    more.identifier = @"onboarding-shortcut-more";
-    NSView *topRule = BawanSetupRule();
-    NSView *bottomRule = BawanSetupRule();
-    NSStackView *step = BawanSetupStack(@[hero, topRule, row, bottomRule, _error, more],
-        NSUserInterfaceLayoutOrientationVertical, 10);
+    [views addObject:_error];
+    NSStackView *step = BawanSetupStack(views, NSUserInterfaceLayoutOrientationVertical, 10);
     [step setCustomSpacing:16 afterView:hero];
     step.identifier = @"onboarding-step-shortcut";
     for (NSView *view in step.arrangedSubviews) [view.widthAnchor constraintEqualToAnchor:step.widthAnchor].active = YES;
     return step;
+}
+
+- (NSView *)shortcutRow:(NSUInteger)index {
+    auto action = static_cast<bawan::ShortcutAction>(index);
+    NSTextField *name = Label(ShortcutActionTitle(action), BawanSetupRowTitleSize, NSFontWeightSemibold, BawanText);
+    name.identifier = ShortcutID(index, @"title");
+    NSTextField *status = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanSecondaryText);
+    status.identifier = ShortcutID(index, @"status");
+    NSTextField *key = [[BawanSetupKeycap alloc] initWithFrame:NSZeroRect];
+    key.translatesAutoresizingMaskIntoConstraints = NO;
+    key.identifier = ShortcutID(index, @"key");
+    NSTextField *presses = [[BawanSetupKeycap alloc] initWithFrame:NSZeroRect];
+    presses.translatesAutoresizingMaskIntoConstraints = NO;
+    presses.identifier = ShortcutID(index, @"presses");
+    [NSLayoutConstraint activateConstraints:@[
+        [key.widthAnchor constraintEqualToConstant:BawanSetupKeyWidth],
+        [key.heightAnchor constraintEqualToConstant:BawanInputHeight],
+        [presses.widthAnchor constraintEqualToConstant:BawanSetupCountWidth],
+        [presses.heightAnchor constraintEqualToConstant:BawanInputHeight]
+    ]];
+    BawanActionButton *setup = BawanSetupButton(ShortcutID(index, @"setup"), @"Set Up…", BawanSetupActionWidth,
+        self, @selector(setUpShortcut:));
+    setup.tag = index;
+    [_shortcutKeys addObject:key];
+    [_shortcutPresses addObject:presses];
+    [_shortcutStatuses addObject:status];
+    [_shortcutSetup addObject:setup];
+    return BawanSetupInsetRow(ShortcutID(index, @"row"), name, status, @[key, presses, setup], 16, 12);
 }
 
 - (BOOL)showingModelStep { return !_modelStep.hidden; }
@@ -257,20 +268,25 @@ constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
 }
 
 - (void)refresh {
-    auto binding = [_preferences bindingForAction:SelectionAction];
-    ShortcutAvailability availability = binding.enabled ? [_monitor availabilityForAction:SelectionAction] :
-        ShortcutAvailabilityOff;
-    const auto presentation = BawanPresentShortcut(availability);
-    _shortcutKey.stringValue = ShortcutKeyLabel(binding);
-    _shortcutPresses.stringValue = ShortcutPressCountTitle(binding.pressCount);
-    _shortcutStatus.stringValue = presentation.status;
-    _shortcutStatus.textColor = BawanColor(presentation.color);
-    _shortcutSetup.hidden = availability == ShortcutAvailabilityAvailable;
-    BawanApplyShortcutAction(_shortcutSetup, presentation, ShortcutActionTitle(SelectionAction));
-    // "Later" only while the shortcut still needs setup; afterwards the same button just starts.
-    _start.title = availability == ShortcutAvailabilityAvailable ? @"Start Translating  ⌘↵" : @"Set Up Later  ⌘↵";
-    _start.toolTip = availability == ShortcutAvailabilityAvailable ? @"Start translating (⌘Return)" :
-        @"Continue without the shortcut; set it up later in Settings (⌘Return)";
+    BOOL allReady = YES;
+    for (NSUInteger index = 0; index < ShortcutCount; ++index) {
+        auto action = static_cast<bawan::ShortcutAction>(index);
+        auto binding = [_preferences bindingForAction:action];
+        ShortcutAvailability availability = binding.enabled ? [_monitor availabilityForAction:action] :
+            ShortcutAvailabilityOff;
+        const auto presentation = BawanPresentShortcut(availability);
+        _shortcutKeys[index].stringValue = ShortcutKeyLabel(binding);
+        _shortcutPresses[index].stringValue = ShortcutPressCountTitle(binding.pressCount);
+        _shortcutStatuses[index].stringValue = presentation.status;
+        _shortcutStatuses[index].textColor = BawanColor(presentation.color);
+        _shortcutSetup[index].hidden = availability == ShortcutAvailabilityAvailable;
+        BawanApplyShortcutAction(_shortcutSetup[index], presentation, ShortcutActionTitle(action));
+        allReady &= availability == ShortcutAvailabilityAvailable;
+    }
+    // "Later" while any shortcut still needs setup; afterwards the same button just starts.
+    _start.title = allReady ? @"Start Translating  ⌘↵" : @"Set Up Later  ⌘↵";
+    _start.toolTip = allReady ? @"Start translating (⌘Return)" :
+        @"Continue now and finish the shortcuts later in Settings (⌘Return)";
     [self.view layoutSubtreeIfNeeded];
 }
 
@@ -290,11 +306,12 @@ constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
 }
 
 - (void)setUpShortcut:(NSButton *)sender {
-    auto binding = [_preferences bindingForAction:SelectionAction];
+    auto action = static_cast<bawan::ShortcutAction>(sender.tag);
+    auto binding = [_preferences bindingForAction:action];
     NSString *error = nil;
     if (!binding.enabled) {
         binding.enabled = true;
-        if (![_preferences setBinding:binding forAction:SelectionAction error:&error]) {
+        if (![_preferences setBinding:binding forAction:action error:&error]) {
             _error.stringValue = error ?: @"Unable to enable this shortcut.";
             _error.hidden = NO;
             [self.view layoutSubtreeIfNeeded];
@@ -310,7 +327,7 @@ constexpr auto SelectionAction = bawan::ShortcutAction::TranslateSelection;
     }
     _error.hidden = YES;
     _error.stringValue = @"";
-    [_monitor requestPermissionForAction:SelectionAction];
+    [_monitor requestPermissionForAction:action];
     [self refresh];
 }
 

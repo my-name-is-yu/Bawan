@@ -1,6 +1,6 @@
 # Two-step onboarding — 2026-11-17
 
-Onboarding is now two steps on one page: the model step (Download Model… and Model License in the footer) and the shortcut step (Translate Selection only, with one footer action that reads Set Up Later until the shortcut works and Start Translating afterwards). Accepting the license moves on at once while the model downloads, and the footer shows the progress. A failed download returns to the model step with Retry. The Open Translator shortcut is offered only in Settings. ⌘↵ triggers each step's footer action.
+Onboarding is now two steps on one page: the model step (Download Model… and Model License in the footer) and the shortcut step (Translate Selection and Open Translator, with one footer action that reads Set Up Later until both shortcuts work and Start Translating afterwards). Accepting the license moves on at once while the model downloads, and the footer shows the progress. A failed download returns to the model step with Retry. ⌘↵ triggers each step's footer action.
 
 # Onboarding layout — 2026-11-17
 

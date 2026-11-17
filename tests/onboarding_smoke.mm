@@ -85,7 +85,8 @@ static void CheckBounds(NSWindow *window) {
             @"onboarding-model-setup", @"onboarding-model-license", @"onboarding-shortcut-title",
             @"onboarding-shortcut-selection-title", @"onboarding-shortcut-selection-key",
             @"onboarding-shortcut-selection-status", @"onboarding-shortcut-selection-setup",
-            @"onboarding-shortcut-more", @"onboarding-start"]) {
+            @"onboarding-shortcut-panel-title", @"onboarding-shortcut-panel-key",
+            @"onboarding-shortcut-panel-status", @"onboarding-shortcut-panel-setup", @"onboarding-start"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing onboarding control: " stringByAppendingString:identifier]);
         if (!IsShown(view)) continue;
@@ -104,8 +105,10 @@ static void CheckBounds(NSWindow *window) {
         Require([button isDescendantOf:footer] && ![button isDescendantOf:document],
             [identifier stringByAppendingString:@" must stay in the fixed footer, visible without scrolling"]);
     }
-    Require(FindView(root, @"onboarding-shortcut-panel-row") == nil,
-        @"Onboarding offers only the selection shortcut; the window shortcut lives in Settings");
+    NSRect selectionRow = [FindView(root, @"onboarding-shortcut-selection-row") convertRect:NSZeroRect toView:root];
+    NSRect panelRow = [FindView(root, @"onboarding-shortcut-panel-row") convertRect:NSZeroRect toView:root];
+    Require(IsShown(FindView(root, @"onboarding-step-model")) || NSMinY(selectionRow) != NSMinY(panelRow),
+        @"The shortcut step must list both shortcuts as separate rows");
 }
 
 static void Capture(NSWindow *window, NSString *name) {
@@ -158,9 +161,12 @@ static void RunSmoke(void) {
         NSTextField *modelMessage = (NSTextField *)FindView(root, @"onboarding-model-message");
         NSButton *selectionSetup = (NSButton *)FindView(root, @"onboarding-shortcut-selection-setup");
         NSTextField *selectionStatus = (NSTextField *)FindView(root, @"onboarding-shortcut-selection-status");
+        NSButton *panelSetup = (NSButton *)FindView(root, @"onboarding-shortcut-panel-setup");
+        NSTextField *panelStatus = (NSTextField *)FindView(root, @"onboarding-shortcut-panel-status");
         NSTextField *shortcutError = (NSTextField *)FindView(root, @"onboarding-error");
         Require(modelStep && shortcutStep && start && download && license && note && modelMessage &&
-            selectionSetup && selectionStatus && shortcutError, @"The first-run page must expose each setup control");
+            selectionSetup && selectionStatus && panelSetup && panelStatus && shortcutError,
+            @"The first-run page must expose each setup control");
         [onboarding refresh];
         [onboarding setActive:YES];
         [onboarding setActive:NO];
@@ -191,8 +197,9 @@ static void RunSmoke(void) {
             !IsShown(download) && !IsShown(license) &&
             [note.stringValue containsString:@"Downloading"] && [note.stringValue containsString:@"37%"],
             @"Downloading must show the shortcut step, its progress in the footer, and an enabled continue action");
-        Require([start.title hasPrefix:@"Set Up Later"] && [selectionStatus.stringValue containsString:@"Input Monitoring"],
-            @"While the shortcut needs permission, the single footer action must read Set Up Later");
+        Require([start.title hasPrefix:@"Set Up Later"] && [selectionStatus.stringValue containsString:@"Input Monitoring"] &&
+            [panelStatus.stringValue containsString:@"Accessibility"],
+            @"While either shortcut needs permission, the single footer action must read Set Up Later");
         CheckBounds(window);
         Capture(window, @"preparing");
         [start performClick:nil];
@@ -201,7 +208,10 @@ static void RunSmoke(void) {
         [selectionSetup performClick:nil];
         Require(monitor.permissionRequests == 1 &&
             monitor.lastPermissionAction == bawan::ShortcutAction::TranslateSelection,
-            @"Set Up must request only the selection shortcut's permission");
+            @"Selection Set Up must request only the selection shortcut's permission");
+        [panelSetup performClick:nil];
+        Require(monitor.permissionRequests == 2 && monitor.lastPermissionAction == bawan::ShortcutAction::OpenPanel,
+            @"Open Translator Set Up must request its own permission");
 
         // A conflict while enabling stays local and never blocks continuing.
         NSString *error = nil;
@@ -215,14 +225,14 @@ static void RunSmoke(void) {
         Require([selectionStatus.stringValue isEqualToString:@"Off"],
             @"A disabled selection shortcut must read Off without asking for permission");
         [selectionSetup performClick:nil];
-        Require(monitor.permissionRequests == 1 && IsShown(shortcutError) && shortcutError.stringValue.length &&
+        Require(monitor.permissionRequests == 2 && IsShown(shortcutError) && shortcutError.stringValue.length &&
             ![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled && start.enabled,
             @"A shortcut conflict must stay local, keep the old preference and never block continuing");
         Require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:&error],
             @"The window shortcut must be restorable after the conflict");
         [onboarding refresh];
         [selectionSetup performClick:nil];
-        Require(monitor.permissionRequests == 2 && !IsShown(shortcutError) &&
+        Require(monitor.permissionRequests == 3 && !IsShown(shortcutError) &&
             [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled,
             @"Set Up after resolving the conflict must enable the shortcut and clear the error");
 
@@ -243,7 +253,8 @@ static void RunSmoke(void) {
         monitor.permissionsGranted = YES;
         [onboarding setActive:YES];
         Require(IsShown(shortcutStep) && [selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
-            !IsShown(selectionSetup) && [start.title hasPrefix:@"Start Translating"] &&
+            [panelStatus.stringValue isEqualToString:@"Shortcut ready"] && !IsShown(selectionSetup) &&
+            !IsShown(panelSetup) && [start.title hasPrefix:@"Start Translating"] &&
             [note.stringValue containsString:@"ready"],
             @"A working shortcut and ready model must turn the footer action into Start Translating");
         [onboarding performPrimaryAction];
@@ -251,6 +262,7 @@ static void RunSmoke(void) {
         [onboarding setActive:NO];
         monitor.permissionsGranted = NO;
         monitor.selectionAvailability = ShortcutAvailabilityNeedsInputMonitoring;
+        monitor.panelAvailability = ShortcutAvailabilityNeedsAccessibility;
         [onboarding refresh];
         [onboarding focusInitialControl];
         NSResponder *focused = window.firstResponder;
