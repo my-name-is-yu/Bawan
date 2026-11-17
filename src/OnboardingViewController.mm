@@ -31,6 +31,7 @@ constexpr NSUInteger ShortcutCount = 2;
     BawanModelSetupPhase _modelPhase;
     BOOL _active;
     BawanMascotView *_mascot;
+    BawanMascotView *_heroMascot;
     NSScrollView *_scroll;
     NSView *_modelStep;
     NSView *_shortcutStep;
@@ -120,28 +121,17 @@ constexpr NSUInteger ShortcutCount = 2;
     return self;
 }
 
-// The hero pairs the large mascot with a title and one supporting line.
-- (NSStackView *)heroWithIdentifier:(NSString *)identifier title:(NSTextField *)title detail:(NSView *)detail {
-    NSImageView *mascot = [[NSImageView alloc] init];
-    mascot.identifier = [identifier stringByAppendingString:@"-mascot"];
-    mascot.image = BawanMascotImageAtSize(120);
-    mascot.imageScaling = NSImageScaleProportionallyUpOrDown;
-    mascot.translatesAutoresizingMaskIntoConstraints = NO;
-    [mascot setAccessibilityElement:NO];
-    [mascot.widthAnchor constraintEqualToConstant:120].active = YES;
-    [mascot.heightAnchor constraintEqualToConstant:120].active = YES;
-    NSStackView *intro = BawanSetupStack(@[title, detail], NSUserInterfaceLayoutOrientationVertical, 10);
-    [intro setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
-                                    forOrientation:NSLayoutConstraintOrientationHorizontal];
-    [title.widthAnchor constraintEqualToAnchor:intro.widthAnchor].active = YES;
-    NSStackView *hero = BawanSetupStack(@[mascot, intro], NSUserInterfaceLayoutOrientationHorizontal, 20);
-    hero.identifier = identifier;
-    return hero;
-}
-
+// The model step centers everything on the animated dog.
 - (NSView *)buildModelStep {
+    _heroMascot = [[BawanMascotView alloc] initPlainWithPointSize:120];
+    _heroMascot.identifier = @"onboarding-hero-mascot";
+    _heroMascot.translatesAutoresizingMaskIntoConstraints = NO;
+    [_heroMascot setAccessibilityElement:NO];
+    [_heroMascot.widthAnchor constraintEqualToConstant:120].active = YES;
+    [_heroMascot.heightAnchor constraintEqualToConstant:120].active = YES;
     _title = BawanSetupHeading(@"Prepare Your Translator", BawanSetupTitleSize);
     _title.identifier = @"onboarding-title";
+    _title.alignment = NSTextAlignmentCenter;
     _modelIcon = [[NSImageView alloc] init];
     _modelIcon.translatesAutoresizingMaskIntoConstraints = NO;
     [_modelIcon setAccessibilityElement:NO];
@@ -153,12 +143,18 @@ constexpr NSUInteger ShortcutCount = 2;
     _modelStatus.identifier = @"onboarding-model-status";
     NSStackView *model = BawanSetupStack(@[_modelIcon, modelName, _modelStatus],
         NSUserInterfaceLayoutOrientationHorizontal, 8);
-    NSStackView *hero = [self heroWithIdentifier:@"onboarding-hero" title:_title detail:model];
     _modelMessage = Label(@"", BawanSetupBodySize, NSFontWeightRegular, BawanSecondaryText);
     _modelMessage.identifier = @"onboarding-model-message";
-    NSStackView *step = BawanSetupStack(@[hero, _modelMessage], NSUserInterfaceLayoutOrientationVertical, 16);
+    _modelMessage.alignment = NSTextAlignmentCenter;
+    NSStackView *step = BawanSetupStack(@[_heroMascot, _title, model, _modelMessage],
+        NSUserInterfaceLayoutOrientationVertical, 10);
+    step.alignment = NSLayoutAttributeCenterX;
+    [step setCustomSpacing:16 afterView:_heroMascot];
+    [step setCustomSpacing:16 afterView:model];
     step.identifier = @"onboarding-step-model";
-    for (NSView *view in step.arrangedSubviews) [view.widthAnchor constraintEqualToAnchor:step.widthAnchor].active = YES;
+    for (NSView *text in @[_title, _modelMessage]) {
+        [text.widthAnchor constraintLessThanOrEqualToAnchor:step.widthAnchor constant:-48].active = YES;
+    }
     return step;
 }
 
@@ -167,8 +163,10 @@ constexpr NSUInteger ShortcutCount = 2;
     title.identifier = @"onboarding-shortcut-title";
     NSTextField *detail = Label(@"Translate selected text from any app, or open Bawan from anywhere, with a quick double press.",
         BawanSetupBodySize, NSFontWeightRegular, BawanSecondaryText);
-    NSStackView *hero = [self heroWithIdentifier:@"onboarding-shortcut-hero" title:title detail:detail];
-    [detail.widthAnchor constraintEqualToAnchor:title.widthAnchor].active = YES;
+    NSStackView *hero = BawanSetupStack(@[title, detail], NSUserInterfaceLayoutOrientationVertical, 8);
+    hero.identifier = @"onboarding-shortcut-intro";
+    [title.widthAnchor constraintEqualToAnchor:hero.widthAnchor].active = YES;
+    [detail.widthAnchor constraintEqualToAnchor:hero.widthAnchor].active = YES;
     NSMutableArray<NSView *> *views = [NSMutableArray arrayWithObjects:hero, BawanSetupRule(), nil];
     for (NSUInteger index = 0; index < ShortcutCount; ++index) {
         [views addObject:[self shortcutRow:index]];
@@ -298,6 +296,7 @@ constexpr NSUInteger ShortcutCount = 2;
         [self refresh];
     } else {
         [_mascot resetHoverAnimation];
+        [_heroMascot resetHoverAnimation];
     }
 }
 

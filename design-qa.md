@@ -1,3 +1,7 @@
+# Centered model step — 2026-11-17
+
+The model step centers everything on the animated dog, now a plain `BawanMascotView` that plays the medallion's tilt, hop, shake and blink. The shortcut step drops its body dog and leads with its title and explanation. Follow-ups are tracked in my-name-is-yu/Bawan#34 (trying the shortcut in onboarding) and my-name-is-yu/Bawan#35 (pausing and resuming the model download).
+
 # Two-step onboarding — 2026-11-17
 
 Onboarding is now two steps on one page: the model step (Download Model… and Model License in the footer) and the shortcut step (Translate Selection and Open Translator, with one footer action that reads Set Up Later until both shortcuts work and Start Translating afterwards). Accepting the license moves on at once while the model downloads, and the footer shows the progress. A failed download returns to the model step with Retry. ⌘↵ triggers each step's footer action.

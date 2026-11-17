@@ -1,5 +1,7 @@
 #import "OnboardingViewController.h"
 #import "BawanChrome.h"
+#import "BawanMascotView.h"
+#import <QuartzCore/QuartzCore.h>
 #import "BawanAppearance.h"
 
 #include <cmath>
@@ -183,6 +185,21 @@ static void RunSmoke(void) {
             @"The model step must explain the download and offer only Download and Model License");
         CheckBounds(window);
         Capture(window, @"needs-download");
+        // The centered dog animates like the masthead medallion.
+        BawanMascotView *hero = (BawanMascotView *)FindView(root, @"onboarding-hero-mascot");
+        Require([hero isKindOfClass:BawanMascotView.class] && IsShown(hero),
+            @"The model step must center the animated mascot");
+        if (!NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
+            [hero mouseEntered:[NSEvent enterExitEventWithType:NSEventTypeMouseEntered location:NSZeroPoint
+                modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil
+                eventNumber:0 trackingNumber:0 userData:nullptr]];
+            CALayer *dog = nil;
+            for (CALayer *clip in hero.layer.sublayers)
+                for (CALayer *layer in clip.sublayers)
+                    if ([layer.name isEqualToString:@"bawan.mascot.dog"]) dog = layer;
+            Require([dog animationForKey:@"bawan.hover"] != nil, @"Hovering the centered mascot must play its motion");
+            [hero resetHoverAnimation];
+        }
         [download performClick:nil];
         [license performClick:nil];
         Require(setups == 1 && licenses == 1 && finishes == 0,
