@@ -74,39 +74,31 @@ static NSString *SpecialKeyLabel(std::uint16_t key) {
     }
 }
 
-static NSString *LayoutKeyLabel(std::uint16_t key) {
-    TISInputSourceRef source = TISCopyCurrentKeyboardLayoutInputSource();
-    if (!source) return nil;
-    CFDataRef data = static_cast<CFDataRef>(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData));
-    NSString *label = nil;
-    if (data) {
-        const UCKeyboardLayout *layout = reinterpret_cast<const UCKeyboardLayout *>(CFDataGetBytePtr(data));
-        UInt32 deadKeys = 0;
-        UniChar characters[8];
-        UniCharCount length = 0;
-        OSStatus status = UCKeyTranslate(layout, key, kUCKeyActionDisplay, 0, LMGetKbdType(),
-                                         kUCKeyTranslateNoDeadKeysMask, &deadKeys, 8, &length, characters);
-        if (status == noErr && length > 0) {
-            NSString *candidate = [NSString stringWithCharacters:characters length:length];
-            if ([candidate rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound) {
-                label = candidate.uppercaseString;
-            }
-        }
-    }
-    CFRelease(source);
-    return label;
+static NSString *LayoutKeyLabel(bawan::ShortcutBinding binding, const bawan::KeyboardLayout& layout) {
+    const auto layer = !(binding.modifiers & bawan::Command) ? bawan::KeyboardLayer::Plain :
+        binding.modifiers & bawan::Shift ? bawan::KeyboardLayer::CommandShift : bawan::KeyboardLayer::Command;
+    const unichar character = layout.character(binding.keyCode, layer);
+    return character ? [NSString stringWithCharacters:&character length:1].uppercaseString : nil;
 }
 
 NSString *ShortcutKeyLabel(bawan::ShortcutBinding binding) {
+    return ShortcutKeyLabel(binding, CurrentKeyboardLayout());
+}
+
+NSString *ShortcutKeyLabel(bawan::ShortcutBinding binding, const bawan::KeyboardLayout& layout) {
+    if (binding.keyCode == bawan::unresolvedShortcutKey) return @"Unavailable";
     NSMutableString *label = [NSMutableString string];
     if (binding.modifiers & bawan::Control) [label appendString:@"⌃"];
     if (binding.modifiers & bawan::Option) [label appendString:@"⌥"];
     if (binding.modifiers & bawan::Shift) [label appendString:@"⇧"];
     if (binding.modifiers & bawan::Command) [label appendString:@"⌘"];
-    NSString *key = SpecialKeyLabel(binding.keyCode) ?: LayoutKeyLabel(binding.keyCode);
+    NSString *key = SpecialKeyLabel(binding.keyCode) ?: LayoutKeyLabel(binding, layout);
     [label appendString:key ?: [NSString stringWithFormat:@"Key %u", static_cast<unsigned>(binding.keyCode)]];
     return label;
 }
+
+bawan::ShortcutBindings ShortcutDefaultBindings() { return bawan::defaultShortcuts(CurrentKeyboardLayout()); }
+bool ShortcutIsPassiveCopy(bawan::ShortcutBinding binding) { return bawan::isPassiveCopy(binding, CurrentKeyboardLayout()); }
 
 NSString *ShortcutBindingLabel(bawan::ShortcutBinding binding) {
     return [NSString stringWithFormat:@"%@ ×%u", ShortcutKeyLabel(binding), static_cast<unsigned>(binding.pressCount)];
@@ -152,6 +144,8 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
 @interface ShortcutPreferences () {
     NSUserDefaults *_defaults;
     bawan::ShortcutBindings _bindings;
+    bawan::KeyboardLayout (^_layoutProvider)(void);
+    id _layoutObserver;
 }
 @end
 
@@ -162,10 +156,15 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
 }
 
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults {
+    return [self initWithDefaults:defaults layoutProvider:^{ return CurrentKeyboardLayout(); }];
+}
+
+- (instancetype)initWithDefaults:(NSUserDefaults *)defaults layoutProvider:(bawan::KeyboardLayout (^)(void))provider {
     self = [super init];
     if (!self) return nil;
     _defaults = defaults;
-    _bindings = bawan::defaultShortcuts();
+    _layoutProvider = [provider copy];
+    _bindings = bawan::defaultShortcuts(self.keyboardLayout);
     id stored = [_defaults objectForKey:PreferencesKey];
     if ([stored isKindOfClass:NSDictionary.class]) {
         unsigned version = 0;
@@ -177,8 +176,21 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
     }
     if (bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[1].enabled = false;
     [self save];
+    __weak ShortcutPreferences *weakSelf = self;
+    _layoutObserver = [NSDistributedNotificationCenter.defaultCenter
+        addObserverForName:(__bridge NSString *)kTISNotifySelectedKeyboardInputSourceChanged object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) {
+            ShortcutPreferences *self = weakSelf;
+            if (self) [NSNotificationCenter.defaultCenter postNotificationName:BawanShortcutsDidChangeNotification object:self];
+        }];
     return self;
 }
+
+- (void)dealloc {
+    if (_layoutObserver) [NSDistributedNotificationCenter.defaultCenter removeObserver:_layoutObserver];
+}
+
+- (bawan::KeyboardLayout)keyboardLayout { return _layoutProvider(); }
 
 - (void)save {
     [_defaults setObject:@{@"version": @1, @"bindings": @{
@@ -210,7 +222,8 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
     }
     bawan::ShortcutBindings candidate = _bindings;
     candidate[index] = binding;
-    bawan::ShortcutError problem = bawan::validateShortcuts(candidate);
+    bawan::ShortcutError problem = bawan::validateShortcut(binding, self.keyboardLayout);
+    if (problem == bawan::ShortcutError::None) problem = bawan::validateShortcuts(candidate);
     if (problem != bawan::ShortcutError::None) {
         if (error) {
             switch (problem) {
@@ -246,7 +259,7 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
 - (BOOL)restoreAction:(bawan::ShortcutAction)action error:(NSString **)error {
     unsigned index = static_cast<unsigned>(action);
     if (index >= _bindings.size()) return NO;
-    return [self setBinding:bawan::defaultShortcuts()[index] forAction:action error:error];
+    return [self setBinding:bawan::defaultShortcuts(self.keyboardLayout)[index] forAction:action error:error];
 }
 
 @end

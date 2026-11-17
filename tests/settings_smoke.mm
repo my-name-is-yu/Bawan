@@ -607,8 +607,8 @@ static void RunSmoke(void) {
     NSString *privacyText = privacy.stringValue;
     Require(selectionEnabled.state == NSControlStateValueOn && panelEnabled.state == NSControlStateValueOn &&
         selectionCount.indexOfSelectedItem == 1 &&
-        [selectionKey.title isEqualToString:ShortcutKeyLabel(bawan::defaultShortcuts()[0])] &&
-        [panelKey.title isEqualToString:ShortcutKeyLabel(bawan::defaultShortcuts()[1])],
+        [selectionKey.title isEqualToString:ShortcutKeyLabel(ShortcutDefaultBindings()[0])] &&
+        [panelKey.title isEqualToString:ShortcutKeyLabel(ShortcutDefaultBindings()[1])],
         @"Both shortcuts must show their enabled defaults and separate press counts");
     Require([selectionKey.toolTip containsString:@"Click"] &&
         selectionCount.accessibilityLabel.length > 0 && help != nil && window.attachedSheet == nil,
@@ -924,7 +924,7 @@ static void RunSmoke(void) {
     [gear performClick:nil];
     [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
     bawan::ShortcutBinding restored = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-    Require(restored.enabled && bawan::isPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
+    Require(restored.enabled && ShortcutIsPassiveCopy(restored) && selectionCount.indexOfSelectedItem == 1,
         @"Reset restores the default key, press count, and enabled state");
     Require(reservation.hidden, @"Restoring the default assignments must remove the custom-key reservation warning");
     [settings showError:@""];

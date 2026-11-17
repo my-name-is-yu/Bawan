@@ -1,24 +1,41 @@
 #include "ShortcutBinding.h"
 
 namespace bawan {
-
-ShortcutBindings defaultShortcuts() {
-    return {{{true, 8, Command, 2}, {true, 17, Option, 2}}};
+namespace {
+bool unresolvedCommandKey(std::uint16_t key, std::uint8_t modifiers, const KeyboardLayout& layout) {
+    if (key > 50 || key == 36 || key == 48 || key == 49) return false;
+    const auto layer = modifiers == Command ? KeyboardLayer::Command : KeyboardLayer::CommandShift;
+    return !layout.character(key, layer);
+}
 }
 
-bool isPassiveCopy(const ShortcutBinding& binding) {
-    return binding.keyCode == 8 && binding.modifiers == Command && binding.pressCount == 2;
+ShortcutBindings defaultShortcuts(const KeyboardLayout& layout) {
+    const auto copy = layout.copyKey();
+    return {{{copy.has_value(), copy.value_or(unresolvedShortcutKey), Command, 2}, {true, 17, Option, 2}}};
 }
 
-bool isNativeWindowShortcut(std::uint16_t keyCode, std::uint8_t modifiers) {
-    if (modifiers == (Command | Shift)) return keyCode == 6; // Redo
+bool isPassiveCopy(const ShortcutBinding& binding, const KeyboardLayout& layout) {
+    return layout.matches(binding.keyCode, KeyboardLayer::Command, u'c') &&
+        binding.modifiers == Command && binding.pressCount == 2;
+}
+
+bool isNativeWindowShortcut(std::uint16_t keyCode, std::uint8_t modifiers, const KeyboardLayout& layout) {
+    if ((modifiers == Command || modifiers == (Command | Shift)) &&
+        unresolvedCommandKey(keyCode, modifiers, layout)) return true;
+    if (modifiers == (Command | Shift)) return layout.matches(keyCode, KeyboardLayer::CommandShift, u'z');
     if (modifiers != Command) return false;
-    switch (keyCode) {
-        case 0: case 6: case 7: case 8: case 9: case 13: // Select all, Undo, Cut, Copy, Paste, Close
-            return true;
-        default:
-            return false;
+    for (const auto c : u"azxcvw") if (c && layout.matches(keyCode, KeyboardLayer::Command, c)) return true;
+    return false;
+}
+
+bool isReservedShortcut(std::uint16_t keyCode, std::uint8_t modifiers, const KeyboardLayout& layout) {
+    if ((modifiers == Command || modifiers == (Command | Shift)) &&
+        unresolvedCommandKey(keyCode, modifiers, layout)) return true;
+    if (modifiers == Command) {
+        return keyCode == 36 || keyCode == 76 || layout.matches(keyCode, KeyboardLayer::Command, u'q') ||
+            layout.matches(keyCode, KeyboardLayer::Command, u',');
     }
+    return modifiers == (Command | Shift) && layout.matches(keyCode, KeyboardLayer::CommandShift, u'c');
 }
 
 std::uint8_t normalizeShortcutModifiers(std::uint8_t modifiers, std::uint16_t keyCode) {
@@ -34,33 +51,21 @@ std::uint8_t normalizeShortcutModifiers(std::uint8_t modifiers, std::uint16_t ke
     }
 }
 
-static bool supportedKey(std::uint16_t key) {
-    if (key <= 51 || key == 53 || (key >= 82 && key <= 101) ||
-        (key >= 114 && key <= 126)) return true;
-    switch (key) {
-        case 64: case 65: case 67: case 69: case 71: case 75: case 76:
-        case 78: case 79: case 80: case 81: case 103: case 105: case 106:
-        case 107: case 109: case 111: case 113:
-            return true;
-        default:
-            return false;
-    }
-}
-
 ShortcutError validateShortcut(const ShortcutBinding& binding) {
-    if (!supportedKey(binding.keyCode)) return ShortcutError::InvalidKey;
+    if (!isShortcutKey(binding.keyCode) && (binding.enabled || binding.keyCode != unresolvedShortcutKey)) return ShortcutError::InvalidKey;
     constexpr std::uint8_t primaryModifiers = Command | Option | Control;
     constexpr std::uint8_t allowedModifiers = primaryModifiers | Shift;
     if (!(binding.modifiers & primaryModifiers) || (binding.modifiers & ~allowedModifiers)) {
         return ShortcutError::MissingModifier;
     }
     if (binding.pressCount != 1 && binding.pressCount != 2) return ShortcutError::InvalidPressCount;
-    if ((binding.modifiers == Command &&
-         (binding.keyCode == 36 || binding.keyCode == 76 || binding.keyCode == 12 || binding.keyCode == 43)) ||
-        (binding.modifiers == (Command | Shift) && binding.keyCode == 8)) {
-        return ShortcutError::Reserved;
-    }
     return ShortcutError::None;
+}
+
+ShortcutError validateShortcut(const ShortcutBinding& binding, const KeyboardLayout& layout) {
+    const auto error = validateShortcut(binding);
+    if (error != ShortcutError::None) return error;
+    return binding.enabled && isReservedShortcut(binding.keyCode, binding.modifiers, layout) ? ShortcutError::Reserved : ShortcutError::None;
 }
 
 ShortcutError validateShortcuts(const ShortcutBindings& bindings) {
@@ -72,6 +77,14 @@ ShortcutError validateShortcuts(const ShortcutBindings& bindings) {
         bindings[0].keyCode == bindings[1].keyCode &&
         bindings[0].modifiers == bindings[1].modifiers) return ShortcutError::Duplicate;
     return ShortcutError::None;
+}
+
+ShortcutError validateShortcuts(const ShortcutBindings& bindings, const KeyboardLayout& layout) {
+    for (const auto& binding : bindings) {
+        const auto error = validateShortcut(binding, layout);
+        if (error != ShortcutError::None) return error;
+    }
+    return validateShortcuts(bindings);
 }
 
 void ShortcutGesture::configure(ShortcutBinding binding, bool suppress) {

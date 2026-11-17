@@ -1,4 +1,5 @@
 #import "ShortcutPreferences.h"
+#include "KeyboardLayoutFixtures.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -15,8 +16,8 @@ int main() {
         NSString *suite = [@"local.bawan.ShortcutPreferencesTests." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         [defaults removePersistentDomainForName:suite];
-        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        auto initial = bawan::defaultShortcuts();
+        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
+        auto initial = bawan::defaultShortcuts(bawan::test::qwertyLayout());
         require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "selection default");
         require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "panel default");
         require(![preferences bindingForAction:static_cast<bawan::ShortcutAction>(initial.size())].enabled,
@@ -31,11 +32,11 @@ int main() {
         require(error == nil && notifications == 1, "valid change notifies once");
         require([ShortcutKeyLabel(custom) hasPrefix:@"⌥"], "key label includes modifiers");
         require([ShortcutBindingLabel(custom) containsString:@"×1"], "binding label includes press count");
-        ShortcutPreferences *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        ShortcutPreferences *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         require([reloaded bindingForAction:bawan::ShortcutAction::OpenPanel] == custom, "custom key survives reload");
         custom.enabled = false;
         require([preferences setBinding:custom forAction:bawan::ShortcutAction::OpenPanel error:&error], "row can be disabled");
-        reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         require([reloaded bindingForAction:bawan::ShortcutAction::OpenPanel] == custom, "disabled row retains key and press count");
         require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:&error], "row restores default");
         require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "restore includes enabled state");
@@ -61,7 +62,7 @@ int main() {
 
         [defaults removePersistentDomainForName:suite];
         [defaults setBool:NO forKey:@"shortcutEnabled"];
-        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "obsolete setting must not override selection default");
         require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "obsolete setting must not override panel default");
 
@@ -69,14 +70,14 @@ int main() {
             @"translateSelection": @{@"enabled": @YES, @"keyCode": @"C", @"modifiers": @1, @"pressCount": @2},
             @"openPanel": @{@"enabled": @YES, @"keyCode": @17, @"modifiers": @2, @"pressCount": @1.5}}}
             forKey:@"globalShortcuts"];
-        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "corrupt row falls back to current default");
         require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "fractional count falls back to default");
 
         NSDictionary *sameRow = @{@"enabled": @YES, @"keyCode": @8, @"modifiers": @1, @"pressCount": @2};
         [defaults setObject:@{@"version": @1, @"bindings": @{@"translateSelection": sameRow, @"openPanel": sameRow}}
             forKey:@"globalShortcuts"];
-        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled, "valid stored selection survives conflict");
         require(![preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled, "corrupt stored conflict disables duplicate reservation");
         require(ShortcutModifiersFromFlags(NSEventModifierFlagCommand | NSEventModifierFlagCapsLock) == bawan::Command,

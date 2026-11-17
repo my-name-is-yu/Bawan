@@ -1,6 +1,7 @@
 #import "ShortcutMonitor.h"
 #import "SelectionReader.h"
 #import <CoreGraphics/CoreGraphics.h>
+#include "KeyboardLayoutFixtures.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -37,6 +38,12 @@
 @implementation RoutingActions
 @end
 
+@interface RoutingKeyboard : NSObject
+@property(nonatomic) bawan::KeyboardLayout layout;
+@end
+@implementation RoutingKeyboard
+@end
+
 static void require(bool condition, const char *message) {
     if (!condition) {
         std::cerr << "FAIL: " << message << '\n';
@@ -68,11 +75,15 @@ struct RoutingFixture {
     RoutingSelectionReader *reader;
     RoutingMonitor *monitor;
     RoutingActions *actions;
+    RoutingKeyboard *keyboard;
 
     RoutingFixture() {
         suite = [@"local.bawan.ShortcutMonitorTests." stringByAppendingString:NSUUID.UUID.UUIDString];
         defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
-        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        keyboard = [RoutingKeyboard new];
+        keyboard.layout = bawan::test::qwertyLayout();
+        RoutingKeyboard *source = keyboard;
+        preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return source.layout; }];
         reader = [RoutingSelectionReader new];
         monitor = [[RoutingMonitor alloc] initWithPreferences:preferences selectionReader:reader];
         actions = [RoutingActions new];
@@ -321,6 +332,33 @@ static void testRepeatedTriggersAndDeferredCopy() {
     }
 }
 
+static void testLayoutChanges() {
+    RoutingFixture fixture;
+    require(!route(fixture.monitor, kCGEventKeyDown, 8, kCGEventFlagMaskCommand, false), "first physical Copy remains passive");
+    require(!route(fixture.monitor, kCGEventKeyUp, 8, 0, false), "first passive Copy release reaches source");
+    fixture.keyboard.layout = bawan::test::dvorakLayout();
+    require(!route(fixture.monitor, kCGEventKeyDown, 8, kCGEventFlagMaskCommand, false), "old passive tap does not complete a pair after layout changes");
+    require(fixture.reader.reads == 0, "source switch cancels a half-finished passive pair");
+    require([fixture.preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].keyCode == 8,
+            "switching layouts preserves the stored physical binding");
+    fixture.bind(bawan::ShortcutAction::TranslateSelection, {true, 34, bawan::Command, 2});
+    for (unsigned press = 0; press < 2; ++press) {
+        require(!route(fixture.monitor, kCGEventKeyDown, 34, kCGEventFlagMaskCommand, false), "Dvorak Copy remains passive");
+        require(!route(fixture.monitor, kCGEventKeyUp, 34, 0, false), "Dvorak Copy release reaches source");
+    }
+    require(fixture.reader.reads == 1 && fixture.reader.lastPassive, "new Dvorak Copy pair acquires selection passively");
+
+    fixture.keyboard.layout = bawan::test::qwertyLayout();
+    fixture.open(1, 7, bawan::Command);
+    require(route(fixture.monitor, kCGEventKeyDown, 7, kCGEventFlagMaskCommand), "custom action queues under original layout");
+    fixture.keyboard.layout = bawan::test::dvorakLayout();
+    require(route(fixture.monitor, kCGEventKeyUp, 7, 0), "source switch drains the previously captured release");
+    settle();
+    require(fixture.actions.opens == 0, "layout change cancels a queued custom action");
+    require(!route(fixture.monitor, kCGEventKeyDown, 7, kCGEventFlagMaskCommand), "newly reserved Dvorak Quit passes through");
+    require(!route(fixture.monitor, kCGEventKeyUp, 7, 0), "newly reserved command release passes through");
+}
+
 int main() {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -329,7 +367,8 @@ int main() {
         [NSApp deactivate];
         NSString *suite = [@"local.bawan.ShortcutMonitorTests." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
-        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults
+            layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         RoutingSelectionReader *selectionReader = [RoutingSelectionReader new];
         RoutingMonitor *monitor = [[RoutingMonitor alloc] initWithPreferences:preferences selectionReader:selectionReader];
         __block unsigned opens = 0;
@@ -443,6 +482,7 @@ int main() {
         testIndependentModes();
         testCancellationAndRecovery();
         testRepeatedTriggersAndDeferredCopy();
+        testLayoutChanges();
         std::cout << "Shortcut monitor native routing tests passed\n";
     }
 }

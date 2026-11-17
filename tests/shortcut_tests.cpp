@@ -1,4 +1,5 @@
 #include "ShortcutBinding.h"
+#include "KeyboardLayoutFixtures.h"
 #include "ShortcutMonitorState.h"
 
 #include <cstdlib>
@@ -6,6 +7,12 @@
 
 using namespace bawan;
 using Kind = ShortcutEvent::Kind;
+
+static ShortcutBindings defaultShortcuts() { return bawan::defaultShortcuts(bawan::test::qwertyLayout()); }
+static bool isPassiveCopy(const ShortcutBinding& binding) { return bawan::isPassiveCopy(binding, bawan::test::qwertyLayout()); }
+static bool isNativeWindowShortcut(std::uint16_t key, std::uint8_t modifiers) {
+    return bawan::isNativeWindowShortcut(key, modifiers, bawan::test::qwertyLayout());
+}
 
 static void require(bool condition, const char *message) {
     if (!condition) {
@@ -55,9 +62,9 @@ static void testBindings() {
     }
     for (std::uint16_t key : {36, 76, 12, 43}) {
         ShortcutBinding binding{true, key, Command, 2};
-        require(validateShortcut(binding) == ShortcutError::Reserved, "Bawan's fixed commands cannot be shadowed by a prefix");
+        require(validateShortcut(binding, bawan::test::qwertyLayout()) == ShortcutError::Reserved, "Bawan's fixed commands cannot be shadowed by a prefix");
     }
-    require(validateShortcut({true, 8, std::uint8_t(Command | Shift), 1}) == ShortcutError::Reserved,
+    require(validateShortcut({true, 8, std::uint8_t(Command | Shift), 1}, bawan::test::qwertyLayout()) == ShortcutError::Reserved,
             "copy-result command is reserved");
     require(validateShortcut({true, 17, Option, 3}) == ShortcutError::InvalidPressCount,
             "only one or two presses are supported");

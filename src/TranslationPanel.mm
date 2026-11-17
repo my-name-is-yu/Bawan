@@ -5,6 +5,7 @@
 #import "BawanAppearance.h"
 #import "BawanChrome.h"
 #import "BawanMascotView.h"
+#import "SystemKeyboardLayout.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
 #import <QuartzCore/CAMediaTimingFunction.h>
@@ -17,6 +18,7 @@
 @property(nonatomic, copy) void (^onCopyKey)(void);
 @property(nonatomic, copy) void (^onEscape)(void);
 @property(nonatomic, weak) NSView *editingContent;
+@property(nonatomic, copy) bawan::KeyboardLayout (^keyboardLayoutProvider)(void);
 @end
 
 @implementation BawanPanel
@@ -30,18 +32,19 @@
     NSEventModifierFlags modifiers = event.modifierFlags &
         (NSEventModifierFlagCommand | NSEventModifierFlagShift |
          NSEventModifierFlagControl | NSEventModifierFlagOption);
-    NSString *key = event.charactersIgnoringModifiers;
-    if (modifiers == NSEventModifierFlagCommand && [key.lowercaseString isEqualToString:@"w"]) {
+    const auto layout = self.keyboardLayoutProvider ? self.keyboardLayoutProvider() : CurrentKeyboardLayout();
+    if (modifiers == NSEventModifierFlagCommand &&
+        layout.matches(event.keyCode, bawan::KeyboardLayer::Command, u'w')) {
         [self performClose:nil];
         return YES;
     }
     if (modifiers == NSEventModifierFlagCommand &&
-        ([key isEqualToString:@"\r"] || [key isEqualToString:@"\n"])) {
+        (event.keyCode == 36 || event.keyCode == 76)) {
         if (self.onTranslateKey) self.onTranslateKey();
         return YES;
     }
     if (modifiers == (NSEventModifierFlagCommand | NSEventModifierFlagShift) &&
-        [key.lowercaseString isEqualToString:@"c"]) {
+        layout.matches(event.keyCode, bawan::KeyboardLayer::CommandShift, u'c')) {
         if (self.onCopyKey) self.onCopyKey();
         return YES;
     }

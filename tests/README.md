@@ -67,8 +67,10 @@ permissions, physical key delivery, visible windows and the system clipboard:
 
 ```sh
 clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
-  tests/selection_reader_tests.mm src/SelectionReader.mm \
-  -framework AppKit -framework CoreGraphics -o /tmp/bawan-selection-reader-tests
+  tests/selection_reader_tests.mm src/SelectionReader.mm src/ShortcutBinding.cpp \
+  src/KeyboardLayout.cpp src/SystemKeyboardLayout.mm \
+  -framework AppKit -framework CoreGraphics -framework Carbon \
+  -o /tmp/bawan-selection-reader-tests
 /tmp/bawan-selection-reader-tests
 ```
 
@@ -84,7 +86,7 @@ chmod +x .git/hooks/pre-push
 ```
 
 Run the model-backed command separately there as well. The native CTests cover
-preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four
+preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the five
 portable checks. CI was intentionally removed in `babb935`; native validation
 must not be assumed to happen automatically after opening a PR.
 
@@ -154,7 +156,8 @@ without llama.cpp:
 
 ```sh
 clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
-  tests/shortcut_monitor_tests.mm src/ShortcutBinding.cpp \
+  tests/shortcut_monitor_tests.mm src/ShortcutBinding.cpp src/KeyboardLayout.cpp \
+  src/SystemKeyboardLayout.mm \
   src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm \
   -framework AppKit -framework CoreGraphics -framework ApplicationServices \
   -framework Carbon -o /tmp/bawan-shortcut-monitor-tests
@@ -164,3 +167,98 @@ clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
 Even a successful native routing test does not establish installed event-tap,
 physical-key, permission-prompt or actual system sleep/wake behavior; those
 require a Mac session. No native or model-backed smoke success is claimed here.
+
+## Command keyboard layouts (#49)
+
+`KeyboardLayoutFixtures.h` contains hand-authored QWERTY, Dvorak and
+Dvorak-QWERTY Command models, not measurements of Apple's layouts. The portable
+`keyboard_layout` test checks Copy resolution, independent Command/Command-Shift
+layers, labels' character lookup, native/reserved commands, and missing, dead,
+multicharacter and ambiguous results. On 2026-11-17, the Linux warnings-as-errors
+`scripts/check.sh -DBAWAN_BUILD_APP=OFF` build passed all five portable CTests
+with the pinned llama.cpp archive hash verified. Direct layout/shortcut tests
+passed ASan and UBSan. Three isolated, compiled mutations were rejected: fixed
+Copy keyCode 8, ignoring the Command layer, and accepting dead-key results.
+These checks do not establish Carbon translation or physical event delivery.
+Run the layout test independently of llama.cpp with:
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -Isrc \
+  tests/keyboard_layout_tests.cpp src/KeyboardLayout.cpp src/ShortcutBinding.cpp \
+  -o /tmp/bawan-keyboard-layout-tests
+/tmp/bawan-keyboard-layout-tests
+```
+
+On macOS, the following test reads installed layout data and captures synthesized
+events through an injected sink. It does not select/add input sources, post
+events, or use the system clipboard. It also checks labels and saved physical
+bindings using an isolated preferences suite:
+
+```sh
+clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
+  tests/keyboard_layout_native_tests.mm src/SelectionReader.mm \
+  src/ShortcutPreferences.mm src/ShortcutBinding.cpp src/KeyboardLayout.cpp \
+  src/SystemKeyboardLayout.mm \
+  -framework AppKit -framework CoreGraphics -framework Carbon \
+  -o /tmp/bawan-keyboard-layout-native-tests
+/tmp/bawan-keyboard-layout-native-tests
+```
+
+The test checks `com.apple.keylayout.ABC`, `com.apple.keylayout.Dvorak` and
+`com.apple.keylayout.DVORAK-QWERTYCMD` without activating them. Missing sources
+print `SKIP`; retain those lines in the result, since a skipped source has not
+been verified. Expected Copy positions are respectively keyCodes 8, 34 and 8;
+standard Dvorak maps keyCode 8 to Command-J. Linux has no Apple SDK, so this test
+and all native #49 changes remain uncompiled and unrun on the cloud host.
+
+Fresh preferences and **Restore** resolve the current layout's Copy key.
+Existing bindings remain physical after a source switch: their labels and
+passive/active status can change, and a newly reserved combination reports a
+failed binding and passes through. The persisted v1 keyCode 8 is not silently
+migrated because it is indistinguishable from a user-recorded physical binding.
+
+Remaining Mac checks require a tester, with explicit user authorization before
+selecting any input source or changing settings. Record the OS, keyboard type,
+selected source ID, permissions, exact commit and skipped tests; preserve the
+user's existing configuration. Run the native checks above and `scripts/check.sh`
+before these physical tests:
+
+1. In TextEdit and a browser text field, select distinct text under ABC, standard
+   Dvorak and Dvorak-QWERTY Command. Verify ordinary Copy and default double-Copy
+   preserve native copying and acquire that exact selection. Restore the default
+   explicitly for each source; also test a saved custom selection shortcut and
+   confirm its synthesized Copy acquires the new selection, not stale clipboard
+   text. Standard Dvorak must use physical I for Copy, rather than Unicode-C
+   injection or physical C.
+2. Check labels after each switch and verify saved physical bindings stay put.
+   With Bawan's text field focused, check Select All, Undo/Redo, Cut/Copy/Paste and
+   Close at their actual layout positions. Recording must reject current Quit,
+   Preferences, Copy Translation and both Command-Return reservations. A saved
+   binding that becomes reserved must pass through without firing Bawan.
+3. Switch sources between the two presses, while an intercepted key is held,
+   and after a custom trigger queues an action/copy. Confirm no stale action or
+   Copy, balanced release handling, updated labels/availability, and recovery on
+   a fresh complete gesture. A saved old Copy position may become active and
+   require Accessibility; it must not retain passive Copy behavior incorrectly.
+   The native monitor test switches its injected source before draining queued
+   callbacks; a physical race alone does not prove that queued window was hit.
+4. For an already available IME, compare its selected source and the effective
+   layout from `TISCopyCurrentKeyboardLayoutInputSource`, then test actual Copy.
+   If the effective layout lacks Unicode data, expect safe failure without
+   guessed events. Dead-key and duplicate/unresolved Copy cases are covered by
+   injected fixtures; physical behavior for any installed matching layout still
+   needs a separate result. Do not install or alter layouts without authorization.
+
+[Apple's CGEvent documentation](https://developer.apple.com/documentation/coregraphics/cgevent/keyboardsetunicodestring(stringlength:unicodestring:).md)
+warns that frameworks can translate the virtual keyCode themselves despite an
+attached Unicode string. [Mozilla's keyboard handling](https://github.com/mozilla/gecko-dev/blob/master/widget/cocoa/TextInputHandler.mm#L1631)
+independently translates Command and Command-Shift and handles Dvorak-QWERTY
+Command. These support resolving a physical Copy key from the Command layer;
+actual event delivery still needs the Mac checks above.
+
+The resolver uses fresh dead-key state for each translation and the effective
+layout reported by `TISCopyCurrentKeyboardLayoutInputSource`.
+[Apple's TIS declarations](https://github.com/phracker/MacOSX-SDKs/blob/master/MacOSX11.3.sdk/System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Versions/A/Headers/TextInputSources.h#L803)
+distinguish that IME/mode layout from the most-recent ASCII-capable layout used
+when no override exists. An ASCII fallback could therefore mismatch an IME
+override; missing data causes safe failure rather than a guessed physical key.

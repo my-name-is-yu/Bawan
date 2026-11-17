@@ -1,12 +1,17 @@
 #import <Foundation/Foundation.h>
 
 #include <cstdint>
+#include "KeyboardLayout.h"
+#import <CoreGraphics/CoreGraphics.h>
 
 namespace bawan {
 inline constexpr int64_t selectionCopyEventTag = 0x426177616e437079;
 }
 
 NS_ASSUME_NONNULL_BEGIN
+
+// The sink receives a complete physical down/up pair, or nothing when Copy is unresolved.
+bool PostCopyEvents(const bawan::KeyboardLayout& layout, void (^post)(CGEventRef));
 
 // External effects are injectable so a read needs neither an event tap nor the system clipboard.
 @protocol SelectionReaderEnvironment <NSObject>

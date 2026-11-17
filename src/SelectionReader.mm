@@ -1,6 +1,30 @@
 #import "SelectionReader.h"
+#import "SystemKeyboardLayout.h"
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+
+bool PostCopyEvents(const bawan::KeyboardLayout& layout, void (^post)(CGEventRef)) {
+    const auto key = layout.copyKey();
+    if (!key) return false;
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+    if (!source) return false;
+    CGEventRef down = CGEventCreateKeyboardEvent(source, *key, true);
+    CGEventRef up = CGEventCreateKeyboardEvent(source, *key, false);
+    if (source) CFRelease(source);
+    if (!down || !up) {
+        if (down) CFRelease(down);
+        if (up) CFRelease(up);
+        return false;
+    }
+    const CGEventRef events[] = {down, up};
+    for (CGEventRef event : events) {
+        CGEventSetFlags(event, kCGEventFlagMaskCommand);
+        CGEventSetIntegerValueField(event, kCGEventSourceUserData, bawan::selectionCopyEventTag);
+        post(event);
+        CFRelease(event);
+    }
+    return true;
+}
 
 @interface SystemSelectionEnvironment : NSObject <SelectionReaderEnvironment>
 @end
@@ -18,23 +42,7 @@
     return NO;
 }
 - (BOOL)sendCopy {
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
-    CGEventRef down = CGEventCreateKeyboardEvent(source, 8, true);
-    CGEventRef up = CGEventCreateKeyboardEvent(source, 8, false);
-    if (source) CFRelease(source);
-    if (!down || !up) {
-        if (down) CFRelease(down);
-        if (up) CFRelease(up);
-        return NO;
-    }
-    const CGEventRef events[] = {down, up};
-    for (CGEventRef event : events) {
-        CGEventSetFlags(event, kCGEventFlagMaskCommand);
-        CGEventSetIntegerValueField(event, kCGEventSourceUserData, bawan::selectionCopyEventTag);
-        CGEventPost(kCGSessionEventTap, event);
-        CFRelease(event);
-    }
-    return YES;
+    return PostCopyEvents(CurrentKeyboardLayout(), ^(CGEventRef event) { CGEventPost(kCGSessionEventTap, event); });
 }
 - (NSTimeInterval)uptime { return NSProcessInfo.processInfo.systemUptime; }
 - (void)scheduleAfter:(NSTimeInterval)delay perform:(void (^)(void))callback {

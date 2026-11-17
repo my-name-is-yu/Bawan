@@ -332,7 +332,7 @@ struct SettingsShortcutRow {
 - (void)refresh {
     BOOL recording = _eventMonitor != nil;
     BOOL reservesCustomKeys = NO;
-    const auto defaults = bawan::defaultShortcuts();
+    const auto defaults = ShortcutDefaultBindings();
     for (const SettingsShortcutRow &row : _shortcutRows) {
         bawan::ShortcutBinding binding = [_preferences bindingForAction:row.action];
         const auto &defaultBinding = defaults[static_cast<NSUInteger>(row.action)];
@@ -348,7 +348,7 @@ struct SettingsShortcutRow {
         BOOL custom = binding.keyCode != defaultBinding.keyCode || binding.modifiers != defaultBinding.modifiers ||
                       binding.pressCount != defaultBinding.pressCount;
         reservesCustomKeys |= binding.enabled && custom &&
-            (row.action != bawan::ShortcutAction::TranslateSelection || !bawan::isPassiveCopy(binding));
+            (row.action != bawan::ShortcutAction::TranslateSelection || !ShortcutIsPassiveCopy(binding));
         BawanShortcutPresentation presentation = BawanPresentShortcut(availability);
         NSString *status = presentation.status;
         BawanColorRole statusRole = presentation.color;

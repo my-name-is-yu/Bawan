@@ -21,6 +21,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     bawan::ShortcutMonitorState _state;
     bawan::ShortcutKeyOwnership _keys;
     bool _passiveSelection;
+    bawan::KeyboardLayout _keyboardLayout;
     CFMachPortRef _passiveTap;
     CFMachPortRef _activeTap;
     CFRunLoopSourceRef _passiveSource;
@@ -34,6 +35,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
 - (void)configureGestures;
 - (void)applyPreferences;
 - (void)loadBindings;
+- (BOOL)updateKeyboardLayout;
 - (BOOL)installTapActive:(BOOL)active;
 - (void)removeTapActive:(BOOL)active;
 @end
@@ -84,8 +86,16 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 
 - (void)loadBindings {
     _bindings = _preferences.bindings;
-    _passiveSelection = bawan::isPassiveCopy(_bindings[selectionIndex]);
+    _keyboardLayout = _preferences.keyboardLayout;
+    _passiveSelection = bawan::isPassiveCopy(_bindings[selectionIndex], _keyboardLayout);
     [self configureGestures];
+}
+
+- (BOOL)updateKeyboardLayout {
+    if (_preferences.keyboardLayout == _keyboardLayout) return NO;
+    [self cancelPending];
+    [self loadBindings];
+    return YES;
 }
 
 - (void)applyPreferences {
@@ -209,6 +219,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 
 - (void)refresh {
     NSAssert(NSThread.isMainThread, @"Shortcut monitoring runs on the main thread");
+    [self updateKeyboardLayout];
     const bool inputAllowed = CGPreflightListenEventAccess();
     const bool accessibilityAllowed = AXIsProcessTrusted();
     const bool hadPassiveTap = _passiveTap != nullptr;
@@ -223,7 +234,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     bool wantsPassive = false;
     bool wantsActive = false;
     for (unsigned i = 0; i < _bindings.size(); ++i) {
-        if (!_bindings[i].enabled) continue;
+        if (!_bindings[i].enabled || bawan::validateShortcut(_bindings[i], _keyboardLayout) != bawan::ShortcutError::None) continue;
         if (i == selectionIndex && _passiveSelection) wantsPassive = true;
         else wantsActive = true;
     }
@@ -245,7 +256,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         ShortcutAvailability state = ShortcutAvailabilityOff;
         if (_state.started() && _bindings[i].enabled) {
             const bool passive = i == selectionIndex && _passiveSelection;
-            if (passive && !inputAllowed) state = ShortcutAvailabilityNeedsInputMonitoring;
+            if (bawan::validateShortcut(_bindings[i], _keyboardLayout) != bawan::ShortcutError::None) state = ShortcutAvailabilityFailed;
+            else if (passive && !inputAllowed) state = ShortcutAvailabilityNeedsInputMonitoring;
             else if (!passive && !accessibilityAllowed) state = ShortcutAvailabilityNeedsAccessibility;
             else if (!observing) state = _availability[i];
             else {
@@ -294,6 +306,11 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (CGEventGetIntegerValueField(event, kCGEventSourceUserData) == bawan::selectionCopyEventTag) return NO;
     if (type != kCGEventKeyDown && type != kCGEventKeyUp && type != kCGEventFlagsChanged) return NO;
 
+    if ([self updateKeyboardLayout]) {
+        __weak ShortcutMonitor *weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf refresh]; });
+    }
+
     const auto key = static_cast<std::uint16_t>(CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode));
     const bool repeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0;
     const auto kind = type == kCGEventKeyDown ? bawan::ShortcutEvent::Kind::KeyDown :
@@ -304,9 +321,10 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     // A nonactivating panel can own keyboard input while another app stays frontmost.
     NSWindow *keyWindow = NSApp.keyWindow;
     const bool nativeCommand = keyWindow.isKeyWindow && keyWindow.visible &&
-        bawan::isNativeWindowShortcut(key, modifiers);
-    if (!_state.running() || nativeCommand) {
-        if (_state.configurationActive() || nativeCommand) {
+        bawan::isNativeWindowShortcut(key, modifiers, _keyboardLayout);
+    const bool reserved = bawan::isReservedShortcut(key, modifiers, _keyboardLayout);
+    if (!_state.running() || nativeCommand || reserved) {
+        if (_state.configurationActive() || nativeCommand || reserved) {
             [self cancelPending];
             [self configureGestures];
         }

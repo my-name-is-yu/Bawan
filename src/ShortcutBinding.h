@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include "KeyboardLayout.h"
 
 namespace bawan {
 enum class ShortcutAction : unsigned { TranslateSelection = 0, OpenPanel = 1 };
@@ -18,14 +19,19 @@ inline bool operator==(const ShortcutBinding& lhs, const ShortcutBinding& rhs) {
 inline bool operator!=(const ShortcutBinding& lhs, const ShortcutBinding& rhs) { return !(lhs == rhs); }
 using ShortcutBindings = std::array<ShortcutBinding, 2>;
 enum class ShortcutError { None, InvalidKey, MissingModifier, InvalidPressCount, Reserved, Duplicate };
-ShortcutBindings defaultShortcuts();
-bool isPassiveCopy(const ShortcutBinding& binding);
+inline constexpr std::uint16_t unresolvedShortcutKey = UINT16_MAX;
+ShortcutBindings defaultShortcuts(const KeyboardLayout& layout);
+bool isPassiveCopy(const ShortcutBinding& binding, const KeyboardLayout& layout);
 // These commands belong to the native responder chain while Bawan has a key window.
-bool isNativeWindowShortcut(std::uint16_t keyCode, std::uint8_t modifiers);
+bool isNativeWindowShortcut(std::uint16_t keyCode, std::uint8_t modifiers, const KeyboardLayout& layout);
+bool isReservedShortcut(std::uint16_t keyCode, std::uint8_t modifiers, const KeyboardLayout& layout);
 // macOS marks function/navigation keys with Fn even without a held Fn key.
 std::uint8_t normalizeShortcutModifiers(std::uint8_t modifiers, std::uint16_t keyCode);
 ShortcutError validateShortcut(const ShortcutBinding& binding);
 ShortcutError validateShortcuts(const ShortcutBindings& bindings);
+// Stored physical bindings are decoded structurally; reservations use the current layout.
+ShortcutError validateShortcut(const ShortcutBinding& binding, const KeyboardLayout& layout);
+ShortcutError validateShortcuts(const ShortcutBindings& bindings, const KeyboardLayout& layout);
 struct ShortcutEvent {
     enum class Kind { KeyDown, KeyUp, FlagsChanged };
     Kind kind;

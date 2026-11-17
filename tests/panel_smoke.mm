@@ -1,5 +1,6 @@
 #import "TranslationPanel.h"
 #import "BawanAppearance.h"
+#include "KeyboardLayoutFixtures.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -8,6 +9,10 @@
 #include <stdexcept>
 
 #import "WindowDragChecks.h"
+
+@interface NSWindow (PanelKeyboardLayoutTests)
+- (void)setKeyboardLayoutProvider:(bawan::KeyboardLayout (^)(void))provider;
+@end
 
 static void Require(BOOL condition, NSString *message) {
     if (!condition) throw std::runtime_error(message.UTF8String);
@@ -411,11 +416,67 @@ static void CheckPressedPrimaryContrast(NSWindow *window, NSButton *button) {
 }
 
 static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
-                         NSEventModifierFlags modifiers, unsigned short keyCode) {
+                         NSEventModifierFlags modifiers, unsigned short keyCode,
+                         NSString *charactersIgnoringModifiers = nil) {
     return [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
                      modifierFlags:modifiers timestamp:NSProcessInfo.processInfo.systemUptime
                       windowNumber:window.windowNumber context:nil characters:characters
-       charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
+       charactersIgnoringModifiers:charactersIgnoringModifiers ?: characters isARepeat:NO keyCode:keyCode];
+}
+
+static void CheckLayoutCommandRouting(TranslationPanel *panel, NSWindow *window,
+                                      NSUInteger (^closeCount)(void), NSUInteger (^translationCount)(void)) {
+    struct LayoutCase {
+        bawan::KeyboardLayout layout;
+        unsigned short copyKey, otherCopyKey, closeKey, otherCloseKey;
+        NSString *copyIgnoringModifiers, *otherCopyCharacters, *otherCopyIgnoringModifiers;
+        NSString *closeIgnoringModifiers, *otherCloseIgnoringModifiers;
+    };
+    const LayoutCase cases[] = {
+        {bawan::test::dvorakLayout(), 34, 8, 43, 13, @"C", @"J", @"J", @"w", @","},
+        {bawan::test::dvorakQwertyCommandLayout(), 8, 34, 13, 43, @"J", @"I", @"C", @",", @"w"}
+    };
+    for (const auto& test : cases) {
+        const auto layout = test.layout;
+        [window setKeyboardLayoutProvider:^{ return layout; }];
+        [panel showForSelection:@"Layout regression source"];
+        [panel setAvailable:YES busy:NO status:@"" kind:BawanStatusInformation];
+        NSString *output = [NSString stringWithFormat:@"Layout output from physical key %u", static_cast<unsigned>(test.copyKey)];
+        [panel setOutput:output direction:bawan::Direction::EnglishToJapanese];
+        NSButton *copy = (NSButton *)Control(window, @"copy", NSButton.class);
+
+        const NSInteger unchanged = NSPasteboard.generalPasteboard.changeCount;
+        [window performKeyEquivalent:KeyEvent(window, test.otherCopyCharacters,
+            NSEventModifierFlagCommand | NSEventModifierFlagShift, test.otherCopyKey,
+            test.otherCopyIgnoringModifiers)];
+        Require(NSPasteboard.generalPasteboard.changeCount == unchanged,
+                @"The plain-layout Copy position must not override the Command-Shift layer");
+        Require([window performKeyEquivalent:KeyEvent(window, @"C",
+            NSEventModifierFlagCommand | NSEventModifierFlagShift, test.copyKey,
+            test.copyIgnoringModifiers)] &&
+            [[NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] isEqualToString:output] &&
+            [copy.title isEqualToString:@"Copied"],
+            @"Copy Translation must use the Command-Shift character and preserve exact output");
+
+        const NSUInteger beforeTranslations = translationCount();
+        for (unsigned short key : {36, 76}) {
+            Require([window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, key)],
+                    @"Both physical Return keys must invoke the primary action under every layout");
+        }
+        Require(translationCount() == beforeTranslations + 2,
+                @"Each Command-Return must dispatch one translation");
+
+        const NSUInteger beforeCloses = closeCount();
+        [window performKeyEquivalent:KeyEvent(window, @",", NSEventModifierFlagCommand,
+            test.otherCloseKey, test.otherCloseIgnoringModifiers)];
+        Require(window.visible && closeCount() == beforeCloses,
+                @"A plain-layout W position must not override the Command layer");
+        Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand,
+            test.closeKey, test.closeIgnoringModifiers)] &&
+            !window.visible && closeCount() == beforeCloses + 1,
+                @"Close must use the Command character and the normal close callback");
+    }
+    [window setKeyboardLayoutProvider:^{ return bawan::test::qwertyLayout(); }];
 }
 
 static BOOL PressMotionIsSettled(NSButton *button) {
@@ -577,6 +638,7 @@ static void RunSmoke(void) {
 
     [panel showForManualInput];
     NSWindow *window = PanelWindow();
+    [window setKeyboardLayoutProvider:^{ return bawan::test::qwertyLayout(); }];
     Settle(window);
     RequireOrdinaryWindow(window, @"after manual entry");
     CheckOrdinaryWindowOrdering(panel, window);
@@ -871,6 +933,7 @@ static void RunSmoke(void) {
     Settle(window);
     Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand, 13)] &&
             closes == 3 && !window.visible, @"Command-W must use the same close callback");
+    CheckLayoutCommandRouting(panel, window, ^{ return closes; }, ^{ return translations; });
     std::cout << "panel_smoke_complete=true\n"
               << "reduce_motion_enabled=" << static_cast<bool>(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) << '\n'
               << "increase_contrast_enabled=" << static_cast<bool>(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast) << '\n'
