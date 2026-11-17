@@ -62,7 +62,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_resume(_memoryPressure);
 
     _modelStore = [[ModelStore alloc] init];
-    _modelStore.onProgress = ^(double progress, NSString *message) {
+    _modelStore.onProgress = ^(__unused double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         owner->_modelStatus = message;

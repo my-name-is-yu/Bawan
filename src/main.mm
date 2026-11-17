@@ -1,7 +1,7 @@
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
 
-int main(int argc, const char *argv[]) {
+int main(void) {
     @autoreleasepool {
         NSApplication *app = NSApplication.sharedApplication;
         __attribute__((objc_precise_lifetime)) AppDelegate *delegate = [[AppDelegate alloc] init];
