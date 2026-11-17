@@ -85,6 +85,8 @@ and the clipboard unchanged. `settings_smoke` renders checked/unchecked shortcut
 checkboxes, the login toggle in both states, and both recorder/press-count inputs.
 The checks assert opaque enabled faces, 40% disabled face opacity, light/dark
 input colors, appearance-callback repaint requests, and unchanged alignment rects.
+Repaint checks drain and verify both view/layer dirty flags before the callback,
+then require a new view or layer repaint request, including layer-backed controls.
 Rendered custom focus masks retain the checkbox-only rounded box, capsule toggle,
 and rounded input bounds, excluding labels and outer corners. Action-button focus
 mask bounds and pixels are compared with an equivalent native `NSButton`; these
