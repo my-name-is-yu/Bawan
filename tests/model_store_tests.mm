@@ -163,7 +163,7 @@ struct Fixture {
     NSData *suffix() const { return [body subdataWithRange:NSMakeRange(7, body.length - 7)]; }
     NSDictionary *response(NSInteger status, NSData *bytes, NSDictionary *extraHeaders = nil,
                            bool hold = false) const {
-        NSMutableDictionary *headers = [@{@"ETag": @"\"v1\"",
+        NSMutableDictionary *headers = [@{@"Content-Type": @"application/octet-stream", @"ETag": @"\"v1\"",
             @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)(hold ? body.length : bytes.length)]}
             mutableCopy];
         [headers addEntriesFromDictionary:extraHeaders ?: @{}];
