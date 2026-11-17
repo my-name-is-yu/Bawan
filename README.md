@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/my-name-is-yu/Bawan/releases/download/v1.0.0/Bawan-1.0.0-macOS-arm64.zip">Download v1 for Apple Silicon</a> ·
+  <a href="https://github.com/my-name-is-yu/Bawan/releases/download/v1.1.0/Bawan-1.1.0-macOS-arm64.zip">Download v1.1 for Apple Silicon</a> ·
   <a href="#building--installing">Build & Install</a> ·
   <a href="#setup--usage">Usage & Shortcuts</a> ·
   <a href="#model--licenses">Model & Licenses</a>
@@ -54,11 +54,11 @@ Bawan stays resident in the Dock and `⌘Tab` switcher after you close the trans
 
 ## 📦 Building & Installing
 
-### Download v1
+### Download v1.1
 
-[Download Bawan v1.0.0 for Apple Silicon](https://github.com/my-name-is-yu/Bawan/releases/download/v1.0.0/Bawan-1.0.0-macOS-arm64.zip) (macOS 14+). Extract the ZIP and move `Bawan.app` to `/Applications` before launching it and granting shortcut permissions. Developer tools are not required.
+[Download Bawan v1.1.0 for Apple Silicon](https://github.com/my-name-is-yu/Bawan/releases/download/v1.1.0/Bawan-1.1.0-macOS-arm64.zip) (macOS 14+). Extract the ZIP and move `Bawan.app` to `/Applications` before launching it and granting shortcut permissions. Developer tools are not required.
 
-The download is ad-hoc signed and not notarized, so macOS Gatekeeper may block launch. See the [v1 release notes and SHA256 checksum](https://github.com/my-name-is-yu/Bawan/releases/tag/v1.0.0) for details.
+The download is ad-hoc signed and not notarized, so macOS Gatekeeper may block launch. See the [v1.1 release notes and SHA256 checksum](https://github.com/my-name-is-yu/Bawan/releases/tag/v1.1.0) for details.
 
 ### Build Prerequisites
 
