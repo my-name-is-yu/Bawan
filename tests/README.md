@@ -156,6 +156,12 @@ checks zero refreshes from those queries, one explicit refresh followed by a que
 without another refresh, and stale completion rejection after live binding,
 permission or enabled-state changes before any presentation refresh.
 
+The AppDelegate trial smoke also delivers one legacy availability callback during
+a queued trial: unchanged state or a panel binding change preserves it, while a
+selection binding change or permission loss cancels it. Every case expects one onboarding
+refresh and retains the Settings refresh. Cancelled trials reject late results
+and cannot resume when the model becomes ready.
+
 Verification on 2026-11-17: Linux x86_64, GCC 14.2, Release with
 `BAWAN_WARNINGS_AS_ERRORS=ON`, using
 `./scripts/check.sh -DBAWAN_BUILD_APP=OFF -DBAWAN_BUILD_SMOKE=ON` (CMake installed

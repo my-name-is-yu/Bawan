@@ -416,11 +416,12 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
+    const BOOL cancelTrial = _selectionTrialAttempt &&
+        ![_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt];
+    const BOOL onboardingUpdatedByCancellation = cancelTrial && _onboardingViewController.view.window != nil;
+    if (cancelTrial) [self cancelTranslation];
     [_settingsViewController refresh];
-    [_onboardingViewController refresh];
-    if (_selectionTrialAttempt && ![_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt]) {
-        [self cancelTranslation];
-    }
+    if (!onboardingUpdatedByCancellation) [_onboardingViewController refresh];
 }
 
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
