@@ -33,14 +33,6 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
     [path stroke];
 }
 
-NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
-    NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
-    label.textColor = color;
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    return label;
-}
-
 }
 
 @interface BawanPanel : NSPanel
@@ -409,10 +401,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     NSScrollView *outputScroll = TextArea(content, &_output, NO, @"output", @"Translation", @"");
     _source.delegate = self;
 
-    _instructions = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _instructions = BawanLabel(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _instructions.identifier = @"instructions";
     _instructions.maximumNumberOfLines = 2;
-    _status = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _status = BawanLabel(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _status.identifier = @"status";
     _status.maximumNumberOfLines = 3;
     [_status setAccessibilityLabel:@"Translation status"];
@@ -436,7 +428,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     _copy.image = _copyIcon;
     _copy.imagePosition = NSImageLeft;
     _copy.imageHugsTitle = YES;
-    _shortcutHint = Label(@"Type or paste text to translate", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _shortcutHint = BawanLabel(@"Type or paste text to translate", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-hint";
     _shortcutHint.selectable = NO;
     _shortcutHint.alignment = NSTextAlignmentCenter;

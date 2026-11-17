@@ -108,6 +108,14 @@ static inline NSFont *BawanSerifFont(CGFloat size, BOOL bold) {
 static inline NSFont *BawanBodyFont(CGFloat size) { return BawanSerifFont(size, NO); }
 static inline NSFont *BawanLabelFont(CGFloat size) { return BawanSerifFont(size, YES); }
 
+static inline NSTextField *BawanLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
+    NSTextField *label = [NSTextField wrappingLabelWithString:text];
+    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
+    label.textColor = color;
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    return label;
+}
+
 inline NSImage *BawanLoadImage(NSString *name) {
 #ifdef BAWAN_TEST_RESOURCE_DIR
     NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:
