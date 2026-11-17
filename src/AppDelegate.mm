@@ -460,7 +460,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
 
 - (void)releaseEngineMemory {
-    if (!_terminating && _engine) _engine->releaseMemory();
+    if (_engine) _engine->releaseMemory();
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
