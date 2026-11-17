@@ -268,6 +268,9 @@ static void Capture(NSWindow *window, NSString *name) {
     NSBitmapImageRep *composite = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil
         pixelsWide:bitmap.pixelsWide pixelsHigh:bitmap.pixelsHigh bitsPerSample:8 samplesPerPixel:4
         hasAlpha:YES isPlanar:NO colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    // Composite in the capture's own color space. Converting to Generic RGB here
+    // shifted saved colors, so Settings captures no longer matched the other pages.
+    composite = [composite bitmapImageRepByRetaggingWithColorSpace:bitmap.colorSpace];
     composite.size = root.bounds.size;
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:composite]];
