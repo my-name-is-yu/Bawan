@@ -1,7 +1,9 @@
 #include "TranslationEngine.h"
 
 #include <chrono>
+#include <atomic>
 #include <condition_variable>
+#include <future>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
@@ -59,7 +61,7 @@ public:
         std::unique_lock<std::mutex> lock(mutex_);
         const auto count = events_.size();
         if (changed_.wait_for(lock, duration, [&] { return events_.size() != count; })) {
-            throw std::runtime_error("Engine construction or shutdown started model loading");
+            throw std::runtime_error("The engine emitted an event while it had no work");
         }
     }
 
@@ -111,7 +113,34 @@ int main() {
         cancelled.warmUp();
         cancelledEvents.requireEvent(Kind::Cancelled, 0, after);
         cancelled.shutdown();
-        std::cout << "PASS: lazy construction, cold errors, prewarm errors/cancellation, retries and unused shutdown\n";
+
+        Events replacedEvents;
+        std::promise<void> loadingSeen;
+        std::promise<void> resume;
+        auto resumed = resume.get_future().share();
+        std::atomic<bool> held{false};
+        bawan::TranslationEngine replaced("/__bawan_tests__/missing-model.gguf", [&](bawan::EngineEvent event) {
+            const bool hold = event.kind == Kind::Loading && !held.exchange(true);
+            replacedEvents.push(std::move(event));
+            if (hold) {
+                loadingSeen.set_value();
+                resumed.wait();
+            }
+        }, 25ms);
+        after = replacedEvents.mark();
+        replaced.warmUp();
+        loadingSeen.get_future().wait();
+        const auto superseded = replaced.translate("First");
+        const auto latest = replaced.translate("Second");
+        const auto withdrawn = replaced.translate("Third");
+        replaced.cancel();
+        resume.set_value();
+        replacedEvents.requireEvent(Kind::Cancelled, superseded, after);
+        replacedEvents.requireEvent(Kind::Cancelled, latest, after);
+        replacedEvents.requireEvent(Kind::Cancelled, withdrawn, after);
+        replacedEvents.requireQuietFor(200ms);
+        replaced.shutdown();
+        std::cout << "PASS: lazy construction, cold errors, prewarm errors/cancellation, retries, unused shutdown and replaced-request cancellation\n";
         return EXIT_SUCCESS;
     } catch (const std::exception &error) {
         std::cerr << "FAIL: " << error.what() << '\n';
