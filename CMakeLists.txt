@@ -198,6 +198,9 @@ if(BAWAN_BUILD_TESTS)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
+        add_test(NAME onboarding_selection_trial COMMAND app_delegate_smoke --selection-trial)
+        set_tests_properties(onboarding_selection_trial PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
         add_executable(mascot_smoke tests/mascot_smoke.mm src/BawanMascotView.mm src/BawanAppearance.mm)
         target_include_directories(mascot_smoke PRIVATE src)
         target_compile_definitions(mascot_smoke PRIVATE

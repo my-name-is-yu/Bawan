@@ -27,6 +27,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     BOOL _asleep;
     BOOL _suspended;
     BOOL _configurationActive;
+    __weak NSTextView *_selectionTrialView;
     NSInteger _firstChangeCount;
     pid_t _firstApplication;
     NSInteger _pendingChangeCount;
@@ -48,6 +49,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
 - (void)beginReadingCopyFromApplication:(pid_t)application changeCount:(NSInteger)changeCount;
 - (void)sendCopyForGeneration:(NSUInteger)generation application:(pid_t)application;
 - (void)checkCopyForGeneration:(NSUInteger)generation deadline:(NSTimeInterval)deadline;
+- (NSTextView *)activeSelectionTrialView;
 @end
 
 static CGEventRef observePassive(CGEventTapProxy, CGEventType type, CGEventRef event, void *context) {
@@ -167,6 +169,24 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (_configurationActive == active) return;
     _configurationActive = active;
     [self cancelPending];
+}
+
+- (NSTextView *)selectionTrialView { return _selectionTrialView; }
+- (void)setSelectionTrialView:(NSTextView *)view {
+    if (_selectionTrialView == view) return;
+    _selectionTrialView = view;
+    [self cancelPending];
+}
+
+- (NSTextView *)activeSelectionTrialView {
+    NSTextView *view = _selectionTrialView;
+    NSWindow *window = view.window;
+    NSRange selected = view.selectedRange;
+    if (!_configurationActive || !view || view.hiddenOrHasHiddenAncestor || !window.isKeyWindow ||
+        !window.visible || window.firstResponder != view || !view.string.length ||
+        !NSEqualRanges(selected, NSMakeRange(0, view.string.length)) || !_bindings[selectionIndex].enabled ||
+        [self availabilityForAction:bawan::ShortcutAction::TranslateSelection] != ShortcutAvailabilityAvailable) return nil;
+    return view;
 }
 
 - (BOOL)installTapActive:(BOOL)active {
@@ -311,7 +331,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     NSWindow *keyWindow = NSApp.keyWindow;
     const bool nativeCommand = keyWindow.isKeyWindow && keyWindow.visible &&
         bawan::isNativeWindowShortcut(key, modifiers);
-    if (_suspended || _configurationActive || nativeCommand) {
+    NSTextView *trialView = [self activeSelectionTrialView];
+    if (_suspended || ((_configurationActive || nativeCommand) && !trialView)) {
         if (_configurationActive || nativeCommand) {
             [self cancelPending];
             [self configureGestures];
@@ -335,6 +356,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self cancelPending];
     }
     for (unsigned i = 0; i < _bindings.size(); ++i) {
+        if (trialView && i != selectionIndex) continue;
         const bool passive = i == selectionIndex && bawan::isPassiveCopy(_bindings[i]);
         if (!_bindings[i].enabled || passive == static_cast<bool>(active)) continue;
         if (owned && type == kCGEventKeyDown && _swallowedRevision[key] != _gestureRevision) continue;
@@ -347,14 +369,29 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         if (result.firstPress) {
             ++_generation;
             _awaitingCopyRelease = NO;
-            if (passive) {
+            if (passive && !trialView) {
                 _firstChangeCount = NSPasteboard.generalPasteboard.changeCount;
                 _firstApplication = application;
             }
         }
         if (!result.triggered) continue;
         if (i == selectionIndex) {
-            if (passive) {
+            if (trialView) {
+                const NSUInteger generation = ++_generation;
+                const NSRange selected = trialView.selectedRange;
+                NSString *source = [trialView.string copy];
+                NSString *text = [source substringWithRange:selected];
+                __weak ShortcutMonitor *weakSelf = self;
+                __weak NSTextView *weakView = trialView;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    ShortcutMonitor *self = weakSelf;
+                    NSTextView *view = weakView;
+                    if (!self || !self->_started || self->_asleep || self->_suspended ||
+                        generation != self->_generation || !view || [self activeSelectionTrialView] != view ||
+                        !NSEqualRanges(view.selectedRange, selected) || ![view.string isEqualToString:source]) return;
+                    if (self.onText) self.onText(text);
+                });
+            } else if (passive) {
                 [self beginReadingCopyFromApplication:_firstApplication changeCount:_firstChangeCount];
             } else {
                 _copyReleaseGeneration = ++_generation;

@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import "ShortcutPreferences.h"
 
+@class NSTextView;
+
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, ShortcutAvailability) {
@@ -19,6 +21,8 @@ typedef NS_ENUM(NSInteger, ShortcutAvailability) {
 @property(nonatomic, copy, nullable) void (^onAvailabilityChanged)(void);
 @property(nonatomic) BOOL suspended;
 @property(nonatomic) BOOL configurationActive;
+// While configuring, only this focused selection may exercise Translate Selection.
+@property(nonatomic, weak, nullable) NSTextView *selectionTrialView;
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences;
 - (void)start;
 - (void)stop;

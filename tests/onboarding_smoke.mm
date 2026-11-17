@@ -88,7 +88,9 @@ static void CheckBounds(NSWindow *window) {
             @"onboarding-shortcut-selection-title", @"onboarding-shortcut-selection-key",
             @"onboarding-shortcut-selection-status", @"onboarding-shortcut-selection-setup",
             @"onboarding-shortcut-panel-title", @"onboarding-shortcut-panel-key",
-            @"onboarding-shortcut-panel-status", @"onboarding-shortcut-panel-setup"]) {
+            @"onboarding-shortcut-panel-status", @"onboarding-shortcut-panel-setup",
+            @"onboarding-selection-trial", @"onboarding-trial-sample", @"onboarding-trial-instructions",
+            @"onboarding-trial-status"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing onboarding control: " stringByAppendingString:identifier]);
         if (!IsShown(view)) continue;
@@ -166,8 +168,13 @@ static void RunSmoke(void) {
         NSButton *panelSetup = (NSButton *)FindView(root, @"onboarding-shortcut-panel-setup");
         NSTextField *panelStatus = (NSTextField *)FindView(root, @"onboarding-shortcut-panel-status");
         NSTextField *shortcutError = (NSTextField *)FindView(root, @"onboarding-error");
+        NSView *trial = FindView(root, @"onboarding-selection-trial");
+        NSTextView *sample = (NSTextView *)FindView(root, @"onboarding-trial-sample");
+        NSTextField *instructions = (NSTextField *)FindView(root, @"onboarding-trial-instructions");
+        NSTextField *trialStatus = (NSTextField *)FindView(root, @"onboarding-trial-status");
         Require(modelStep && shortcutStep && primary && license && note && modelMessage &&
-            selectionSetup && selectionStatus && panelSetup && panelStatus && shortcutError,
+            selectionSetup && selectionStatus && panelSetup && panelStatus && shortcutError &&
+            trial && sample && instructions && trialStatus,
             @"The first-run page must expose each setup control");
         [onboarding refresh];
         [onboarding setActive:YES];
@@ -221,6 +228,8 @@ static void RunSmoke(void) {
         Require([primary.title hasPrefix:@"Set Up Later"] && [selectionStatus.stringValue containsString:@"Input Monitoring"] &&
             [panelStatus.stringValue containsString:@"Accessibility"],
             @"While either shortcut needs permission, the single footer action must read Set Up Later");
+        Require(!IsShown(trial) && monitor.selectionTrialView == nil,
+            @"The practice sentence must be hidden while selection permission is missing");
         CheckBounds(window);
         Capture(window, @"preparing");
         [primary performClick:nil];
@@ -269,21 +278,119 @@ static void RunSmoke(void) {
         [primary performClick:nil];
         Require(setups == 3 && finishes == 1, @"Retry must reach setup without finishing onboarding");
 
-        // Once the shortcut works, the same footer action simply starts translating.
+        // Availability reveals the trial; only its actual translation outcome completes it.
         [onboarding setModelPhase:BawanModelSetupReady message:BawanModelReadyStatus progress:1];
         monitor.permissionsGranted = YES;
         [onboarding setActive:YES];
         Require(IsShown(shortcutStep) && [selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
             [panelStatus.stringValue isEqualToString:@"Shortcut ready"] && !IsShown(selectionSetup) &&
-            !IsShown(panelSetup) && [primary.title hasPrefix:@"Start Translating"] &&
-            [note.stringValue isEqualToString:BawanModelReadyStatus],
-            @"A working shortcut and ready model must turn the footer action into Start Translating");
+            !IsShown(panelSetup) && [primary.title hasPrefix:@"Set Up Later"] && IsShown(trial) &&
+            sample.selectable && !sample.editable && !sample.richText && sample.string.length &&
+            [instructions.stringValue containsString:@"⌘C"] && [instructions.stringValue containsString:@"twice"] &&
+            [note.stringValue isEqualToString:BawanModelReadyStatus] && !IsShown(trialStatus),
+            @"Ready settings must offer a selectable sample with current instructions without claiming it was tried");
+        [window makeFirstResponder:sample];
+        sample.selectedRange = NSMakeRange(0, sample.string.length);
+        Require([onboarding isSelectionTrialText:sample.string] && !onboarding.selectionTrialComplete &&
+            [primary.title hasPrefix:@"Set Up Later"],
+            @"Selecting the sample alone must not complete the trial");
+        Require(![onboarding isSelectionTrialText:@"A different sentence"],
+            @"A different selected sentence cannot count as this practice sentence");
+        NSUInteger attempt = [onboarding beginSelectionTrial];
+        Require(attempt && [onboarding beginSelectionTrial] == 0 && IsShown(trialStatus) &&
+            [primary.title hasPrefix:@"Set Up Later"],
+            @"The real shortcut may start one trial at a time and must wait for translation");
+        CheckBounds(window);
+        Capture(window, @"trial-translating");
+        Require(![onboarding finishSelectionTrial:attempt + 1 output:@"Unrelated output"
+            direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
+            @"An unrelated completion must not finish the current trial");
+        Require(![onboarding finishSelectionTrial:attempt output:@"  " direction:bawan::Direction::EnglishToJapanese] &&
+            !onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
+            @"An empty or failed translation must leave the trial retryable");
+        attempt = [onboarding beginSelectionTrial];
+        Require(attempt && [onboarding finishSelectionTrial:attempt output:@"小さな一歩が新しい世界を開く。"
+            direction:bawan::Direction::EnglishToJapanese] && IsShown(trialStatus) &&
+            [trialStatus.stringValue containsString:@"successfully"] &&
+            [primary.title hasPrefix:@"Start Translating"] && onboarding.selectionTrialComplete &&
+            [onboarding.selectionTrialOutput isEqualToString:@"小さな一歩が新しい世界を開く。"] &&
+            [onboarding beginSelectionTrial] == 0,
+            @"Only the practice request's successful result may complete the trial, once");
+        CheckBounds(window);
+        Capture(window, @"trial-complete");
+        [window setContentSize:NSMakeSize(640, 420)];
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        CheckBounds(window);
+        Capture(window, @"trial-complete-minimum-dark");
+        [window setContentSize:NSMakeSize(720, 500)];
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        [onboarding setActive:NO];
+        [onboarding setActive:YES];
+        Require(onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Start Translating"],
+            @"Revisiting with the same usable binding must preserve a completed practice result");
         [onboarding performPrimaryAction];
         Require(finishes == 2 && backs == 0, @"⌘Return on the shortcut step must finish onboarding");
-        [onboarding setActive:NO];
+
+        // Selection readiness is independent of the window shortcut; current bindings drive the guide.
         monitor.permissionsGranted = NO;
-        monitor.selectionAvailability = ShortcutAvailabilityNeedsInputMonitoring;
         monitor.panelAvailability = ShortcutAvailabilityNeedsAccessibility;
+        selection = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+        selection.keyCode = 40;
+        selection.modifiers = bawan::Control | bawan::Shift;
+        selection.pressCount = 1;
+        Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+            @"The custom selection fixture must be valid");
+        [onboarding refresh];
+        Require(IsShown(trial) && !onboarding.selectionTrialComplete &&
+            [instructions.stringValue containsString:@"⌃⇧K"] && [instructions.stringValue containsString:@"once"] &&
+            ![instructions.stringValue containsString:@"⌘C"] && [primary.title hasPrefix:@"Set Up Later"],
+            @"Changing the binding must reset success and describe the custom key/count even if the panel lacks permission");
+        [window makeFirstResponder:sample];
+        sample.selectedRange = NSMakeRange(0, sample.string.length);
+        attempt = [onboarding beginSelectionTrial];
+        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The revisit fixture must start a practice request");
+        [onboarding setActive:NO];
+        [onboarding setActive:YES];
+        Require(![onboarding finishSelectionTrial:attempt output:@"Late page output"
+            direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
+            @"Leaving a pending trial must reject its late completion when the page is revisited");
+        [window makeFirstResponder:sample];
+        sample.selectedRange = NSMakeRange(0, sample.string.length);
+        attempt = [onboarding beginSelectionTrial];
+        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The changed-binding fixture must start a practice request");
+        selection.pressCount = 2;
+        Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+            @"Changing press count during inference must be valid");
+        [onboarding refresh];
+        Require(![onboarding finishSelectionTrial:attempt output:@"Old binding output"
+            direction:bawan::Direction::EnglishToJapanese] && [instructions.stringValue containsString:@"twice"],
+            @"A changed binding must invalidate an in-flight practice request");
+        [window makeFirstResponder:sample];
+        sample.selectedRange = NSMakeRange(0, sample.string.length);
+        attempt = [onboarding beginSelectionTrial];
+        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The revoked-permission fixture must start a practice request");
+        monitor.selectionAvailability = ShortcutAvailabilityNeedsAccessibility;
+        [onboarding refresh];
+        Require(!IsShown(trial) && monitor.selectionTrialView == nil &&
+            ![onboarding finishSelectionTrial:attempt output:@"Revoked permission output"
+                direction:bawan::Direction::EnglishToJapanese] && [primary.title hasPrefix:@"Set Up Later"],
+            @"Revoking permission must hide practice and reject its pending result");
+        for (ShortcutAvailability availability : {ShortcutAvailabilityOff, ShortcutAvailabilityNeedsInputMonitoring,
+                ShortcutAvailabilityNeedsAccessibility, ShortcutAvailabilityFailed}) {
+            monitor.selectionAvailability = availability;
+            [onboarding refresh];
+            Require(!IsShown(trial) && monitor.selectionTrialView == nil && !onboarding.selectionTrialComplete,
+                @"Practice must stay hidden for every unusable selection state");
+        }
+        monitor.selectionAvailability = ShortcutAvailabilityAvailable;
+        selection.enabled = false;
+        Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+            @"The shortcut may be disabled while monitoring permission remains granted");
+        [onboarding refresh];
+        Require(!IsShown(trial), @"A disabled binding must hide practice even with monitor permission");
+        selection.enabled = true;
+        Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+            @"The shortcut must be re-enabled for ready-state captures");
         [onboarding refresh];
         [onboarding focusInitialControl];
         NSResponder *focused = window.firstResponder;
@@ -302,7 +409,7 @@ static void RunSmoke(void) {
             CheckBounds(window);
             Capture(window, [prefix stringByAppendingString:@"-dark"]);
         }
-        std::cout << "PASS: onboarding model and shortcut steps, footer actions, conflicts, retry and responsive captures\n";
+        std::cout << "PASS: onboarding setup, selection practice visibility, binding changes, completion, invalidation and responsive captures\n";
     } @finally {
         [onboarding setActive:NO];
         [window orderOut:nil];

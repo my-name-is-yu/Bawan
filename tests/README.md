@@ -118,3 +118,40 @@ in an isolated translation probe produced another acceptable answer (`一時的`
 that internal prompt change is not claimed as a detected behavioral regression.
 These samples do not establish translation quality for all inputs or Metal
 backends. No native fault-injection result is claimed.
+
+
+## Issue #34: onboarding selection shortcut practice
+
+The `onboarding` smoke covers the selectable sample's visibility for selection
+availability, custom keys and press counts, successful/failed completion, pending
+request invalidation, revisits, and pending/completed layout captures. Availability
+or selecting the text alone must leave the footer at Set Up Later.
+
+`shortcut_monitor` routes real CGEvents through the production gesture recognizer
+with a focused sample. It covers passive Copy and custom bindings, configuration
+isolation, exact selection, duplicate release handling, and stale asynchronous
+delivery after selection, binding, focus or permission changes. It does not install
+an OS event tap or establish physical-key delivery.
+
+The focused native integration check is registered as `onboarding_selection_trial`:
+
+```sh
+./build-check/app_delegate_smoke --selection-trial
+# Or: ctest --test-dir build-check -R '^(onboarding|onboarding_selection_trial|shortcut_monitor)$' --output-on-failure
+```
+
+It creates real engine requests, then controls terminal callbacks to verify request
+identity, empty/truncated/error/cancelled results, no premature onboarding completion,
+queued preparation, duplicate firing, binding/permission/page changes, and exact
+source/result/direction handoff to the translator. It also runs in the default
+`app_delegate_smoke`. Controlled callbacks do not establish model quality.
+
+Verification on 2026-11-17: Linux x86_64, GCC 14.2, Release with
+`BAWAN_WARNINGS_AS_ERRORS=ON`, using
+`./scripts/check.sh -DBAWAN_BUILD_APP=OFF -DBAWAN_BUILD_SMOKE=ON` (CMake installed
+under `/tmp/bawan-tools` on this cloud host). The portable build and all four
+portable CTests pass. `git diff --check` passes. The changed AppKit sources and
+native tests cannot be compiled or run on Linux; the native checks above, actual
+permission changes, physical shortcuts, macOS rendering and real-model trial
+remain unverified. No successful native result from the prerequisite #47 branch
+is implied by these portable results.
