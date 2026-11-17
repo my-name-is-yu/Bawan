@@ -22,6 +22,8 @@ constexpr std::size_t kMaximumPrompt = 4096;
 constexpr std::size_t kMaximumOutput = 4096;
 constexpr std::size_t kBatchSize = 128;
 constexpr std::size_t kContextGranularity = 256;
+constexpr const char * kUnsupportedModel = "This PLaMo model is not supported.";
+constexpr const char * kUnexpectedError = "An unexpected translation error occurred.";
 
 std::size_t contextSize(std::size_t promptTokens) {
     const auto output = std::min(kMaximumOutput, std::max<std::size_t>(512, promptTokens * 2 + 256));
@@ -135,6 +137,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             id = ++revision_;
             if (stopping_) { return id; }
+            dropPendingRequestLocked();
             pendingRequest_ = Request{id, std::move(text), direction};
         }
         changed_.notify_one();
@@ -146,7 +149,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             ++revision_;
             ++cancellation_;
-            pendingRequest_.reset();
+            dropPendingRequestLocked();
             pendingWarmUp_ = false;
         }
         changed_.notify_one();
@@ -186,6 +189,11 @@ private:
         Impl * owner;
         std::uint64_t cancellation;
     };
+
+    void dropPendingRequestLocked() {
+        if (pendingRequest_) { droppedRequests_.push_back(pendingRequest_->id); }
+        pendingRequest_.reset();
+    }
 
     bool cancelled(std::uint64_t id) const {
         return stopping_ || revision_.load() != id;
@@ -240,6 +248,14 @@ private:
             return false;
         }
         if (!model_) { throw std::runtime_error("Unable to load the model. Please check the model file."); }
+        const auto * vocab = llama_model_get_vocab(model_.get());
+        bos_ = llama_vocab_bos(vocab);
+        const auto stopTags = tokenize(vocab, "<|plamo:tag|>", true);
+        if (bos_ == LLAMA_TOKEN_NULL || stopTags.size() != 1) {
+            model_.reset();
+            throw std::runtime_error(kUnsupportedModel);
+        }
+        stopTag_ = stopTags.front();
         emit(EngineEvent::Kind::Ready, 0, "Ready to translate");
         return true;
     }
@@ -256,16 +272,12 @@ private:
             (request.direction == Direction::Automatic && japanese);
         request.direction = toEnglish ? Direction::JapaneseToEnglish : Direction::EnglishToJapanese;
         const auto * vocab = llama_model_get_vocab(model_.get());
-        const auto bos = llama_vocab_bos(vocab);
-        if (bos == LLAMA_TOKEN_NULL) { throw std::runtime_error("This PLaMo model is not supported."); }
-        std::vector<llama_token> result{bos};
+        std::vector<llama_token> result{bos_};
         const auto prefix = tokenize(vocab, detail::translationPromptPrefix(request.text, toEnglish), true);
         const auto suffix = tokenize(vocab, std::string("<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>") +
             (toEnglish ? "en" : "ja") + "<|plamo:msg|>", true);
         const auto overhead = result.size() + prefix.size() + suffix.size();
-        if (overhead > kMaximumPrompt) {
-            throw std::runtime_error("This PLaMo model is not supported.");
-        }
+        if (overhead > kMaximumPrompt) { throw std::runtime_error(kUnsupportedModel); }
         if (cancelled(request.id)) return {};
         // Parse only the application's PFML3 delimiters as special tokens.
         // Keep the existing token limit, not a byte heuristic that could reject
@@ -329,9 +341,6 @@ private:
             const auto count = std::min(kBatchSize, tokens.size() - position);
             decode(context.get(), batch.get(), tokens.data() + position, count, position, position + count == tokens.size());
         }
-        const auto stopTags = tokenize(vocab, "<|plamo:tag|>", true);
-        const auto stopBos = llama_vocab_bos(vocab);
-        if (stopTags.size() != 1) { throw std::runtime_error("This PLaMo model is not supported."); }
 
         std::string output;
         std::size_t emittedBytes = 0;
@@ -340,7 +349,7 @@ private:
         for (std::size_t generated = 0; generated < outputLimit; ++generated) {
             if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto token = llama_sampler_sample(sampler.get(), context.get(), -1);
-            if (llama_vocab_is_eog(vocab, token) || token == stopTags.front() || token == stopBos) {
+            if (llama_vocab_is_eog(vocab, token) || token == stopTag_ || token == bos_) {
                 if (validBytes != output.size()) { throw std::runtime_error("Unable to read the end of the translation."); }
                 return {EngineEvent::Kind::Complete, request.id, std::move(output), false, request.direction};
             }
@@ -360,17 +369,32 @@ private:
         return {EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction};
     }
 
+    void fail(const std::optional<Request> & request, std::uint64_t cancellation, const char * message) {
+        if (!model_) {
+            unload();
+            emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
+                 0, message);
+        }
+        if (request) {
+            if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
+            else { emit(EngineEvent::Kind::Error, request->id, message); }
+        }
+    }
+
     void run() {
         using Clock = std::chrono::steady_clock;
         auto idleDeadline = Clock::time_point::max();
         for (;;) {
             std::optional<Request> request;
+            std::vector<std::uint64_t> dropped;
             std::uint64_t cancellation = 0;
             bool release = false;
+            bool warmUp = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 const auto hasWork = [this] {
-                    return stopping_ || pendingWarmUp_ || pendingRequest_ || pendingRelease_;
+                    return stopping_ || pendingWarmUp_ || pendingRequest_ || pendingRelease_ ||
+                        !droppedRequests_.empty();
                 };
                 if (model_) {
                     if (!changed_.wait_until(lock, idleDeadline, hasWork)) {
@@ -382,18 +406,21 @@ private:
                     changed_.wait(lock, hasWork);
                 }
                 if (stopping_) { break; }
+                dropped.swap(droppedRequests_);
                 release = pendingRelease_;
                 pendingRelease_ = false;
                 request = std::move(pendingRequest_);
                 pendingRequest_.reset();
+                warmUp = pendingWarmUp_;
                 pendingWarmUp_ = false;
                 cancellation = cancellation_.load();
             }
+            for (const auto id : dropped) { emit(EngineEvent::Kind::Cancelled, id); }
             if (!request && release) {
                 unload();
                 continue;
             }
-            if (!request && model_) { continue; }
+            if (!request && (model_ || !warmUp)) { continue; }
             try {
                 if (request && cancelled(request->id)) {
                     emit(EngineEvent::Kind::Cancelled, request->id);
@@ -406,25 +433,9 @@ private:
                     emit(EngineEvent::Kind::Cancelled, request->id);
                 }
             } catch (const std::exception & error) {
-                if (!model_) {
-                    unload();
-                    emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
-                         0, error.what());
-                }
-                if (request) {
-                    if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
-                    else { emit(EngineEvent::Kind::Error, request->id, error.what()); }
-                }
+                fail(request, cancellation, error.what());
             } catch (...) {
-                if (!model_) {
-                    unload();
-                    emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
-                         0, "An unexpected translation error occurred.");
-                }
-                if (request) {
-                    if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
-                    else { emit(EngineEvent::Kind::Error, request->id, "An unexpected translation error occurred."); }
-                }
+                fail(request, cancellation, kUnexpectedError);
             }
             if (release) { unload(); }
             else if (model_) { idleDeadline = Clock::now() + idleTimeout_; }
@@ -443,7 +454,10 @@ private:
     bool pendingWarmUp_ = false;
     bool pendingRelease_ = false;
     std::optional<Request> pendingRequest_;
+    std::vector<std::uint64_t> droppedRequests_;
     Model model_{nullptr, llama_model_free};
+    llama_token bos_ = LLAMA_TOKEN_NULL;
+    llama_token stopTag_ = LLAMA_TOKEN_NULL;
     bool backendInitialized_ = false;
     std::thread worker_;
 };
