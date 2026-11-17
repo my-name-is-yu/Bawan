@@ -15,6 +15,16 @@ endif()
 option(BAWAN_BUILD_APP "Build the macOS menu bar application" ${APPLE})
 option(BAWAN_BUILD_TESTS "Build Bawan's behavior tests and macOS panel smoke test" OFF)
 option(BAWAN_BUILD_SMOKE "Build the real-model inference smoke test" OFF)
+option(BAWAN_ENABLE_UPDATES "Include Sparkle automatic update checks" OFF)
+set(BAWAN_BUILD_NUMBER "" CACHE STRING "Monotonically increasing CFBundleVersion; empty uses the project version")
+if(BAWAN_BUILD_NUMBER STREQUAL "")
+    set(BAWAN_BUILD_NUMBER "${PROJECT_VERSION}")
+endif()
+if(NOT BAWAN_BUILD_NUMBER MATCHES "^[0-9]+([.][0-9]+)?([.][0-9]+)?$")
+    message(FATAL_ERROR "BAWAN_BUILD_NUMBER must contain one to three nonnegative integers separated by periods.")
+endif()
+set(BAWAN_SIGNING_IDENTITY "-" CACHE STRING "Codesign identity; '-' is ad-hoc signing for personal use")
+include(cmake/BawanUpdates.cmake)
 
 # Enable native languages before configuring Metal's .m sources in llama.cpp.
 # Enabling OBJCXX after add_subdirectory leaves its compile rule unavailable
@@ -72,7 +82,7 @@ if(BAWAN_BUILD_APP)
     configure_file(LICENSE "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" COPYONLY)
     set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
         "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
-    add_executable(Bawan MACOSX_BUNDLE
+    add_executable(BawanApp MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/SettingsViewController.mm src/BawanAppearance.mm
         src/BawanMascotView.mm
         src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
@@ -81,20 +91,28 @@ if(BAWAN_BUILD_APP)
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES}
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_link_libraries(Bawan PRIVATE bawan_engine bawan_gesture
+    target_link_libraries(BawanApp PRIVATE bawan_engine bawan_gesture
         "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
         "-framework CoreGraphics" "-framework ServiceManagement" "-framework ImageIO"
         "-framework ApplicationServices" "-framework Carbon")
-    target_compile_options(Bawan PRIVATE -fobjc-arc -Wall -Wextra)
-    set_target_properties(Bawan PROPERTIES
+    target_compile_options(BawanApp PRIVATE -fobjc-arc -Wall -Wextra)
+    set_target_properties(BawanApp PROPERTIES
+        OUTPUT_NAME Bawan
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER local.bawan.Bawan
-        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${BAWAN_BUILD_NUMBER}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-    set(BAWAN_SIGNING_IDENTITY "-" CACHE STRING "Codesign identity; '-' is ad-hoc signing for personal use")
-    add_custom_command(TARGET Bawan POST_BUILD
-        COMMAND /usr/bin/codesign --force --sign "${BAWAN_SIGNING_IDENTITY}" "$<TARGET_BUNDLE_DIR:Bawan>"
+    bawan_link_updater(BawanApp)
+    set_target_properties(BawanApp PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "@executable_path/../Frameworks")
+    # Sign after every bundle build, including plist/resource-only changes.
+    add_custom_target(Bawan ALL
+        COMMAND "${CMAKE_COMMAND}" "-DAPP_BUNDLE=$<TARGET_BUNDLE_DIR:BawanApp>"
+            "-DSIGNING_IDENTITY=${BAWAN_SIGNING_IDENTITY}"
+            "-DSPARKLE_FRAMEWORK=${BAWAN_SPARKLE_FRAMEWORK}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignBundle.cmake"
+        DEPENDS BawanApp
         COMMENT "Signing Bawan.app" VERBATIM)
 endif()
 
@@ -163,6 +181,7 @@ if(BAWAN_BUILD_TESTS)
             "-framework CoreGraphics" "-framework ServiceManagement" "-framework ImageIO"
             "-framework ApplicationServices" "-framework Carbon")
         target_compile_options(app_delegate_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        bawan_link_updater(app_delegate_smoke)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)

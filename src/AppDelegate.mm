@@ -3,6 +3,7 @@
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
+#import "AppUpdater.h"
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -15,6 +16,9 @@
     NSMenuItem *_shortcutItem;
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
+    NSMenuItem *_checkUpdatesItem;
+    NSMenuItem *_mainCheckUpdatesItem;
+    AppUpdater *_updater;
     SettingsViewController *_settingsViewController;
     ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
@@ -34,6 +38,8 @@
     BOOL _modelFailed;
     NSString *_modelStatus;
 }
+- (void)refreshUpdateControls;
+- (void)setTranslationBusy:(BOOL)busy;
 @end
 
 @implementation AppDelegate
@@ -45,10 +51,12 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
+    _updater = [[AppUpdater alloc] init];
     [self buildMenus];
     _modelStatus = @"Checking the model…";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
+    _updater.onStateChanged = ^{ [weakSelf refreshUpdateControls]; };
     _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
         [weakSelf translateText:text direction:direction];
     };
@@ -91,7 +99,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         owner->_modelURL = nil;
         owner->_pendingText = nil;
         owner->_warmUpWhenAvailable = NO;
-        owner->_busy = NO;
+        [owner setTranslationBusy:NO];
         owner->_activeRequestId = 0;
         owner->_modelFailed = YES;
         owner->_modelStatus = message;
@@ -136,6 +144,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"firstLaunchShown"];
         [_translationPanel showForManualInput];
     }
+    [_updater start];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -206,6 +215,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     [menu addItem:_retryItem];
     [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [menu addItem:[self menuItem:@"Model License…" action:@selector(showModelLicense:) key:@""]];
+#if BAWAN_ENABLE_UPDATES
+    _checkUpdatesItem = [self menuItem:@"Check for Updates…" action:@selector(checkForUpdates:) key:@""];
+    [menu addItem:_checkUpdatesItem];
+#endif
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     _statusItem.menu = menu;
@@ -216,6 +229,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Bawan"];
     [appMenu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [appMenu addItem:[self menuItem:@"Model License…" action:@selector(showModelLicense:) key:@""]];
+#if BAWAN_ENABLE_UPDATES
+    _mainCheckUpdatesItem = [self menuItem:@"Check for Updates…" action:@selector(checkForUpdates:) key:@""];
+    [appMenu addItem:_mainCheckUpdatesItem];
+#endif
     [appMenu addItem:NSMenuItem.separatorItem];
     [appMenu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     appItem.submenu = appMenu;
@@ -234,6 +251,25 @@ static NSString *StringFromUTF8(const std::string &text) {
     editItem.submenu = edit;
     [main addItem:editItem];
     NSApp.mainMenu = main;
+    [self refreshUpdateControls];
+}
+
+- (void)refreshUpdateControls {
+    _checkUpdatesItem.enabled = _updater.canCheckForUpdates;
+    _mainCheckUpdatesItem.enabled = _updater.canCheckForUpdates;
+    [_settingsViewController setUpdatesAvailable:_updater.available canCheck:_updater.canCheckForUpdates
+        automaticallyChecks:_updater.automaticallyChecksForUpdates];
+}
+
+- (void)checkForUpdates:(id)sender { [_updater checkForUpdates:sender]; }
+
+- (BOOL)validateMenuItem:(NSMenuItem *)item {
+    return item.action != @selector(checkForUpdates:) || _updater.canCheckForUpdates;
+}
+
+- (void)setTranslationBusy:(BOOL)busy {
+    _busy = busy;
+    _updater.translationBusy = busy;
 }
 
 - (void)updateStatus {
@@ -312,7 +348,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _pendingText = [text copy];
         _pendingDirection = direction;
         _activeRequestId = 0;
-        _busy = YES;
+        [self setTranslationBusy:YES];
         [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
         [self updateStatus];
         return;
@@ -323,7 +359,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     const char *utf8 = text.UTF8String;
     if (!utf8) return;
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
-    _busy = YES;
+    [self setTranslationBusy:YES];
     [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
     [_translationPanel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
 }
@@ -354,7 +390,7 @@ static NSString *StringFromUTF8(const std::string &text) {
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             break;
         case Kind::Complete:
-            _busy = NO;
+            [self setTranslationBusy:NO];
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
             [_translationPanel setAvailable:_modelAvailable busy:NO status:event.truncated ?
@@ -362,12 +398,12 @@ static NSString *StringFromUTF8(const std::string &text) {
                                       kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
             break;
         case Kind::Cancelled:
-            _busy = NO;
+            [self setTranslationBusy:NO];
             _activeRequestId = 0;
             [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
             break;
         case Kind::Error:
-            _busy = NO;
+            [self setTranslationBusy:NO];
             _activeRequestId = 0;
             [_translationPanel setAvailable:_modelAvailable busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
             break;
@@ -382,7 +418,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_modelAvailable && !_modelFailed) _modelStatus = @"Ready to translate · On-device processing";
     if (!_busy) { [self updateStatus]; return; }
     _activeRequestId = 0;
-    _busy = NO;
+    [self setTranslationBusy:NO];
     [self updateStatus];
     [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
 }
@@ -436,6 +472,11 @@ static NSString *StringFromUTF8(const std::string &text) {
         __weak AppDelegate *weakSelf = self;
         _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        _settingsViewController.onCheckForUpdates = ^{ [weakSelf checkForUpdates:nil]; };
+        _settingsViewController.onAutomaticUpdatesChanged = ^(BOOL enabled) {
+            AppDelegate *owner = weakSelf;
+            if (owner) owner->_updater.automaticallyChecksForUpdates = enabled;
+        };
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];
@@ -445,6 +486,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
+    [self refreshUpdateControls];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {

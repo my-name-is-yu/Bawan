@@ -1,6 +1,18 @@
 #import "AppDelegate.h"
 #import "TranslationPanel.h"
+#import "AppUpdater.h"
 #import "ModelStore.h"
+#if BAWAN_ENABLE_UPDATES
+#import <Sparkle/Sparkle.h>
+
+// Exercise the delegate contract without starting Sparkle or performing I/O.
+@interface AppUpdater (SmokeTest)
+- (BOOL)updater:(nullable id)updater mayPerformUpdateCheck:(SPUUpdateCheck)check error:(NSError **)error;
+- (BOOL)updater:(nullable id)updater shouldPostponeRelaunchForUpdate:(nullable id)item
+    untilInvokingBlock:(void (^)(void))installHandler;
+- (void)updater:(nullable id)updater didAbortWithError:(NSError *)error;
+@end
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -18,6 +30,7 @@
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
+- (void)setTranslationBusy:(BOOL)busy;
 @end
 
 @interface ModelStore (SmokeTest)
@@ -272,6 +285,91 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
     }
 }
 
+#if BAWAN_ENABLE_UPDATES
+static void DrainMainQueue(void) {
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+}
+
+static void CheckUpdateRestartSafety(AppDelegate *delegate) {
+    AppUpdater *updater = [[AppUpdater alloc] init];
+    [delegate setValue:updater forKey:@"updater"];
+    NSError *error = nil;
+    [delegate setTranslationBusy:YES];
+    Require(![updater updater:nil mayPerformUpdateCheck:SPUUpdateCheckUpdates error:&error] &&
+        error.localizedDescription.length > 0,
+        @"A user update check during translation must be rejected with an explanation");
+    Require(![updater updater:nil mayPerformUpdateCheck:SPUUpdateCheckUpdatesInBackground error:nullptr],
+        @"A scheduled update check must also wait for translation");
+    [delegate setTranslationBusy:NO];
+    Require([updater updater:nil mayPerformUpdateCheck:SPUUpdateCheckUpdates error:nullptr],
+        @"Update checks must be permitted again when translation is idle");
+    __block NSUInteger restarts = 0;
+    Require(![updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
+        @"An idle application must leave normal relaunch handling to Sparkle");
+
+    // Real terminal events must release the delayed restart once. A stale
+    // request must leave both the current translation and restart deferred.
+    uint64_t request = 100;
+    for (auto kind : {bawan::EngineEvent::Kind::Complete, bawan::EngineEvent::Kind::Cancelled,
+                      bawan::EngineEvent::Kind::Error}) {
+        ++request;
+        [delegate setValue:@(request) forKey:@"activeRequestId"];
+        [delegate setTranslationBusy:YES];
+        const NSUInteger before = restarts;
+        Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
+            @"A translation in progress must postpone a requested update relaunch");
+        bawan::EngineEvent stale{kind, request - 1, "Old result"};
+        [delegate handleEngineEvent:stale];
+        DrainMainQueue();
+        Require(Flag(delegate, @"busy") && restarts == before,
+            @"A stale translation event must not release the delayed update relaunch");
+        bawan::EngineEvent terminal{kind, request, "Current result"};
+        [delegate handleEngineEvent:terminal];
+        WaitFor(^BOOL { return restarts == before + 1; },
+            @"Completing, cancelling or failing translation must release the delayed update relaunch");
+        [delegate handleEngineEvent:terminal];
+        [delegate setTranslationBusy:NO];
+        DrainMainQueue();
+        Require(restarts == before + 1,
+            @"Repeated terminal events must not invoke the update relaunch more than once");
+    }
+
+    [delegate setValue:@NO forKey:@"modelAvailable"];
+    [delegate setValue:@NO forKey:@"modelFailed"];
+    [delegate translateText:@"Waiting for model verification" direction:bawan::Direction::Automatic];
+    const NSUInteger beforeCancel = restarts;
+    Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
+        @"A queued translation waiting for model verification must also postpone relaunch");
+    [delegate cancelTranslation];
+    WaitFor(^BOOL { return restarts == beforeCancel + 1; },
+        @"Cancelling a queued translation must release the delayed relaunch");
+    Require([delegate valueForKey:@"pendingText"] == nil,
+        @"Cancelling before model setup finishes must also discard the queued text");
+
+    [delegate setTranslationBusy:YES];
+    Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
+        @"The race fixture must establish a deferred relaunch");
+    [delegate setTranslationBusy:NO];
+    [delegate setTranslationBusy:YES];
+    DrainMainQueue();
+    Require(restarts == beforeCancel + 1,
+        @"A translation started before the deferred callback runs must keep relaunch postponed");
+    [delegate setTranslationBusy:NO];
+    WaitFor(^BOOL { return restarts == beforeCancel + 2; },
+        @"Finishing the replacement translation must release the same postponed relaunch");
+
+    [delegate setTranslationBusy:YES];
+    Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
+        @"The abort fixture must establish a deferred relaunch");
+    [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
+    [delegate setTranslationBusy:NO];
+    DrainMainQueue();
+    Require(restarts == beforeCancel + 2,
+        @"An aborted update must discard its delayed relaunch callback");
+    [delegate setValue:nil forKey:@"updater"];
+}
+#endif
+
 int main() {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -292,6 +390,9 @@ int main() {
         @try {
             try {
                 CheckPendingSelection(delegate, panel);
+#if BAWAN_ENABLE_UPDATES
+                CheckUpdateRestartSafety(delegate);
+#endif
                 CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);

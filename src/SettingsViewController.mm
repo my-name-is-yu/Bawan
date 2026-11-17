@@ -157,6 +157,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSTextField *_loginHint;
     NSSwitch *_loginSwitch;
     NSButton *_back;
+    NSBox *_updatesGroup;
+    NSSwitch *_updatesSwitch;
+    NSButton *_checkUpdatesButton;
     BawanMascotView *_mascot;
     id _eventMonitor;
     NSTimer *_releaseTimer;
@@ -398,13 +401,39 @@ NSString *RowID(NSUInteger index, NSString *control) {
     for (NSView *view in @[loginTitle, loginDescription, _loginHint]) {
         [view.widthAnchor constraintEqualToAnchor:loginContent.widthAnchor].active = YES;
     }
+    _updatesSwitch = [[NSSwitch alloc] init];
+    _updatesSwitch.target = self;
+    _updatesSwitch.action = @selector(changeAutomaticUpdates:);
+    _updatesSwitch.identifier = @"automatic-update-checks";
+    [_updatesSwitch setAccessibilityLabel:@"Automatically check for updates"];
+    NSView *updatesSpacer = [[NSView alloc] init];
+    NSStackView *updatesTitle = Stack(@[Icon(@"arrow.triangle.2.circlepath"),
+        Label(@"App updates", 14, NSFontWeightSemibold, BawanColor(BawanText)), updatesSpacer, _updatesSwitch],
+        NSUserInterfaceLayoutOrientationHorizontal, 10);
+    NSTextField *updatesDescription = Label(@"Check GitHub once a day. You choose when to download and restart.",
+        13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _checkUpdatesButton = [NSButton buttonWithTitle:@"Check for Updates…" target:self action:@selector(checkForUpdates:)];
+    _checkUpdatesButton.identifier = @"check-for-updates";
+    _checkUpdatesButton.bordered = NO;
+    _checkUpdatesButton.font = BawanLabelFont(12);
+    _checkUpdatesButton.contentTintColor = BawanAccentColor();
+    _checkUpdatesButton.alignment = NSTextAlignmentLeft;
+    NSStackView *updatesContent = Stack(@[updatesTitle, updatesDescription, _checkUpdatesButton],
+        NSUserInterfaceLayoutOrientationVertical, 10);
+    for (NSView *view in @[updatesTitle, updatesDescription]) {
+        [view.widthAnchor constraintEqualToAnchor:updatesContent.widthAnchor].active = YES;
+    }
+    _updatesGroup = Group(updatesContent);
+    _updatesGroup.identifier = @"updates-group";
+    _updatesGroup.hidden = YES;
+
     NSImageView *privacyIcon = Icon(@"lock.shield");
     privacyIcon.contentTintColor = BawanColor(BawanSecondaryText);
     NSTextField *privacy = Label(@"Translation runs locally on your Mac.",
         12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     privacy.identifier = @"local-processing";
     NSStackView *footer = Stack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
-    NSStackView *content = Stack(@[shortcutGroup, loginGroup, footer],
+    NSStackView *content = Stack(@[shortcutGroup, loginGroup, _updatesGroup, footer],
         NSUserInterfaceLayoutOrientationVertical, 16);
     [document addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
@@ -436,6 +465,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [content.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-24],
         [shortcutGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [loginGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
+        [_updatesGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
         [footer.widthAnchor constraintEqualToAnchor:content.widthAnchor]
     ]];
     [self refresh];
@@ -444,6 +474,23 @@ NSString *RowID(NSUInteger index, NSString *control) {
 
 - (void)updateDocumentLayout {
     [self.view layoutSubtreeIfNeeded];
+}
+
+- (void)setUpdatesAvailable:(BOOL)available canCheck:(BOOL)canCheck automaticallyChecks:(BOOL)automaticallyChecks {
+    _updatesGroup.hidden = !available;
+    _updatesSwitch.state = automaticallyChecks ? NSControlStateValueOn : NSControlStateValueOff;
+    _checkUpdatesButton.enabled = canCheck;
+    _checkUpdatesButton.toolTip = canCheck ? @"Check for a new version of Bawan" :
+        @"Available when translation and any current update check finish.";
+    [self updateDocumentLayout];
+}
+
+- (void)changeAutomaticUpdates:(NSSwitch *)sender {
+    if (self.onAutomaticUpdatesChanged) self.onAutomaticUpdatesChanged(sender.state == NSControlStateValueOn);
+}
+
+- (void)checkForUpdates:(id)sender {
+    if (self.onCheckForUpdates) self.onCheckForUpdates();
 }
 
 - (void)setActive:(BOOL)active {

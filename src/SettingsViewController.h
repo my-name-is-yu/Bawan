@@ -8,6 +8,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^onBack)(void);
 @property(nonatomic, copy, nullable) void (^onLoginSettings)(void);
 @property(nonatomic, copy, nullable) void (^onLoginChanged)(BOOL enabled);
+@property(nonatomic, copy, nullable) void (^onCheckForUpdates)(void);
+@property(nonatomic, copy, nullable) void (^onAutomaticUpdatesChanged)(BOOL enabled);
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
 // The host owns window focus; active means this screen is visible and key.
 - (void)setActive:(BOOL)active;
@@ -15,6 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)refresh;
 - (void)showError:(NSString *)message;
 - (void)setLoginStatus:(SMAppServiceStatus)status message:(nullable NSString *)message error:(BOOL)error;
+- (void)setUpdatesAvailable:(BOOL)available canCheck:(BOOL)canCheck automaticallyChecks:(BOOL)automaticallyChecks;
 @end
 
 NS_ASSUME_NONNULL_END

@@ -4,6 +4,15 @@ Bawan's original code and project-owned artwork are licensed under the MIT Licen
 in BAWAN-LICENSE.txt (LICENSE in the source repository). Third-party components
 and the separately downloaded model retain their own licenses below.
 
+## Sparkle (when app updates are enabled)
+
+Pinned release: 2.10.1
+https://github.com/sparkle-project/Sparkle/tree/2.10.1
+
+Sparkle provides native macOS update checks and installation. Its copyright,
+license, and bundled component notices are included in Sparkle-LICENSE.txt
+in update-enabled builds.
+
 ## llama.cpp / ggml (MIT)
 
 Pinned release: b12307
