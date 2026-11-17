@@ -17,7 +17,6 @@
 - (void)updateStatus;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
-- (void)ensureEngine;
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
@@ -35,7 +34,31 @@
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 @end
 
-@interface SetupSmokeDelegate : AppDelegate
+@interface EngineSmokeDelegate : AppDelegate
+@property(nonatomic) BOOL holdEngineCallbacks;
+@property(nonatomic) uint64_t observedRequestId;
+@property(nonatomic, copy) void (^onTranslation)(NSString *text, bawan::Direction direction);
+@property(nonatomic, copy) void (^onWarmUp)(void);
+- (void)injectEngineEvent:(const bawan::EngineEvent &)event;
+@end
+
+@implementation EngineSmokeDelegate
+- (void)handleEngineEvent:(const bawan::EngineEvent &)event {
+    if (event.requestId) _observedRequestId = event.requestId;
+    if (!_holdEngineCallbacks) [super handleEngineEvent:event];
+}
+- (void)injectEngineEvent:(const bawan::EngineEvent &)event { [super handleEngineEvent:event]; }
+- (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
+    if (_onTranslation) _onTranslation(text, direction);
+    [super translateText:text direction:direction];
+}
+- (void)warmUpEngine {
+    if (_onWarmUp) _onWarmUp();
+    [super warmUpEngine];
+}
+@end
+
+@interface SetupSmokeDelegate : EngineSmokeDelegate
 @property(nonatomic) BOOL allowLicense;
 @property(nonatomic) NSUInteger licenseViews;
 @property(nonatomic) NSUInteger warmUps;
@@ -96,28 +119,21 @@ static void Require(BOOL condition, NSString *message) {
     if (!condition) throw std::runtime_error(message.UTF8String);
 }
 
-static BOOL Flag(AppDelegate *delegate, NSString *key) {
-    return [[delegate valueForKey:key] boolValue];
-}
-
 class ScopedEngineCallbackSuppression final {
 public:
-    explicit ScopedEngineCallbackSuppression(AppDelegate *delegate) : delegate_(delegate) {
-        [delegate_ ensureEngine];
-        generation_ = [[delegate_ valueForKey:@"engineGeneration"] unsignedLongLongValue];
-        [delegate_ setValue:@(generation_ + 1) forKey:@"engineGeneration"];
+    explicit ScopedEngineCallbackSuppression(EngineSmokeDelegate *delegate) : delegate_(delegate),
+        previous_(delegate.holdEngineCallbacks) {
+        delegate_.holdEngineCallbacks = YES;
     }
 
-    ~ScopedEngineCallbackSuppression() {
-        [delegate_ setValue:@(generation_) forKey:@"engineGeneration"];
-    }
+    ~ScopedEngineCallbackSuppression() { delegate_.holdEngineCallbacks = previous_; }
 
     ScopedEngineCallbackSuppression(const ScopedEngineCallbackSuppression &) = delete;
     ScopedEngineCallbackSuppression &operator=(const ScopedEngineCallbackSuppression &) = delete;
 
 private:
-    AppDelegate *__strong delegate_;
-    uint64_t generation_;
+    EngineSmokeDelegate *__strong delegate_;
+    BOOL previous_;
 };
 
 static NSView *FindView(NSView *root, NSString *identifier) {
@@ -138,44 +154,109 @@ static void WaitFor(Predicate predicate, NSString *message) {
     }
 }
 
+static uint64_t ObserveRequest(EngineSmokeDelegate *delegate, void (^start)(void)) {
+    Require(delegate.holdEngineCallbacks, @"Synthetic outcomes must hold the real engine callbacks");
+    delegate.observedRequestId = 0;
+    start();
+    WaitFor([&] { return delegate.observedRequestId != 0; },
+        @"The real engine did not deliver a request-scoped callback");
+    return delegate.observedRequestId;
+}
+
+static NSButton *TranslateButton(TranslationPanel *panel) {
+    NSButton *button = (NSButton *)FindView(panel.window.contentView, @"translate");
+    Require(button != nil, @"The delegate fixture must use the real Translate/Cancel button");
+    return button;
+}
+
+static BOOL IsCancellable(TranslationPanel *panel) {
+    NSButton *button = TranslateButton(panel);
+    BOOL showsCancel = [button.title isEqualToString:@"Cancel  ⌘↵"];
+    Require(!showsCancel || button.enabled, @"The Cancel action must remain enabled");
+    return showsCancel;
+}
+
+static NSMenuItem *RetryItem(AppDelegate *delegate) {
+    NSStatusItem *statusItem = [delegate valueForKey:@"statusItem"];
+    for (NSMenuItem *item in statusItem.menu.itemArray) {
+        if (item.action == @selector(retryModel:)) return item;
+    }
+    Require(NO, @"The status menu must contain Retry Model Setup");
+    return nil;
+}
+
+static NSMenuItem *ModelItem(AppDelegate *delegate) {
+    for (NSMenuItem *item in RetryItem(delegate).menu.itemArray) {
+        if (!item.action && !item.separatorItem && !item.enabled) return item;
+    }
+    Require(NO, @"The status menu must contain a model status label");
+    return nil;
+}
+
 static void SetAvailableModel(AppDelegate *delegate) {
     [delegate modelFileDidBecomeReady:[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"]];
 }
 
-static void RequireModelFailure(AppDelegate *delegate) {
-    NSMenuItem *retry = [delegate valueForKey:@"retryItem"];
-    NSMenuItem *model = [delegate valueForKey:@"modelItem"];
-    NSString *status = [delegate valueForKey:@"modelStatus"];
-    Require(Flag(delegate, @"modelFailed") && !Flag(delegate, @"busy") &&
-        !retry.hidden && retry.enabled && status.length &&
-        [model.title isEqualToString:status] && ![status isEqualToString:@"Loading the model…"],
-        @"A model load failure must stop loading and expose Retry Model Setup");
-    Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
-        @"A failed cold request must release the active request ID");
+static void RequireModelFailure(AppDelegate *delegate, TranslationPanel *panel) {
+    NSMenuItem *retry = RetryItem(delegate);
+    NSString *message = ModelItem(delegate).title;
+    NSTextField *status = (NSTextField *)FindView(panel.window.contentView, @"status");
+    Require(!IsCancellable(panel) && !retry.hidden && retry.enabled &&
+        [retry.title isEqualToString:@"Retry Model Setup"] && message.length &&
+        ![message isEqualToString:@"Loading the model…"] &&
+        !status.hidden && [status.stringValue isEqualToString:message] &&
+        [status.textColor isEqual:BawanColor(BawanError)],
+        @"A model load failure must stop loading and expose the same error in the translator and status menu");
 }
 
-static void CheckPendingSelection(AppDelegate *delegate, TranslationPanel *panel) {
+static void CheckPendingSelection(EngineSmokeDelegate *delegate, TranslationPanel *panel) {
+    ScopedEngineCallbackSuppression callbacks(delegate);
     [panel showForSelection:@"First selection"];
     [delegate translateText:@"First selection" direction:bawan::Direction::Automatic];
+    [panel showForSelection:@"Latest selection"];
     [delegate translateText:@"Latest selection" direction:bawan::Direction::EnglishToJapanese];
-    Require(Flag(delegate, @"busy") &&
-        [[delegate valueForKey:@"pendingText"] isEqualToString:@"Latest selection"],
-        @"Verification must retain only the latest requested selection");
     [delegate warmUpEngine];
-    Require(Flag(delegate, @"warmUpWhenAvailable") &&
-        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
-        @"Verification must defer inference engine creation");
+    Require(IsCancellable(panel), @"A selection waiting for verification must remain cancellable");
+    __block NSString *resumedText = nil;
+    __block bawan::Direction resumedDirection = bawan::Direction::Automatic;
+    delegate.onTranslation = ^(NSString *text, bawan::Direction direction) {
+        resumedText = text;
+        resumedDirection = direction;
+    };
+    uint64_t request = ObserveRequest(delegate, ^{ SetAvailableModel(delegate); });
+    delegate.onTranslation = nil;
+    Require([resumedText isEqualToString:@"Latest selection"] &&
+        resumedDirection == bawan::Direction::EnglishToJapanese && IsCancellable(panel),
+        @"Verification must resume the latest selection and direction, ahead of deferred warmup");
     [panel close];
-    Require(!Flag(delegate, @"busy") && !Flag(delegate, @"warmUpWhenAvailable") &&
-        [delegate valueForKey:@"pendingText"] == nil &&
-        [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
-        @"Closing during verification must clear queued translation and warmup work");
+    Require(!panel.window.visible && !IsCancellable(panel),
+        @"Closing an active request must hide the translator and end its Cancel action");
+    bawan::EngineEvent late{bawan::EngineEvent::Kind::Complete, request, "Closed request output"};
+    [delegate injectEngineEvent:late];
+    NSTextView *output = (NSTextView *)FindView(panel.window.contentView, @"output");
+    Require(output.string.length == 0, @"A closed request must ignore late output");
+
+    [delegate retryModel:nil];
+    [panel showForSelection:@"Close before verification"];
+    [delegate translateText:@"Close before verification" direction:bawan::Direction::Automatic];
+    [delegate warmUpEngine];
+    [panel close];
+    __block BOOL resumed = NO;
+    __block BOOL warmed = NO;
+    delegate.onTranslation = ^(NSString *, bawan::Direction) { resumed = YES; };
+    delegate.onWarmUp = ^{ warmed = YES; };
+    SetAvailableModel(delegate);
+    delegate.onTranslation = nil;
+    delegate.onWarmUp = nil;
+    Require(!resumed && !warmed && !IsCancellable(panel) && !panel.window.visible && RetryItem(delegate).hidden,
+        @"Closing during verification must discard queued translation and warmup before the model becomes available");
+    [delegate retryModel:nil];
 }
 
-static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) {
+static void CheckEditedRequests(EngineSmokeDelegate *delegate, TranslationPanel *panel) {
     [panel showForSelection:@"Original source"];
     [panel showForManualInput];
-    NSWindow *window = [panel valueForKey:@"panel"];
+    NSWindow *window = panel.window;
     NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
     NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
     NSButton *translate = (NSButton *)FindView(window.contentView, @"translate");
@@ -190,8 +271,7 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     [source insertText:@"Revised queued source" replacementRange:NSMakeRange(0, source.string.length)];
     [source.undoManager endUndoGrouping];
     source.undoManager.groupsByEvent = groupsByEvent;
-    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
-        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0 &&
+    Require(!IsCancellable(panel) &&
         [source.string isEqualToString:@"Revised queued source"] && output.string.length == 0,
         @"Editing a queued source must discard the pending translation before model readiness");
     SetAvailableModel(delegate);
@@ -199,12 +279,11 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
         @"Model availability after an edit must leave the revised source ready for an explicit translation");
 
     ScopedEngineCallbackSuppression callbacks(delegate);
-    [translate performClick:nil];
-    uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
-    Require(oldRequest != 0 && Flag(delegate, @"busy"), @"The edit fixture must start a real active request");
+    uint64_t oldRequest = ObserveRequest(delegate, ^{ [translate performClick:nil]; });
+    Require(IsCancellable(panel), @"The edit fixture must start a cancellable request");
     bawan::EngineEvent partial{bawan::EngineEvent::Kind::Text, oldRequest, "Original partial output",
         false, bawan::Direction::EnglishToJapanese};
-    [delegate handleEngineEvent:partial];
+    [delegate injectEngineEvent:partial];
     Require([output.string isEqualToString:@"Original partial output"] && copy.enabled,
         @"The active request must display partial output before it is edited");
     [source breakUndoCoalescing];
@@ -213,14 +292,14 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     [source insertText:@"Revised active source" replacementRange:NSMakeRange(0, source.string.length)];
     [source.undoManager endUndoGrouping];
     source.undoManager.groupsByEvent = groupsByEvent;
-    Require(!Flag(delegate, @"busy") && [source.string isEqualToString:@"Revised active source"] &&
+    Require(!IsCancellable(panel) && [source.string isEqualToString:@"Revised active source"] &&
         output.string.length == 0 && !copy.enabled && !swap.enabled,
         @"Editing an active source must cancel translation and remove its partial output");
     for (auto kind : {bawan::EngineEvent::Kind::Text, bawan::EngineEvent::Kind::Complete}) {
         bawan::EngineEvent stale{kind, oldRequest, "Late original output", false, bawan::Direction::EnglishToJapanese};
-        [delegate handleEngineEvent:stale];
+        [delegate injectEngineEvent:stale];
     }
-    Require(output.string.length == 0 && !copy.enabled && !swap.enabled && !Flag(delegate, @"busy"),
+    Require(output.string.length == 0 && !copy.enabled && !swap.enabled && !IsCancellable(panel),
         @"Late text and completion must not restore output for an edited source");
     [source.undoManager undo];
     Require([source.string isEqualToString:@"Revised queued source"] && output.string.length == 0,
@@ -230,55 +309,63 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     Require([source.string isEqualToString:@"Revised active source"],
         [NSString stringWithFormat:@"Cancellation must preserve source Redo; source=%@", source.string]);
 
-    [NSApp sendAction:translate.action to:translate.target from:translate];
-    uint64_t newRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
-    Require(newRequest != 0 && newRequest != oldRequest, @"The revised source must start a fresh request");
+    uint64_t newRequest = ObserveRequest(delegate, ^{
+        [NSApp sendAction:translate.action to:translate.target from:translate];
+    });
+    Require(newRequest != oldRequest && IsCancellable(panel), @"The revised source must start a fresh cancellable request");
     bawan::EngineEvent staleComplete{bawan::EngineEvent::Kind::Complete, oldRequest, "Late original output",
         false, bawan::Direction::EnglishToJapanese};
-    [delegate handleEngineEvent:staleComplete];
-    Require(output.string.length == 0 && Flag(delegate, @"busy"),
+    [delegate injectEngineEvent:staleComplete];
+    Require(output.string.length == 0 && IsCancellable(panel),
         @"An old completion must not finish the revised source's request");
     bawan::EngineEvent revisedComplete{bawan::EngineEvent::Kind::Complete, newRequest, "Revised output",
         false, bawan::Direction::EnglishToJapanese};
-    [delegate handleEngineEvent:revisedComplete];
-    Require([output.string isEqualToString:@"Revised output"] && copy.enabled && swap.enabled && !Flag(delegate, @"busy"),
+    [delegate injectEngineEvent:revisedComplete];
+    Require([output.string isEqualToString:@"Revised output"] && copy.enabled && swap.enabled && !IsCancellable(panel),
         @"The revised source's own completion must still enable Copy and Swap");
 }
 
-static void CheckColdRequestAndRetry(AppDelegate *delegate) {
+static void CheckColdRequestAndRetry(EngineSmokeDelegate *delegate, TranslationPanel *panel) {
     SetAvailableModel(delegate);
     [delegate translateText:@"Hello" direction:bawan::Direction::EnglishToJapanese];
-    Require(Flag(delegate, @"busy"), @"A cold translation must enter the cancellable busy state");
-    WaitFor([&] { return Flag(delegate, @"modelFailed") && !Flag(delegate, @"busy"); },
+    Require(IsCancellable(panel), @"A cold translation must offer Cancel");
+    WaitFor([&] { return !RetryItem(delegate).hidden && !IsCancellable(panel); },
         @"Cold model loading did not report its failure to the application");
-    RequireModelFailure(delegate);
+    RequireModelFailure(delegate, panel);
+    for (auto kind : {bawan::EngineEvent::Kind::Text, bawan::EngineEvent::Kind::Complete}) {
+        bawan::EngineEvent late{kind, delegate.observedRequestId, "Failed request output"};
+        [delegate injectEngineEvent:late];
+    }
+    NSTextView *output = (NSTextView *)FindView(panel.window.contentView, @"output");
+    Require(output.string.length == 0 && !IsCancellable(panel) && !RetryItem(delegate).hidden,
+        @"A failed request must not accept late text or completion");
 
     [delegate translateText:@"Try again" direction:bawan::Direction::EnglishToJapanese];
-    uint64_t oldGeneration = [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue];
-    uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
     [delegate retryModel:nil];
-    Require([[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] > oldGeneration,
-        @"Retry must invalidate the previous engine's callback generation");
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
-    bawan::EngineEvent staleError{bawan::EngineEvent::Kind::Error, oldRequest, "Old request failed"};
-    [delegate handleEngineEvent:staleError];
-    NSMenuItem *retry = [delegate valueForKey:@"retryItem"];
-    Require(!Flag(delegate, @"busy") && !Flag(delegate, @"modelFailed") &&
-        !Flag(delegate, @"hasVerifiedModelFile") && [delegate valueForKey:@"modelURL"] == nil &&
-        [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the model…"] && retry.hidden,
-        @"Old engine events must not overwrite model setup after Retry");
+    bawan::EngineEvent staleError{bawan::EngineEvent::Kind::Error, delegate.observedRequestId, "Old request failed"};
+    Require(staleError.requestId != 0, @"The cold request must have delivered a request-scoped error");
+    [delegate injectEngineEvent:staleError];
+    NSTextField *status = (NSTextField *)FindView(panel.window.contentView, @"status");
+    NSMenuItem *retry = RetryItem(delegate);
+    Require(!IsCancellable(panel) && !TranslateButton(panel).enabled &&
+        [ModelItem(delegate).title isEqualToString:@"Checking the model…"] &&
+        !status.hidden && [status.stringValue isEqualToString:@"Checking the model…"] &&
+        retry.hidden && !retry.enabled,
+        @"Old engine events must not overwrite model setup or enable translation after Retry");
 }
 
-static void CheckWarmUpFailure(AppDelegate *delegate) {
+static void CheckWarmUpFailure(AppDelegate *delegate, TranslationPanel *panel) {
     SetAvailableModel(delegate);
     [delegate warmUpEngine];
-    Require(!Flag(delegate, @"busy"), @"Manual prewarming must not create a translation request");
-    WaitFor([&] { return Flag(delegate, @"modelFailed"); },
+    Require(!IsCancellable(panel) && TranslateButton(panel).enabled,
+        @"Manual prewarming must leave the Translate action available");
+    WaitFor([&] { return !RetryItem(delegate).hidden; },
         @"Model prewarming did not report its failure to the application");
-    RequireModelFailure(delegate);
+    RequireModelFailure(delegate, panel);
 }
 
-static void CheckModelStatusPresentation(AppDelegate *delegate, TranslationPanel *panel) {
+static void CheckModelStatusPresentation(EngineSmokeDelegate *delegate, TranslationPanel *panel) {
     using Kind = bawan::EngineEvent::Kind;
     [delegate retryModel:nil];
     [panel showForSelection:@"Keep this input after cancellation"];
@@ -297,20 +384,20 @@ static void CheckModelStatusPresentation(AppDelegate *delegate, TranslationPanel
     Require(!translate.enabled, @"Cancelling a queued request must still wait for the model file");
     SetAvailableModel(delegate);
     requireStatus(@"Translation cancelled", BawanSecondaryText);
-    Require(translate.enabled && !Flag(delegate, @"busy"),
+    Require(translate.enabled && !IsCancellable(panel),
         @"A verified file must enable translation even while preserving the cancellation message");
 
     ScopedEngineCallbackSuppression callbacks(delegate);
     bawan::EngineEvent loading{Kind::Loading, 0, {}};
     bawan::EngineEvent ready{Kind::Ready, 0, {}};
     bawan::EngineEvent loadError{Kind::Error, 0, "Could not load the verified model"};
-    [delegate handleEngineEvent:loading];
+    [delegate injectEngineEvent:loading];
     [delegate updateStatus];
     requireStatus(@"Loading the model…", BawanSecondaryText);
-    [delegate handleEngineEvent:loadError];
+    [delegate injectEngineEvent:loadError];
     [delegate updateStatus];
     requireStatus(@"Could not load the verified model", BawanError);
-    [delegate handleEngineEvent:ready];
+    [delegate injectEngineEvent:ready];
     Require(status.hidden, @"Model readiness must clear the preceding model error");
 
     struct Outcome {
@@ -327,41 +414,43 @@ static void CheckModelStatusPresentation(AppDelegate *delegate, TranslationPanel
         {Kind::Cancelled, false, "", @"Translation cancelled", BawanSecondaryText}
     };
     for (const Outcome &outcome : outcomes) {
-        [delegate translateText:@"Try translating" direction:bawan::Direction::Automatic];
-        uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
-        Require(request && status.hidden, @"A new request must clear the previous translation outcome");
-        [delegate handleEngineEvent:loading];
+        uint64_t request = ObserveRequest(delegate, ^{
+            [delegate translateText:@"Try translating" direction:bawan::Direction::Automatic];
+        });
+        Require(IsCancellable(panel) && status.hidden, @"A new request must clear the previous translation outcome");
+        [delegate injectEngineEvent:loading];
         [delegate updateStatus];
         requireStatus(@"Loading the model…", BawanSecondaryText);
-        [delegate handleEngineEvent:ready];
-        Require(status.hidden && Flag(delegate, @"busy") &&
-            [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
+        [delegate injectEngineEvent:ready];
+        Require(status.hidden && IsCancellable(panel),
             @"Model readiness must clear Loading without completing the active translation");
         bawan::EngineEvent terminal{outcome.kind, request, outcome.text, outcome.truncated};
-        [delegate handleEngineEvent:terminal];
+        [delegate injectEngineEvent:terminal];
         [delegate updateStatus];
         requireStatus(outcome.message, outcome.color);
-        Require(!Flag(delegate, @"busy"), @"A translation outcome must release the busy state");
-        [delegate handleEngineEvent:ready];
+        Require(!IsCancellable(panel), @"A translation outcome must release the busy state");
+        [delegate injectEngineEvent:ready];
         bawan::EngineEvent idleCancellation{Kind::Cancelled, 0, {}};
-        [delegate handleEngineEvent:idleCancellation];
+        [delegate injectEngineEvent:idleCancellation];
         requireStatus(outcome.message, outcome.color);
-        [delegate handleEngineEvent:loading];
+        [delegate injectEngineEvent:loading];
         requireStatus(@"Loading the model…", BawanSecondaryText);
-        [delegate handleEngineEvent:ready];
+        [delegate injectEngineEvent:ready];
         Require(status.hidden, @"Ready must clear a model message that took ownership after a translation outcome");
     }
 
-    [delegate translateText:@"Cancel loading" direction:bawan::Direction::Automatic];
-    [delegate handleEngineEvent:loading];
+    ObserveRequest(delegate, ^{
+        [delegate translateText:@"Cancel loading" direction:bawan::Direction::Automatic];
+    });
+    [delegate injectEngineEvent:loading];
     [delegate cancelTranslation];
     bawan::EngineEvent cancelled{Kind::Cancelled, 0, {}};
-    [delegate handleEngineEvent:cancelled];
+    [delegate injectEngineEvent:cancelled];
     [delegate updateStatus];
     requireStatus(@"Translation cancelled", BawanSecondaryText);
 }
 
-static void CheckShortcutStatusPresentation(AppDelegate *delegate, TranslationPanel *panel) {
+static void CheckShortcutStatusPresentation(EngineSmokeDelegate *delegate, TranslationPanel *panel) {
     using Kind = bawan::EngineEvent::Kind;
     SetAvailableModel(delegate);
     NSString *warning = @"The selected text could not be copied. Check shortcut permissions.";
@@ -376,34 +465,35 @@ static void CheckShortcutStatusPresentation(AppDelegate *delegate, TranslationPa
     requireWarning();
     for (auto kind : {Kind::Ready, Kind::Cancelled}) {
         bawan::EngineEvent event{kind, 0, {}};
-        [delegate handleEngineEvent:event];
+        [delegate injectEngineEvent:event];
         [delegate updateStatus];
         requireWarning();
     }
     bawan::EngineEvent loading{Kind::Loading, 0, {}};
     bawan::EngineEvent ready{Kind::Ready, 0, {}};
-    [delegate handleEngineEvent:loading];
+    [delegate injectEngineEvent:loading];
     Require(!status.hidden && [status.stringValue isEqualToString:@"Loading the model…"],
         @"A model load must take ownership from an earlier shortcut warning");
-    [delegate handleEngineEvent:ready];
+    [delegate injectEngineEvent:ready];
     Require(status.hidden, @"Ready must clear Loading without restoring the superseded shortcut warning");
-    [delegate handleEngineEvent:loading];
+    [delegate injectEngineEvent:loading];
     [delegate handleShortcutProblem:warning];
-    [delegate handleEngineEvent:ready];
+    [delegate injectEngineEvent:ready];
     requireWarning();
 
     ScopedEngineCallbackSuppression callbacks(delegate);
-    [delegate translateText:@"Try translating after a shortcut warning" direction:bawan::Direction::Automatic];
-    uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
-    Require(request && status.hidden, @"A new translation must clear the shortcut warning");
+    uint64_t request = ObserveRequest(delegate, ^{
+        [delegate translateText:@"Try translating after a shortcut warning" direction:bawan::Direction::Automatic];
+    });
+    Require(IsCancellable(panel) && status.hidden, @"A new translation must clear the shortcut warning");
     bawan::EngineEvent complete{Kind::Complete, request, "Successful translation"};
-    [delegate handleEngineEvent:complete];
-    [delegate handleEngineEvent:ready];
-    Require(status.hidden && !Flag(delegate, @"busy"),
+    [delegate injectEngineEvent:complete];
+    [delegate injectEngineEvent:ready];
+    Require(status.hidden && !IsCancellable(panel),
         @"A successful translation must leave no status for a later Ready update to restore");
 }
 
-static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
+static void CheckModelRevalidationOnRetry(AppDelegate *delegate, ModelStore *previousStore) {
     ModelFixtureFileManager *files = [[ModelFixtureFileManager alloc] init];
     files.supportDirectory = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
         URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
@@ -413,7 +503,6 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
     NSData *corrupt = [@"damaged model bytes" dataUsingEncoding:NSUTF8StringEncoding];
     ModelStore *store = [[ModelStore alloc] initWithFileManager:files expectedSize:valid.length
         SHA256:@"32e5e24230b47f8db398a288c8a7ca84723ba83d0099fceeaecdec1976d25c30"];
-    ModelStore *previousStore = [delegate valueForKey:@"modelStore"];
     __block NSUInteger ready = 0;
     __block NSUInteger errors = 0;
     __block NSURL *lastReadyURL = nil;
@@ -500,20 +589,20 @@ static void CheckFirstRunIntegration(void) {
         Require(panel.currentPage == BawanPanelPageTranslation && !panel.window.visible,
             @"A new hidden panel must select the translator");
         [panel showForManualInput];
-        NSWindow *window = [panel valueForKey:@"panel"];
+        NSWindow *window = panel.window;
         NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
         NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
         Require(source && output, @"The first-run integration must use the real translator controls");
         [delegate handleSelectionText:@"A selection waiting for setup"];
         Require(panel.currentPage == BawanPanelPageOnboarding &&
             [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
-            !Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
             store.preparations == 0 && delegate.licenseViews == 0,
             @"A selection before model consent must show setup without entering an unstarted busy queue");
         [panel showForManualInput];
         Require(panel.currentPage == BawanPanelPageTranslation &&
             [source.string isEqualToString:@"A selection waiting for setup"],
             @"Returning from unfinished setup must preserve the selected text for later translation");
+        Require(!IsCancellable(panel), @"An unprepared selection must leave the translator out of Cancel mode");
         source.string = @"Original source";
         NSMutableString *edited = [NSMutableString string];
         for (NSUInteger line = 0; line < 40; ++line) {
@@ -588,7 +677,7 @@ static void CheckFirstRunIntegration(void) {
             @"A preparation failure must return to the model step with Retry");
         [primary performClick:nil];
         Require(store.preparations == 3 && store.revalidations == 2 && delegate.licenseViews == 2 &&
-            !Flag(delegate, @"modelFailed") && [primary.title hasPrefix:@"Set Up Later"],
+            RetryItem(delegate).hidden && [primary.title hasPrefix:@"Set Up Later"],
             @"Retry must prepare again and return to the shortcut step without asking for the accepted license");
         SetAvailableModel(delegate);
         Require(primary.enabled && monitor.permissionRequests == 0 &&
@@ -657,7 +746,7 @@ static void CheckFirstRunIntegration(void) {
         [existingUser setValue:existingPanel forKey:@"translationPanel"];
         [existingUser buildMenus];
         [existingUser startInitialSetup];
-        Require([existingUser valueForKey:@"onboardingViewController"] == nil &&
+        Require(existingPanel.currentPage == BawanPanelPageTranslation && !existingPanel.window.visible &&
             existingStore.preparations == 1 && existingStore.revalidations == 0 && existingUser.licenseViews == 0,
             @"Existing users must prepare their model normally without seeing first-run guidance again");
         CheckShortcutStatusPresentation(delegate, panel);
@@ -729,7 +818,9 @@ int main() {
         [defaults removePersistentDomainForName:suite];
         [defaults setBool:YES forKey:@"firstLaunchShown"];
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
-        AppDelegate *delegate = [[AppDelegate alloc] init];
+        EngineSmokeDelegate *delegate = [[EngineSmokeDelegate alloc] init];
+        SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+        [delegate setValue:store forKey:@"modelStore"];
         [delegate setValue:defaults forKey:@"defaults"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:panel forKey:@"translationPanel"];
@@ -746,10 +837,10 @@ int main() {
             try {
                 CheckPendingSelection(delegate, panel);
                 CheckEditedRequests(delegate, panel);
-                CheckColdRequestAndRetry(delegate);
-                CheckWarmUpFailure(delegate);
+                CheckColdRequestAndRetry(delegate, panel);
+                CheckWarmUpFailure(delegate, panel);
                 CheckModelStatusPresentation(delegate, panel);
-                CheckModelRevalidationOnRetry(delegate);
+                CheckModelRevalidationOnRetry(delegate, store);
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
                 std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation and the license sheet\n";

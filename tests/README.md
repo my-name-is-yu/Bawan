@@ -2,7 +2,8 @@
 
 Reviewed on 2026-11-16 against `f09ee8b` (Bawan v1). The review uses observable
 results, readable state, and effects at external boundaries as the test contract.
-Production code and test registrations are unchanged.
+The original review left production code and test registrations unchanged. The
+Issue #45 follow-up below removes unused animation metadata from production.
 
 ## Suite decisions
 
@@ -17,8 +18,8 @@ Production code and test registrations are unchanged.
 | `shortcut_monitor_tests.mm` | Add native command routing regression | Custom global bindings must preserve native editing/Close while Bawan owns keyboard input; Settings must pass new events through. | Production monitor event routing with real CGEvents and a visible key nonactivating panel, single/double custom bindings, held-key draining, Option-T inside the translator, and custom/passive bindings outside it. Hosted AppKit can reactivate the app, so inactive-app input is not dynamically established. No installed event tap or physical-key delivery is claimed. |
 | `panel_smoke.mm` | Retain regressions; rewrite geometry expectations | `766a002`, `351138d`, `d7bafc5`: wrapping, final-line following and preserving reading position. `1905a01`: reverse direction. `41142ca`: normal window ordering. Accepted geometry is in `design-qa.md`. | Existing real controls, key events, clipboard, callbacks, scrolling and window-order checks remain. Source edits clear completed output, disable stale Copy/Swap, reset direction and preserve Undo/Redo. `CheckBounds` independently expects an 80pt header and 72pt mascot. |
 | `settings_smoke.mm` | Merge refresh assertions into navigation; rewrite geometry | `048a938`, `8e42eff`: recording, release protection and permissions. `4c37cc4`: preserve Undo/Redo across navigation. `d7bafc5`: preserve position/reveal full errors. | Reopen Settings after an external permission change, refresh the fake monitor's cached availability, then assert visible ready labels/help state. Existing recording, failures, focus, Undo/Redo, scrolling, login actions and color-role checks remain. Independent geometry also pins 28pt controls/13pt type. |
-| `mascot_smoke.mm` | Retain; mark motion checks for later rewrite | `41142ca` and `design-qa.md`: finite playback, interruption/reset, Reduce Motion, fixed hit area and bounded shared bitmap. | Existing coverage remains. Motion-name/private-layer assertions alone do not establish visible movement; replacing them requires real AppKit presentation/rendering checks. They were not deleted without that replacement. |
-| `app_delegate_smoke.mm` | Retain; mark private-state checks for later rewrite | `f134100`: latest pending selection, close cancellation, cold/prewarm errors expose Retry and end busy state, stale events cannot overwrite model setup. | Existing actual delegate/error/menu scenarios remain. Real source edits cancel queued/active requests; late Text/Complete events cannot restore stale output or finish a newer request. Private generation/state assertions should eventually be replaced by stronger callback/UI observations on macOS. |
+| `mascot_smoke.mm` | Retain; inspect public animation payloads (#45) | `41142ca` and `design-qa.md`: finite playback, interruption/reset, Reduce Motion, fixed hit area and bounded shared bitmap. | Motion presets are identified by `CAKeyframeAnimation.keyPath` and transform `values`, including rotation/translation axes and a final resting transform. Existing playback/reset, presentation capture, hit-area and shared-bitmap checks remain; no production test metadata is needed. |
+| `app_delegate_smoke.mm` | Retain; observe controls, menus and callbacks (#45) | `f134100`: latest pending selection, close cancellation, cold/prewarm errors expose Retry and end busy state, stale events cannot overwrite model setup. | Real Translate/Cancel, Copy/Swap, output/status text and Retry menu state replace private-state assertions. Request IDs come from real engine callbacks; a test-only delegate controls callback delivery for synthetic outcomes. `currentPage` and window visibility cover navigation. Latest queued text/direction resume at readiness; closing and source edits discard queued/active work and reject late output. |
 | `engine_profile.cpp` | Retain as a benchmark | `f134100` and whole-app resource acceptance in `design-qa.md`. | CPU/RSS/footprint and repeated translation/reload measurements serve a different purpose from functional smoke checks. Linux RSS does not establish macOS footprint or AppKit resource behavior. |
 
 ## Changes and successor checks
@@ -36,6 +37,57 @@ Production code and test registrations are unchanged.
 migrated obsolete copy-gesture tests to the production state machine. They are
 not reintroduced. Similar-looking UI operations are retained when they cover
 different entry points, failure modes or regression histories.
+
+## Issue #45: test boundaries and remaining KVC
+
+This cleanup is based on #41 / PR #55 (`fb7d000`), which supplies the typed
+`currentPage` API. It does not change AppDelegate's state design or add any
+production accessor. The production `bawan.motion` animation metadata is removed.
+The mascot test now recognizes actual rotation, vertical movement and horizontal
+movement in public Core Animation keyframes. This establishes the scheduled motion;
+the retained presentation PNGs are diagnostic captures, not pixel-difference tests.
+
+The delegate test no longer reads or writes `engineGeneration`, `activeRequestId`,
+`pendingText`, `busy`, `warmUpWhenAvailable`, `modelFailed`, `hasVerifiedModelFile`,
+`modelURL`, `modelStatus`, `retryItem`, `modelItem` or `onboardingViewController`.
+It uses `TranslationPanel.window` rather than KVC for the panel's window. KVC read
+sites fall from 28 (including the dynamic flag helper) to one.
+
+`EngineSmokeDelegate` exists only in the test executable. In controlled scenarios
+it receives real missing-model worker callbacks without forwarding them to the UI,
+gets the opaque request token from a request-scoped callback, then sends synthetic
+Text/Complete/Error/Cancelled events through the real delegate handler. This replaces
+mutating the production engine generation to suppress asynchronous callbacks.
+Cold-load, prewarm and immediate-Retry scenarios still forward real callbacks.
+The latest pending text/direction check observes the actual translation submission
+when file readiness resumes it, forwards to the production implementation, and also
+requires the real Cancel action. After closing, translation and warmup submission
+callbacks must both remain quiet when verification completes. These assertions do
+not inspect private queue storage.
+
+Only these KVC keys remain in `app_delegate_smoke.mm`:
+
+| Keys | Use and reason |
+| --- | --- |
+| `defaults`, `shortcutPreferences`, `shortcut`, `modelStore`, `translationPanel` | Fixture injection only. There is no dependency-injection initializer; the normal launch path creates real permission monitors, user preferences and model download work. Supplying isolated defaults, a non-downloading store, a quiet monitor and the real test panel avoids those side effects without adding test-only production accessors. The real model verification fixture restores the original store using the test's owned reference, never an ivar read. |
+| `statusItem` | One read obtains the actual status menu. `NSStatusBar` has no public enumeration API for installed status items. Assertions then inspect public `NSMenuItem` titles, enabled/hidden state and action selectors; they do not read cached model state or menu-item ivars. |
+
+Private action/event methods are still declared in the test category to exercise
+the existing orchestration boundary without installing OS event taps or downloading
+a model. The Retry check protects visible setup state against queued worker events
+and stale request outcomes; it does not assert the internal generation counter or
+independently prove that counter's guard is necessary.
+
+Verification for #45 is separate from the earlier review below. On Linux x86_64,
+GCC 14.2 and CMake 4.4.5, the warnings-as-errors portable build and all four portable
+CTests pass (0.36s), including building the model-backed smoke executable. The
+ASan/UBSan warnings-as-errors build and the same four CTests also pass (0.43s).
+No model is provided, so model-backed inference is not run for this cleanup. The changed
+Objective-C++ sources cannot be compiled or exercised on this host: rerun
+`./scripts/check.sh` on Apple Silicon macOS, including `app_delegate_smoke` and
+`mascot_hover`, and exercise both normal and Reduce Motion settings. PR #55's
+native results do not validate these additional changes. No automatic CI is
+configured in the repository.
 
 ## Running the checks
 

@@ -2,6 +2,8 @@
 #import "BawanMascotView.h"
 #import <QuartzCore/QuartzCore.h>
 
+#include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -94,6 +96,35 @@ static void RequireFinite(CALayer *layer) {
         [NSString stringWithFormat:@"%@ must use one finite, automatically removed animation", layer.name]);
 }
 
+static NSString *MotionName(CALayer *layer) {
+    CAAnimation *animation = [layer animationForKey:@"bawan.hover"];
+    Require([animation isKindOfClass:CAKeyframeAnimation.class],
+        @"The mascot must animate through inspectable keyframes");
+    CAKeyframeAnimation *motion = (CAKeyframeAnimation *)animation;
+    Require([motion.keyPath isEqualToString:@"transform"] && motion.values.count >= 3,
+        @"The dog must move through transform keyframes");
+    BOOL rotates = NO, movesHorizontally = NO, movesVertically = NO;
+    for (NSUInteger index = 0; index < motion.values.count; ++index) {
+        NSValue *value = motion.values[index];
+        Require([value isKindOfClass:NSValue.class] &&
+            std::strcmp(value.objCType, @encode(CATransform3D)) == 0,
+            @"Dog keyframes must contain native transforms");
+        CATransform3D transform = value.CATransform3DValue;
+        if (index == motion.values.count - 1) {
+            Require(CATransform3DIsIdentity(transform), @"Each motion must finish at rest");
+        } else if (index > 0) {
+            rotates |= std::abs(transform.m12) > 0.001 || std::abs(transform.m21) > 0.001;
+            movesHorizontally |= std::abs(transform.m41) > 0.01;
+            movesVertically |= std::abs(transform.m42) > 0.01;
+        }
+    }
+    if (rotates && !movesHorizontally && !movesVertically) return @"tilt";
+    if (!rotates && !movesHorizontally && movesVertically) return @"hop";
+    if (rotates && movesHorizontally && !movesVertically) return @"shake";
+    Require(NO, @"The dog's keyframes must describe a tilt, hop or shake");
+    return nil;
+}
+
 static void CapturePresentation(BawanMascotView *view, NSString *motion) {
     CALayer *presentation = view.layer.presentationLayer;
     if (!presentation) return;
@@ -184,9 +215,7 @@ static void RunSmoke(void) {
             [first mouseEntered:entered];
             CALayer *dog = NamedLayer(first.layer, @"bawan.mascot.dog");
             RequireFinite(dog);
-            NSString *motion = [[dog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
-            Require([motion isKindOfClass:NSString.class] && motion.length > 0,
-                @"Each hover must identify the motion selected for this playback");
+            NSString *motion = MotionName(dog);
             [motions addObject:motion];
             for (NSString *name in @[@"bawan.mascot.left-ear", @"bawan.mascot.right-ear",
                 @"bawan.mascot.left-lid", @"bawan.mascot.right-lid"]) {
@@ -200,7 +229,7 @@ static void RunSmoke(void) {
                 CGPointEqualToPoint(first.layer.position, fixedPosition),
                 @"Hovering must leave the round medallion, its frame and hit area fixed");
             [first mouseEntered:entered];
-            Require([[[dog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"] isEqual:motion],
+            Require([MotionName(dog) isEqual:motion],
                 @"A duplicate entry while already inside must not start another preset");
             RequireFinite(dog);
             [window displayIfNeeded];
@@ -224,13 +253,12 @@ static void RunSmoke(void) {
         [first mouseExited:exited];
         [first mouseEntered:entered];
         CALayer *replacementDog = NamedLayer(first.layer, @"bawan.mascot.dog");
-        NSString *replacementMotion = [[replacementDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
+        NSString *replacementMotion = MotionName(replacementDog);
         RequireFinite(replacementDog);
         [window displayIfNeeded];
         [CATransaction flush];
         ServiceAppKit(0.03);
-        Require([[[replacementDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"]
-                    isEqual:replacementMotion],
+        Require([MotionName(replacementDog) isEqual:replacementMotion],
             @"An interrupted hover's completion must not remove its replacement playback");
         RequireFinite(replacementDog);
         NSDate *replacementDeadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
@@ -256,9 +284,9 @@ static void RunSmoke(void) {
 
         [first mouseEntered:entered];
         CALayer *clickedDog = NamedLayer(first.layer, @"bawan.mascot.dog");
-        NSString *hoverMotion = [[clickedDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
+        NSString *hoverMotion = MotionName(clickedDog);
         [first mouseDown:clickedAgain];
-        NSString *clickMotion = [[clickedDog animationForKey:@"bawan.hover"] valueForKey:@"bawan.motion"];
+        NSString *clickMotion = MotionName(clickedDog);
         Require(clickMotion != nil && ![clickMotion isEqual:hoverMotion],
             @"Clicking during a running hover must replace it with the next preset");
         for (NSString *name in @[@"bawan.mascot.dog", @"bawan.mascot.left-ear", @"bawan.mascot.right-ear",

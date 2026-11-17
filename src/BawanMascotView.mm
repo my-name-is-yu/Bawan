@@ -258,25 +258,20 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     // Offsets were tuned for the 64pt medallion dog; scale them so larger dogs move alike.
     const CGFloat unit = std::max<CGFloat>(1, _dog.bounds.size.width / 64);
     NSArray<NSValue *> *values;
-    NSString *name;
     switch (_nextMotion++ % 3) {
         case 0:
-            name = @"tilt";
             values = @[dogStart, Transform(-0.045), Transform(0.025), Transform(-0.01), rest];
             break;
         case 1:
-            name = @"hop";
             values = @[dogStart, Transform(0, 0, -1.6 * unit), Transform(0, 0, 0.35 * unit),
                 Transform(0, 0, -0.15 * unit), rest];
             break;
         default:
-            name = @"shake";
             values = @[dogStart, Transform(-0.025, -1.2 * unit), Transform(0.025, 1.2 * unit),
                 Transform(-0.01, -0.5 * unit), rest];
             break;
     }
     CAKeyframeAnimation *motion = Motion(values);
-    [motion setValue:name forKey:@"bawan.motion"];
     [_dog addAnimation:motion forKey:HoverKey];
     [_leftEar addAnimation:Motion(@[leftStart, Transform(-0.07, 0, 0, 0.94), Transform(0.025), Transform(-0.01), rest]) forKey:HoverKey];
     [_rightEar addAnimation:Motion(@[rightStart, Transform(0.06, 0, 0, 0.95), Transform(-0.03), Transform(0.01), rest]) forKey:HoverKey];
