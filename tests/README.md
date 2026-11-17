@@ -14,7 +14,7 @@ Production code and test registrations are unchanged.
 | `engine_smoke.cpp` | Retain; extend semantic regression | `c6ee8a2`: short words/invitations must keep their meaning. `1905a01`: automatic/forced direction. `9612858`: bounded prompt allocation, oversized paste rejection/recovery. `f134100`: lazy load, warm-up, idle reload and cancellation. | Real `TranslationEngine::translate`: `ephemeral`, added `You're welcome to join.`, idiom completion/direction, ordinary six-word input, both translation directions, context independence, invalid UTF-8, oversized inputs, recovery, sliding-window streaming, cancellation and idle reload. |
 | `engine_lifecycle.cpp` | Retain | `f134100`, `65fbca4`: no work before first use, missing-model errors, independent prewarm failure, retry, cancelled prewarm leaves Loading, unused shutdown stays quiet. | Existing public callbacks/quiet checks remain. A translation failure and a prewarm failure have different owners, so neither is redundant. |
 | `shortcut_preferences_tests.mm` | Retain | Persistence, restore, rejection without value/notification changes, corrupt data recovery, duplicate repair and keyboard adapter flags. `028460a`: ignore another app's legacy preferences. | Existing save/reload/error/notification and Fn/Caps Lock boundary checks remain. Public defaults comparisons verify application/restoration of defaults. |
-| `shortcut_monitor_tests.mm` | Add native command routing regression | Custom global bindings must preserve native editing/Close while Bawan owns keyboard input; Settings must pass new events through. | Production monitor event routing with real CGEvents and a visible key nonactivating panel, single/double custom bindings, held-key draining, Option-T inside the translator, and custom/passive bindings outside it. Hosted AppKit can reactivate the app, so inactive-app input is not dynamically established. No installed event tap or physical-key delivery is claimed. |
+| `shortcut_monitor_tests.mm` | Retain native command routing; add mode and release regressions (#39) | Custom global bindings preserve native editing/Close; Settings passes fresh input through. Reconfiguration and independent sleep/suspension/recording transitions cancel pending actions while correctly draining intercepted keys. | Production routing with real CGEvents, a key nonactivating panel, single/double active and passive bindings, held-key reconfiguration, stop/start and sleep/wake recovery, repeated triggers, and a fake SelectionReader that observes deferred copy without clipboard effects. Hosted AppKit can reactivate the app, so inactive-app input is not dynamically established. No installed event tap or physical-key delivery is claimed. |
 | `selection_reader_tests.mm` | Retain selection acquisition behavior independently of event routing | Passive Cmd-C twice uses the first press's pasteboard baseline; active copy waits for release. Cancelled, replaced and reentrant sessions must not send copy events or deliver stale results. | Injected clipboard, copy, clock, foreground application and scheduled callbacks cover success, retry/timeout, access denial, empty/non-text input, copy failure, application changes, cancellation, replacement, reentrancy and recovery without event taps or system clipboard access. |
 | `panel_smoke.mm` | Retain regressions; rewrite geometry expectations | `766a002`, `351138d`, `d7bafc5`: wrapping, final-line following and preserving reading position. `1905a01`: reverse direction. `41142ca`: normal window ordering. Accepted geometry is in `design-qa.md`. | Existing real controls, key events, clipboard, callbacks, scrolling and window-order checks remain. Source edits clear completed output, disable stale Copy/Swap, reset direction and preserve Undo/Redo. `CheckBounds` independently expects an 80pt header and 72pt mascot. |
 | `settings_smoke.mm` | Merge refresh assertions into navigation; rewrite geometry | `048a938`, `8e42eff`: recording, release protection and permissions. `4c37cc4`: preserve Undo/Redo across navigation. `d7bafc5`: preserve position/reveal full errors. | Reopen Settings after an external permission change, refresh the fake monitor's cached availability, then assert visible ready labels/help state. Existing recording, failures, focus, Undo/Redo, scrolling, login actions and color-role checks remain. Independent geometry also pins 28pt controls/13pt type. |
@@ -123,3 +123,44 @@ in an isolated translation probe produced another acceptable answer (`一時的`
 that internal prompt change is not claimed as a detected behavioral regression.
 These samples do not establish translation quality for all inputs or Metal
 backends. No native fault-injection result is claimed.
+
+## Shortcut monitor state refactor (#39)
+
+`ShortcutMonitorState` classifies stopped, asleep, suspended, configuration and
+running modes while retaining suspension and configuration independently across
+sleep and stop/start. Configuration bypasses actions but keeps permission/tap
+availability observable. `ShortcutKeyOwnership` drains captured repeats/releases
+across gesture reconfiguration and owns the deferred active-copy release.
+
+`shortcut_tests` exercises those portable policies alongside the existing
+active/passive gesture timing tests. `shortcut_monitor_tests` routes real CGEvents
+through the production monitor and observes panel dispatch and SelectionReader
+begin/read/cancel calls. It covers key/press-count/enable changes while held,
+active/passive transitions, overlapping sleep/suspension/configuration, queued
+cancellation, matching/duplicate releases and multiple fresh trigger cycles.
+
+Verification on 2026-11-17: Linux x86_64, GCC 14.2. The warnings-as-errors
+`./scripts/check.sh -DBAWAN_BUILD_APP=OFF` build and all four portable CTests passed.
+A direct `shortcut_tests` build also passed AddressSanitizer and
+UndefinedBehaviorSanitizer. In isolated header copies, each of three compiled
+mutations failed the added tests: allowing actions during configuration,
+forgetting to drain held keys after reconfiguration, and retaining a cancelled
+copy release. `git diff --check` passed.
+
+The native suite has **not been compiled or run** for #39: this cloud host lacks
+Apple SDKs and AppKit. On macOS, run `./scripts/check.sh`, then
+`./scripts/check.sh --sanitize`. The native monitor test itself can be built
+without llama.cpp:
+
+```sh
+clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
+  tests/shortcut_monitor_tests.mm src/ShortcutBinding.cpp \
+  src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm \
+  -framework AppKit -framework CoreGraphics -framework ApplicationServices \
+  -framework Carbon -o /tmp/bawan-shortcut-monitor-tests
+/tmp/bawan-shortcut-monitor-tests
+```
+
+Even a successful native routing test does not establish installed event-tap,
+physical-key, permission-prompt or actual system sleep/wake behavior; those
+require a Mac session. No native or model-backed smoke success is claimed here.
