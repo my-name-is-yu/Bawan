@@ -8,6 +8,7 @@
 #include <stdexcept>
 
 #import "WindowDragChecks.h"
+#import "ControlAppearanceChecks.h"
 
 static void Require(BOOL condition, NSString *message) {
     if (!condition) throw std::runtime_error(message.UTF8String);
@@ -616,6 +617,16 @@ static void RunSmoke(void) {
     RequireOrdinaryWindow(window, @"after selection entry");
     Require(!translate.enabled && !copy.enabled && !swap.enabled,
             @"Empty source/output must disable their actions");
+    ControlAppearanceChecks::Check(translate, NSMakePoint(8, NSMidY(translate.bounds)), NO, @"panel-smoke");
+    ControlAppearanceChecks::Check(copy, NSMakePoint(8, NSMidY(copy.bounds)), YES, @"panel-smoke");
+    ControlAppearanceChecks::CheckNativeFocus(translate, @"panel-smoke");
+    ControlAppearanceChecks::CheckNativeFocus(copy, @"panel-smoke");
+    NSInteger disabledCopyCount = NSPasteboard.generalPasteboard.changeCount;
+    [translate performClick:nil];
+    [copy performClick:nil];
+    [swap performClick:nil];
+    Require(translations == 0 && NSPasteboard.generalPasteboard.changeCount == disabledCopyCount,
+            @"Disabled footer actions must not translate, swap or change the clipboard");
     Require(!footerHint.hidden, @"The input hint must be visible while the translator is empty and idle");
     CheckFrameDragging(window);
     [panel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];

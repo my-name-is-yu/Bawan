@@ -8,8 +8,7 @@
 namespace {
 void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL enabled) {
     NSColor *fill = primary ? BawanPrimaryButtonFill(highlighted) : BawanColor(gold ? BawanGold : BawanBackground);
-    if (!enabled) fill = [fill colorWithAlphaComponent:0.4];
-    else if (highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
+    if (enabled && highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
     NSRect face = NSInsetRect(frame, 1, 1);
     face.size.height -= 3;
     NSBezierPath *path = gold ? BawanCutCornerPath(face) :
@@ -22,13 +21,14 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
         [BawanColor(BawanBorder) setFill];
         [shadow fill];
     }
-    [fill setFill];
-    [path fill];
-    [BawanColor(BawanBorder) setStroke];
-    path.lineWidth = BawanChromeLineWidth;
-    [path stroke];
+    BawanDrawControlSurface(path, fill, enabled);
 }
 }
+
+@implementation BawanBorderlessButton
+BAWAN_BORDERLESS_CONTROL_METHODS([self bawanFocusRingPath])
+- (NSBezierPath *)bawanFocusRingPath { return nil; }
+@end
 
 @implementation BawanSurfaceView
 - (BOOL)isFlipped { return YES; }
@@ -39,7 +39,7 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
 }
 - (void)drawRect:(NSRect)dirtyRect {
     if (self.masthead) { BawanDrawHeader(self.bounds); return; }
-    NSRect frame = self.borderColor ? NSInsetRect(self.bounds, 0.75, 0.75) : self.bounds;
+    NSRect frame = self.borderColor ? NSInsetRect(self.bounds, BawanChromeLineWidth / 2, BawanChromeLineWidth / 2) : self.bounds;
     NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:frame xRadius:self.cornerRadius yRadius:self.cornerRadius];
     [self.fillColor setFill];
     [path fill];
@@ -60,9 +60,6 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
 @implementation BawanActionButton {
     BOOL _trackingPointer;
 }
-// Our bezel fills the bounds; native button ornament insets must not enlarge it.
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (void)resetPressFeedback {
     _trackingPointer = NO;
     [self.layer removeAnimationForKey:@"bawan.press"];
@@ -122,11 +119,7 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
 }
 - (void)setPrimary:(BOOL)primary {
     _primary = primary;
-    self.contentTintColor = BawanColor(primary ? BawanHeaderText : BawanText);
-    self.needsDisplay = YES;
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
+    self.contentTintColor = primary ? BawanAccentForegroundColor() : BawanColor(BawanText);
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {

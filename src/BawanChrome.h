@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "BawanAppearance.h"
+#import "BawanBorderlessControl.h"
 
 @class BawanMascotView;
 
@@ -13,7 +14,6 @@ static constexpr CGFloat BawanFooterHeight = 72;
 static constexpr CGFloat BawanFooterButtonHeight = 40;
 static constexpr CGFloat BawanFooterPrimaryWidth = 184;
 static constexpr CGFloat BawanFooterSecondaryWidth = 176;
-static constexpr CGFloat BawanChromeLineWidth = 1.5;
 
 @interface BawanSurfaceView : NSView
 @property(nonatomic, strong, nullable) NSColor *fillColor;
@@ -25,7 +25,7 @@ static constexpr CGFloat BawanChromeLineWidth = 1.5;
 @property(nonatomic) BOOL acceptsKeyFocus;
 @end
 
-@interface BawanActionButton : NSButton
+@interface BawanActionButton : BawanBorderlessButton
 @property(nonatomic) BOOL primary;
 @property(nonatomic) BOOL gold;
 @property(nonatomic) BOOL plain;
