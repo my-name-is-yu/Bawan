@@ -11,7 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Trusts a saved model whose size, inode and modification time still match
 // its last successful SHA256 verification.
 - (void)prepare;
-// Always rehashes a saved model, for example when the user retries setup.
+// Always rehashes a saved model.
 - (void)revalidate;
 - (void)cancel;
 @end
