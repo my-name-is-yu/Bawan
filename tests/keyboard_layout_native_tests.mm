@@ -15,7 +15,7 @@ static void require(bool condition, const char *message) {
     }
 }
 
-struct CopyEvent {
+struct BawanCapturedCopyKeyEvent {
     CGEventType type;
     CGEventFlags flags;
     int64_t key;
@@ -23,7 +23,7 @@ struct CopyEvent {
 };
 
 static void requireCopyPair(const bawan::KeyboardLayout& layout, std::uint16_t expectedKey) {
-    std::vector<CopyEvent> events;
+    std::vector<BawanCapturedCopyKeyEvent> events;
     auto *captured = &events;
     require(PostCopyEvents(layout, ^(CGEventRef event) {
         captured->push_back({CGEventGetType(event), CGEventGetFlags(event),
