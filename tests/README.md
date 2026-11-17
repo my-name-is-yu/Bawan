@@ -37,6 +37,20 @@ migrated obsolete copy-gesture tests to the production state machine. They are
 not reintroduced. Similar-looking UI operations are retained when they cover
 different entry points, failure modes or regression histories.
 
+## Shortcut state notifications (Issue #40)
+
+`shortcut_state` drives the production preferences and monitor with deterministic
+permission checks and inert event taps. It checks binding-only changes, unchanged
+and rejected setters, permission changes, notification observer ordering,
+reentrant setters/refreshes, and nested configuration updates. Callback counts
+are part of this issue's contract: one complete state publication per change or
+explicit UI configuration update, with no nested publication or stale availability.
+
+`app_delegate_smoke` also exercises the actual delegate subscription and visible
+Settings/Onboarding controls. It checks one page refresh per UI update, hidden-page
+isolation, permission changes, and recorder save/release completion. These native
+tests require macOS; the portable CTests do not establish their behavior.
+
 ## Running the checks
 
 Portable Release build (CMake 3.24+, C++17; downloads the pinned llama.cpp):

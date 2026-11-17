@@ -38,9 +38,14 @@
 - (void)start {}
 - (void)stop {}
 - (void)refresh {
+    const auto previousSelection = _selectionAvailability;
+    const auto previousPanel = _panelAvailability;
     if (_permissionsGranted) {
         _selectionAvailability = ShortcutAvailabilityAvailable;
         _panelAvailability = ShortcutAvailabilityAvailable;
+    }
+    if (previousSelection != _selectionAvailability || previousPanel != _panelAvailability) {
+        [self updateConfiguration:^{}];
     }
 }
 - (BOOL)suspended { return _testSuspended; }
@@ -500,6 +505,10 @@ static void RunSmoke(void) {
     panel.onClose = ^{ ++closes; };
     __weak TranslationPanel *weakPanel = panel;
     __weak SettingsViewController *weakSettings = settings;
+    monitor.onStateChanged = ^{
+        TranslationPanel *host = weakPanel;
+        if (host.window.visible && host.currentPage == BawanPanelPageSettings) [weakSettings refresh];
+    };
     panel.onSettings = ^{ [weakPanel showSettings:weakSettings]; };
     [panel showForManualInput];
     NSWindow *window = nil;

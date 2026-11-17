@@ -32,9 +32,14 @@
 - (void)start {}
 - (void)stop {}
 - (void)refresh {
+    const auto previousSelection = _selectionAvailability;
+    const auto previousPanel = _panelAvailability;
     if (_permissionsGranted) {
         _selectionAvailability = ShortcutAvailabilityAvailable;
         _panelAvailability = ShortcutAvailabilityAvailable;
+    }
+    if (previousSelection != _selectionAvailability || previousPanel != _panelAvailability) {
+        [self updateConfiguration:^{}];
     }
 }
 - (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {
@@ -144,6 +149,11 @@ static void RunSmoke(void) {
     window.titleVisibility = NSWindowTitleHidden;
     window.titlebarAppearsTransparent = YES;
     window.contentView = onboarding.view;
+    __weak OnboardingViewController *weakOnboarding = onboarding;
+    monitor.onStateChanged = ^{
+        OnboardingViewController *page = weakOnboarding;
+        if (page.view.window.visible && page.view.window.contentView == page.view) [page refresh];
+    };
     [NSApp activateIgnoringOtherApps:YES];
     [window makeKeyAndOrderFront:nil];
     __block NSUInteger setups = 0, licenses = 0, finishes = 0, backs = 0;

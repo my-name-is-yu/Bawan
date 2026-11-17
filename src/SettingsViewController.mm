@@ -318,7 +318,6 @@ struct SettingsShortcutRow {
     _monitor.configurationActive = active;
     if (active) {
         [_monitor refresh];
-        [self refresh];
     } else {
         [_mascot resetHoverAnimation];
         [self finishRecording];
@@ -406,56 +405,61 @@ struct SettingsShortcutRow {
 }
 
 - (void)toggleEnabled:(NSButton *)sender {
-    bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
-    bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
-    binding.enabled = sender.state == NSControlStateValueOn;
-    NSString *error = nil;
-    BOOL saved = [_preferences setBinding:binding forAction:action error:&error];
-    [self setShortcutMessage:saved ? @"Shortcut settings saved." : error ?: @"Could not change this shortcut." error:!saved];
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
+        bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
+        binding.enabled = sender.state == NSControlStateValueOn;
+        NSString *error = nil;
+        BOOL saved = [_preferences setBinding:binding forAction:action error:&error];
+        [self setShortcutMessage:saved ? @"Shortcut settings saved." : error ?: @"Could not change this shortcut." error:!saved];
+    }];
 }
 
 - (void)changePressCount:(NSPopUpButton *)sender {
-    bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
-    bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
-    binding.pressCount = sender.indexOfSelectedItem + 1;
-    NSString *error = nil;
-    BOOL saved = [_preferences setBinding:binding forAction:action error:&error];
-    [self setShortcutMessage:saved ? @"Press count saved." : error ?: @"Could not change the press count." error:!saved];
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
+        bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
+        binding.pressCount = sender.indexOfSelectedItem + 1;
+        NSString *error = nil;
+        BOOL saved = [_preferences setBinding:binding forAction:action error:&error];
+        [self setShortcutMessage:saved ? @"Press count saved." : error ?: @"Could not change the press count." error:!saved];
+    }];
 }
 
 - (void)restoreShortcut:(NSButton *)sender {
-    NSString *error = nil;
-    BOOL saved = [_preferences restoreAction:static_cast<bawan::ShortcutAction>(sender.tag) error:&error];
-    [self setShortcutMessage:saved ? @"Default key, press count, and enabled state restored." :
-        error ?: @"Could not restore defaults." error:!saved];
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        NSString *error = nil;
+        BOOL saved = [_preferences restoreAction:static_cast<bawan::ShortcutAction>(sender.tag) error:&error];
+        [self setShortcutMessage:saved ? @"Default key, press count, and enabled state restored." :
+            error ?: @"Could not restore defaults." error:!saved];
+    }];
 }
 
 - (void)requestPermission:(NSButton *)sender {
-    [_monitor requestPermissionForAction:static_cast<bawan::ShortcutAction>(sender.tag)];
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        [_monitor requestPermissionForAction:static_cast<bawan::ShortcutAction>(sender.tag)];
+    }];
 }
 
 - (void)beginRecording:(NSButton *)sender {
-    if (_eventMonitor) {
-        [self setShortcutMessage:@"Shortcut recording canceled." error:NO];
-        [self finishRecording];
-        return;
-    }
-    _recordingAction = sender.tag;
-    _finishingRecording = NO;
-    _heldKeys.clear();
-    _monitor.suspended = YES;
-    __weak SettingsViewController *weakSelf = self;
-    _eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:
-        NSEventMaskKeyDown | NSEventMaskKeyUp | NSEventMaskFlagsChanged handler:^NSEvent *(NSEvent *event) {
-            SettingsViewController *owner = weakSelf;
-            return owner ? [owner recordEvent:event] : event;
-        }];
-    [self setShortcutMessage:@"Press a key combination with ⌘, ⌃ or ⌥. Press Esc to cancel." error:NO];
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        if (_eventMonitor) {
+            [self setShortcutMessage:@"Shortcut recording canceled." error:NO];
+            [self finishRecording];
+            return;
+        }
+        _recordingAction = sender.tag;
+        _finishingRecording = NO;
+        _heldKeys.clear();
+        _monitor.suspended = YES;
+        __weak SettingsViewController *weakSelf = self;
+        _eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:
+            NSEventMaskKeyDown | NSEventMaskKeyUp | NSEventMaskFlagsChanged handler:^NSEvent *(NSEvent *event) {
+                SettingsViewController *owner = weakSelf;
+                return owner ? [owner recordEvent:event] : event;
+            }];
+        [self setShortcutMessage:@"Press a key combination with ⌘, ⌃ or ⌥. Press Esc to cancel." error:NO];
+    }];
 }
 
 - (NSEvent *)recordEvent:(NSEvent *)event {
@@ -478,30 +482,33 @@ struct SettingsShortcutRow {
     bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
     binding.keyCode = event.keyCode;
     binding.modifiers = modifiers;
-    NSString *error = nil;
-    if (![_preferences setBinding:binding forAction:action error:&error]) {
-        [self setShortcutMessage:error ?: @"This shortcut is unavailable. Try a different combination." error:YES];
-        return nil;
-    }
-    [self setShortcutMessage:@"Shortcut saved. Release the key to resume global shortcuts." error:NO];
-    [self finishRecording];
+    [_monitor updateConfiguration:^{
+        NSString *error = nil;
+        if (![_preferences setBinding:binding forAction:action error:&error]) {
+            [self setShortcutMessage:error ?: @"This shortcut is unavailable. Try a different combination." error:YES];
+            return;
+        }
+        [self setShortcutMessage:@"Shortcut saved. Release the key to resume global shortcuts." error:NO];
+        [self finishRecording];
+    }];
     return nil;
 }
 
 - (void)finishRecording {
     if (!_eventMonitor) return;
-    _finishingRecording = YES;
-    // Key-up may go to another app after focus loss; never restart a global
-    // listener while one of the recorder's swallowed keys remains down.
-    if (!_releaseTimer) {
-        __weak SettingsViewController *weakSelf = self;
-        _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(__unused NSTimer *timer) {
-            [weakSelf finishRecordingIfReleased];
-        }];
-        [NSRunLoop.mainRunLoop addTimer:_releaseTimer forMode:NSRunLoopCommonModes];
-    }
-    [self finishRecordingIfReleased];
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        _finishingRecording = YES;
+        // Key-up may go to another app after focus loss; never restart a global
+        // listener while one of the recorder's swallowed keys remains down.
+        if (!_releaseTimer) {
+            __weak SettingsViewController *weakSelf = self;
+            _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(__unused NSTimer *timer) {
+                [weakSelf finishRecordingIfReleased];
+            }];
+            [NSRunLoop.mainRunLoop addTimer:_releaseTimer forMode:NSRunLoopCommonModes];
+        }
+        [self finishRecordingIfReleased];
+    }];
 }
 
 - (BOOL)isRecordingKeyDown:(CGKeyCode)key {
@@ -515,14 +522,15 @@ struct SettingsShortcutRow {
         else ++it;
     }
     if (!_heldKeys.empty()) return;
-    [_releaseTimer invalidate];
-    _releaseTimer = nil;
-    [NSEvent removeMonitor:_eventMonitor];
-    _eventMonitor = nil;
-    _recordingAction = NSNotFound;
-    _finishingRecording = NO;
-    _monitor.suspended = NO;
-    [self refresh];
+    [_monitor updateConfiguration:^{
+        [_releaseTimer invalidate];
+        _releaseTimer = nil;
+        [NSEvent removeMonitor:_eventMonitor];
+        _eventMonitor = nil;
+        _recordingAction = NSNotFound;
+        _finishingRecording = NO;
+        _monitor.suspended = NO;
+    }];
 }
 
 - (void)setLoginStatus:(SMAppServiceStatus)status message:(NSString *)message error:(BOOL)error {

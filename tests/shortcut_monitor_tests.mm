@@ -8,10 +8,31 @@
 @interface ShortcutMonitor (EventRoutingTests)
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
 @end
-@interface RoutingMonitor : ShortcutMonitor
+@interface RoutingMonitor : ShortcutMonitor {
+    ShortcutPreferences *_routingPreferences;
+    bawan::ShortcutBindings _routingBindings;
+}
 @end
 @implementation RoutingMonitor
-- (void)refresh {}
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences {
+    self = [super initWithPreferences:preferences];
+    if (self) {
+        _routingPreferences = preferences;
+        _routingBindings = preferences.bindings;
+    }
+    return self;
+}
+- (void)refresh {
+    // Synthetic downs have no hardware key state. Skip unrelated refreshes
+    // that would reconcile their ownership against physical keys.
+    if (!_routingPreferences || _routingBindings == _routingPreferences.bindings) return;
+    _routingBindings = _routingPreferences.bindings;
+    [super refresh];
+}
+- (BOOL)hasInputMonitoringPermission { return NO; }
+- (BOOL)hasAccessibilityPermission { return NO; }
+- (BOOL)installTapActive:(BOOL)__unused active { return NO; }
+- (void)removeTapActive:(BOOL)__unused active {}
 @end
 
 static void require(bool condition, const char *message) {

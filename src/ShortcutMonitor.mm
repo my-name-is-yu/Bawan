@@ -38,11 +38,16 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     NSUInteger _copyReleaseGeneration;
     NSMutableArray<id> *_workspaceObservers;
     id _preferencesObserver;
+    NSUInteger _configurationUpdateDepth;
+    BOOL _stateChangePending;
+    BOOL _notifyingStateChange;
 }
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
 - (void)cancelPending;
 - (void)configureGestures;
-- (void)applyPreferences;
+- (void)publishStateChange;
+- (BOOL)hasInputMonitoringPermission;
+- (BOOL)hasAccessibilityPermission;
 - (BOOL)installTapActive:(BOOL)active;
 - (void)removeTapActive:(BOOL)active;
 - (void)beginReadingCopyFromApplication:(pid_t)application changeCount:(NSInteger)changeCount;
@@ -89,12 +94,34 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     for (auto &gesture : _gestures) gesture.cancel();
 }
 
-- (void)applyPreferences {
-    [self cancelPending];
-    _bindings = _preferences.bindings;
-    [self configureGestures];
-    [self refresh];
+- (void)publishStateChange {
+    if (_configurationUpdateDepth || _notifyingStateChange) return;
+    _notifyingStateChange = YES;
+    @try {
+        while (_stateChangePending) {
+            _stateChangePending = NO;
+            if (self.onStateChanged) self.onStateChanged();
+        }
+    } @finally {
+        _notifyingStateChange = NO;
+    }
 }
+
+- (void)updateConfiguration:(void (^)(void))update {
+    NSAssert(NSThread.isMainThread, @"Shortcut configuration runs on the main thread");
+    ++_configurationUpdateDepth;
+    @try {
+        update();
+        [self refresh];
+        _stateChangePending = YES;
+    } @finally {
+        --_configurationUpdateDepth;
+        [self publishStateChange];
+    }
+}
+
+- (BOOL)hasInputMonitoringPermission { return CGPreflightListenEventAccess(); }
+- (BOOL)hasAccessibilityPermission { return AXIsProcessTrusted(); }
 
 - (void)start {
     NSAssert(NSThread.isMainThread, @"Shortcut monitoring runs on the main thread");
@@ -133,8 +160,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     }]];
     _preferencesObserver = [NSNotificationCenter.defaultCenter
         addObserverForName:BawanShortcutsDidChangeNotification object:_preferences
-        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) { [weakSelf applyPreferences]; }];
-    [self applyPreferences];
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *) { [weakSelf refresh]; }];
+    [self refresh];
 }
 
 - (void)stop {
@@ -211,8 +238,15 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 
 - (void)refresh {
     NSAssert(NSThread.isMainThread, @"Shortcut monitoring runs on the main thread");
-    const bool inputAllowed = CGPreflightListenEventAccess();
-    const bool accessibilityAllowed = AXIsProcessTrusted();
+    const auto bindings = _preferences.bindings;
+    const bool bindingsChanged = bindings != _bindings;
+    if (bindingsChanged) {
+        [self cancelPending];
+        _bindings = bindings;
+        [self configureGestures];
+    }
+    const bool inputAllowed = [self hasInputMonitoringPermission];
+    const bool accessibilityAllowed = [self hasAccessibilityPermission];
     const bool hadPassiveTap = _passiveTap != nullptr;
     const bool hadActiveTap = _activeTap != nullptr;
     if (!_activeTap || !CGEventTapIsEnabled(_activeTap)) {
@@ -246,7 +280,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self cancelPending];
         [self configureGestures];
     }
-    bool changed = false;
+    bool changed = bindingsChanged;
     for (unsigned i = 0; i < _bindings.size(); ++i) {
         ShortcutAvailability state = ShortcutAvailabilityOff;
         if (_started && _bindings[i].enabled) {
@@ -262,7 +296,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         changed |= state != _availability[i];
         _availability[i] = state;
     }
-    if (changed && self.onAvailabilityChanged) self.onAvailabilityChanged();
+    _stateChangePending |= changed;
+    [self publishStateChange];
 }
 
 - (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {

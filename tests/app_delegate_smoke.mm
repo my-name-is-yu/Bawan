@@ -2,6 +2,7 @@
 #import "TranslationPanel.h"
 #import "ModelStore.h"
 #import "OnboardingViewController.h"
+#import "SettingsViewController.h"
 #import "BawanAppearance.h"
 
 #include <cstdio>
@@ -14,6 +15,8 @@
 
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
+- (void)startShortcutMonitoring;
+- (void)toggleShortcut:(NSMenuItem *)sender;
 - (void)updateStatus;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
@@ -475,6 +478,202 @@ static NSEvent *SetupKey(NSWindow *window, NSString *characters, NSEventModifier
         characters:characters charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 }
 
+@interface ShortcutFlowMonitor : ShortcutMonitor
+@property(nonatomic, strong) ShortcutPreferences *testPreferences;
+@property(nonatomic) BOOL inputGranted;
+@property(nonatomic) BOOL accessibilityGranted;
+@property(nonatomic) NSUInteger permissionRequests;
+@end
+@implementation ShortcutFlowMonitor
+- (BOOL)hasInputMonitoringPermission { return _inputGranted; }
+- (BOOL)hasAccessibilityPermission { return _accessibilityGranted; }
+- (BOOL)installTapActive:(BOOL)active { (void)active; return NO; }
+- (void)removeTapActive:(BOOL)active { (void)active; }
+- (void)requestPermissionForAction:(bawan::ShortcutAction)action {
+    ++_permissionRequests;
+    if (action == bawan::ShortcutAction::TranslateSelection &&
+        bawan::isPassiveCopy([_testPreferences bindingForAction:action])) _inputGranted = YES;
+    else _accessibilityGranted = YES;
+    [self refresh];
+}
+@end
+
+@interface SettingsViewController (ShortcutFlowRecording)
+- (NSEvent *)recordEvent:(NSEvent *)event;
+- (void)finishRecordingIfReleased;
+@end
+
+@interface ShortcutFlowSettings : SettingsViewController
+@property(nonatomic) NSUInteger refreshes;
+@property(nonatomic) BOOL recordedKeyDown;
+@property(nonatomic, strong) ShortcutMonitor *testMonitor;
+@property(nonatomic) ShortcutAvailability observedSelection;
+@end
+@implementation ShortcutFlowSettings
+- (void)refresh {
+    ++_refreshes;
+    _observedSelection = [_testMonitor availabilityForAction:bawan::ShortcutAction::TranslateSelection];
+    [super refresh];
+}
+- (BOOL)isRecordingKeyDown:(CGKeyCode)key { (void)key; return _recordedKeyDown; }
+@end
+
+@interface ShortcutFlowOnboarding : OnboardingViewController
+@property(nonatomic) NSUInteger refreshes;
+@property(nonatomic, strong) ShortcutMonitor *testMonitor;
+@property(nonatomic) ShortcutAvailability observedSelection;
+@end
+@implementation ShortcutFlowOnboarding
+- (void)refresh {
+    ++_refreshes;
+    _observedSelection = [_testMonitor availabilityForAction:bawan::ShortcutAction::TranslateSelection];
+    [super refresh];
+}
+@end
+
+static void CheckPageRefreshes(ShortcutFlowSettings *settings, ShortcutFlowOnboarding *onboarding,
+    NSUInteger settingsCount, NSUInteger onboardingCount, NSString *operation) {
+    Require(settings.refreshes == settingsCount && onboarding.refreshes == onboardingCount,
+        [NSString stringWithFormat:@"%@: Settings refreshed %lu times, Onboarding %lu times", operation,
+            (unsigned long)settings.refreshes, (unsigned long)onboarding.refreshes]);
+    settings.refreshes = onboarding.refreshes = 0;
+}
+
+static void SendShortcutControl(NSControl *control) {
+    Require(control != nil && [NSApp sendAction:control.action to:control.target from:control],
+        @"The shortcut control must reach its real controller action");
+}
+
+static void CheckShortcutRefreshIntegration(void) {
+    NSString *suite = [@"local.bawan.ShortcutFlow." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    ShortcutFlowMonitor *monitor = [[ShortcutFlowMonitor alloc] initWithPreferences:preferences];
+    monitor.testPreferences = preferences;
+    ShortcutFlowSettings *settings = [[ShortcutFlowSettings alloc] initWithPreferences:preferences monitor:monitor];
+    ShortcutFlowOnboarding *onboarding = [[ShortcutFlowOnboarding alloc] initWithPreferences:preferences monitor:monitor];
+    settings.testMonitor = onboarding.testMonitor = monitor;
+    AppDelegate *delegate = [[AppDelegate alloc] init];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:preferences forKey:@"shortcutPreferences"];
+    [delegate setValue:monitor forKey:@"shortcut"];
+    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate setValue:settings forKey:@"settingsViewController"];
+    [delegate setValue:onboarding forKey:@"onboardingViewController"];
+    [delegate buildMenus];
+    [delegate startShortcutMonitoring];
+    @try {
+        [panel showSettings:settings];
+        settings.refreshes = onboarding.refreshes = 0;
+        NSButton *enabled = (NSButton *)FindView(settings.view, @"shortcut-selection-enabled");
+        NSPopUpButton *count = (NSPopUpButton *)FindView(settings.view, @"shortcut-selection-count");
+        NSButton *record = (NSButton *)FindView(settings.view, @"shortcut-selection-key");
+        NSTextField *status = (NSTextField *)FindView(settings.view, @"shortcut-selection-status");
+        NSMenuItem *selectionItem = [delegate valueForKey:@"shortcutItem"];
+        [delegate toggleShortcut:selectionItem];
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Menu toggle");
+        Require(enabled.state == NSControlStateValueOff && settings.observedSelection == ShortcutAvailabilityOff &&
+            [status.stringValue isEqualToString:@"Off"] && selectionItem.state == NSControlStateValueOff,
+            @"A menu toggle must publish the disabled binding and Off availability together");
+
+        enabled.state = NSControlStateValueOn;
+        SendShortcutControl(enabled);
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Settings toggle");
+        Require(settings.observedSelection == ShortcutAvailabilityNeedsInputMonitoring,
+            @"Settings must never refresh with the old Off availability after enabling");
+        SendShortcutControl(enabled);
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Settings no-op toggle");
+        [count selectItemAtIndex:0];
+        SendShortcutControl(count);
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Press count change");
+        Require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].pressCount == 1 &&
+            settings.observedSelection == ShortcutAvailabilityNeedsAccessibility,
+            @"Changing passive Copy to one press must publish its active permission requirement");
+        SendShortcutControl((NSControl *)FindView(settings.view, @"shortcut-selection-reset"));
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Restore default");
+        Require(count.indexOfSelectedItem == 1 && settings.observedSelection == ShortcutAvailabilityNeedsInputMonitoring,
+            @"Restore must display the default two presses and matching availability");
+        auto external = [preferences bindingForAction:bawan::ShortcutAction::OpenPanel];
+        external.keyCode = 16;
+        Require([preferences setBinding:external forAction:bawan::ShortcutAction::OpenPanel error:nil],
+            @"The external custom binding must be valid");
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"External binding-only change");
+        Require([[(NSButton *)FindView(settings.view, @"shortcut-panel-key") title]
+                isEqualToString:ShortcutKeyLabel(external)] &&
+            [monitor availabilityForAction:bawan::ShortcutAction::OpenPanel] == ShortcutAvailabilityNeedsAccessibility,
+            @"An external key change must update its label even when availability is unchanged");
+        [count addItemWithTitle:@"Invalid test press count"];
+        [count selectItemAtIndex:2];
+        SendShortcutControl(count);
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Rejected press count");
+        Require(count.indexOfSelectedItem == 1 &&
+            [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].pressCount == 2,
+            @"Rejected settings must restore the saved control value");
+        [count removeItemAtIndex:2];
+
+        SendShortcutControl(record);
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Begin recording");
+        settings.recordedKeyDown = YES;
+        [settings recordEvent:SetupKey(panel.window, @"k", NSEventModifierFlagControl, 40)];
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Save while key held");
+        Require(monitor.suspended && [status.stringValue isEqualToString:@"Waiting for key release…"] &&
+            [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].keyCode == 40,
+            @"Recording must display the saved binding while keeping global shortcuts paused");
+        settings.recordedKeyDown = NO;
+        [settings finishRecordingIfReleased];
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Recording key released");
+        Require(!monitor.suspended && enabled.enabled &&
+            settings.observedSelection == ShortcutAvailabilityNeedsAccessibility,
+            @"Release must resume monitoring and display the binding's current availability");
+        SendShortcutControl(record);
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Begin immediate-release recording");
+        [settings recordEvent:SetupKey(panel.window, @"l", NSEventModifierFlagControl, 37)];
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Save with immediate key release");
+        Require(!monitor.suspended && enabled.enabled &&
+            [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].keyCode == 37,
+            @"Save and immediate recorder teardown must publish once after both finish");
+        SendShortcutControl((NSControl *)FindView(settings.view, @"shortcut-selection-permission"));
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Settings permission request");
+        Require(monitor.permissionRequests == 1 && settings.observedSelection == ShortcutAvailabilityFailed,
+            @"Settings must publish once after its permission request updates availability");
+        monitor.accessibilityGranted = NO;
+        [monitor refresh];
+        CheckPageRefreshes(settings, onboarding, 1, 0, @"Settings external permission change");
+
+        [panel.window orderOut:nil];
+        settings.refreshes = onboarding.refreshes = 0;
+        [delegate toggleShortcut:selectionItem];
+        CheckPageRefreshes(settings, onboarding, 0, 0, @"Change while selected Settings page is hidden");
+        [onboarding setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+        [panel showOnboarding:onboarding onBack:^{}];
+        settings.refreshes = onboarding.refreshes = 0;
+        SendShortcutControl((NSControl *)FindView(onboarding.view, @"onboarding-shortcut-selection-setup"));
+        CheckPageRefreshes(settings, onboarding, 0, 1, @"Onboarding enable and permission request");
+        Require(monitor.permissionRequests == 2 &&
+            [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
+            onboarding.observedSelection == ShortcutAvailabilityFailed &&
+            [[(NSTextField *)FindView(onboarding.view, @"onboarding-shortcut-selection-key") stringValue]
+                isEqualToString:ShortcutKeyLabel([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection])],
+            @"Onboarding must display the final enabled binding after the permission check");
+        monitor.accessibilityGranted = NO;
+        [monitor refresh];
+        CheckPageRefreshes(settings, onboarding, 0, 1, @"External permission change");
+        Require(onboarding.observedSelection == ShortcutAvailabilityNeedsAccessibility,
+            @"A permission-only change must reach the visible page with current availability");
+        [monitor refresh];
+        CheckPageRefreshes(settings, onboarding, 0, 0, @"Unchanged permission refresh");
+        [panel showForManualInput];
+        settings.refreshes = onboarding.refreshes = 0;
+        [delegate toggleShortcut:selectionItem];
+        CheckPageRefreshes(settings, onboarding, 0, 0, @"Change while translator is visible");
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
 static void CheckFirstRunIntegration(void) {
     NSString *suite = [@"local.bawan.FirstRunSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
@@ -750,9 +949,10 @@ int main() {
                 CheckWarmUpFailure(delegate);
                 CheckModelStatusPresentation(delegate, panel);
                 CheckModelRevalidationOnRetry(delegate);
+                CheckShortcutRefreshIntegration();
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation and the license sheet\n";
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation, shortcut refresh ownership and the license sheet\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;

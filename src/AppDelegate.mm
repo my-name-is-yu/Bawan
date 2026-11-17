@@ -95,6 +95,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     };
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
+    [self startShortcutMonitoring];
+    [self updateStatus];
+    [self startInitialSetup];
+}
+
+- (void)startShortcutMonitoring {
+    __weak AppDelegate *weakSelf = self;
     _shortcut.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
@@ -109,17 +116,11 @@ static NSString *StringFromUTF8(const std::string &text) {
         AppDelegate *owner = weakSelf;
         if (owner && !owner->_terminating) [owner openTranslation:nil];
     };
-    _shortcut.onAvailabilityChanged = ^{
+    _shortcut.onStateChanged = ^{
         AppDelegate *owner = weakSelf;
         if (owner && !owner->_terminating) [owner updateShortcutItem];
     };
-    [NSNotificationCenter.defaultCenter addObserver:self
-        selector:@selector(shortcutPreferencesDidChange:)
-        name:BawanShortcutsDidChangeNotification object:_shortcutPreferences];
-    [_shortcut start];
-    [self updateShortcutItem];
-    [self updateStatus];
-    [self startInitialSetup];
+    [_shortcut updateConfiguration:^{ [self->_shortcut start]; }];
 }
 
 - (void)modelFileDidProgress:(double)progress message:(NSString *)message {
@@ -411,15 +412,17 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
-    [_settingsViewController refresh];
-    [_onboardingViewController refresh];
+    if (_translationPanel.window.visible) {
+        switch (_translationPanel.currentPage) {
+            case BawanPanelPageSettings: [_settingsViewController refresh]; break;
+            case BawanPanelPageOnboarding: [_onboardingViewController refresh]; break;
+            case BawanPanelPageTranslation: break;
+        }
+    }
 }
 
-- (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
-
 - (void)menuWillOpen:(NSMenu *)menu {
-    [_shortcut refresh];
-    [self updateShortcutItem];
+    [_shortcut updateConfiguration:^{}];
 }
 
 - (void)ensureEngine {
@@ -548,15 +551,16 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
-    auto action = static_cast<bawan::ShortcutAction>(sender.tag);
-    auto binding = [_shortcutPreferences bindingForAction:action];
-    binding.enabled = !binding.enabled;
-    NSString *error = nil;
-    if (![_shortcutPreferences setBinding:binding forAction:action error:&error]) {
-        [self openSettings:nil];
-        [_settingsViewController showError:error ?: @"Unable to enable this shortcut."];
-    }
-    [self updateShortcutItem];
+    [_shortcut updateConfiguration:^{
+        auto action = static_cast<bawan::ShortcutAction>(sender.tag);
+        auto binding = [_shortcutPreferences bindingForAction:action];
+        binding.enabled = !binding.enabled;
+        NSString *error = nil;
+        if (![_shortcutPreferences setBinding:binding forAction:action error:&error]) {
+            [self openSettings:nil];
+            [_settingsViewController showError:error ?: @"Unable to enable this shortcut."];
+        }
+    }];
 }
 
 - (void)retryModel:(id)sender {
@@ -597,7 +601,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)refreshSettings {
     [_shortcut refresh];
-    [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
     [self pushModelStateToPage:_settingsViewController];
 }
@@ -605,7 +608,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
     if (_translationPanel.currentPage == BawanPanelPageSettings) [self refreshSettings];
     else [_shortcut refresh];
-    [_onboardingViewController refresh];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {

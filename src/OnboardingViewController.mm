@@ -279,7 +279,6 @@ struct ShortcutRow {
     _monitor.configurationActive = active;
     if (active) {
         [_monitor refresh];
-        [self refresh];
     } else {
         [_mascot resetHoverAnimation];
         [_heroMascot resetHoverAnimation];
@@ -291,29 +290,30 @@ struct ShortcutRow {
 }
 
 - (void)setUpShortcut:(NSButton *)sender {
-    auto action = static_cast<bawan::ShortcutAction>(sender.tag);
-    auto binding = [_preferences bindingForAction:action];
-    NSString *error = nil;
-    if (!binding.enabled) {
-        binding.enabled = true;
-        if (![_preferences setBinding:binding forAction:action error:&error]) {
-            _error.stringValue = error ?: @"Unable to enable this shortcut.";
-            _error.hidden = NO;
-            [self.view layoutSubtreeIfNeeded];
-            [_error scrollRectToVisible:_error.bounds];
-            if (self.view.window.visible) {
-                NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
-                    NSAccessibilityAnnouncementKey: _error.stringValue,
-                    NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
-                });
+    [_monitor updateConfiguration:^{
+        auto action = static_cast<bawan::ShortcutAction>(sender.tag);
+        auto binding = [_preferences bindingForAction:action];
+        NSString *error = nil;
+        if (!binding.enabled) {
+            binding.enabled = true;
+            if (![_preferences setBinding:binding forAction:action error:&error]) {
+                _error.stringValue = error ?: @"Unable to enable this shortcut.";
+                _error.hidden = NO;
+                [self.view layoutSubtreeIfNeeded];
+                [_error scrollRectToVisible:_error.bounds];
+                if (self.view.window.visible) {
+                    NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
+                        NSAccessibilityAnnouncementKey: _error.stringValue,
+                        NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
+                    });
+                }
+                return;
             }
-            return;
         }
-    }
-    _error.hidden = YES;
-    _error.stringValue = @"";
-    [_monitor requestPermissionForAction:action];
-    [self refresh];
+        _error.hidden = YES;
+        _error.stringValue = @"";
+        [_monitor requestPermissionForAction:action];
+    }];
 }
 
 // The footer button and ⌘Return: set up the model on the model step, otherwise leave.
