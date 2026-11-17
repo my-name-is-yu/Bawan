@@ -1,4 +1,5 @@
 #import "OnboardingViewController.h"
+#import "BawanChrome.h"
 #import "BawanAppearance.h"
 
 #include <cmath>
@@ -164,7 +165,8 @@ static void RunSmoke(void) {
         Require(!start.enabled && IsShown(modelSetup) && modelSetup.enabled,
             @"An unprepared model must offer setup and keep translation disabled");
         Require([modelMessage.stringValue containsString:@"license"] &&
-            [modelMessage.stringValue containsString:@"573 MB"] && modelSetup.frame.size.height >= 36,
+            [modelMessage.stringValue containsString:@"573 MB"] &&
+            [modelSetup isKindOfClass:BawanActionButton.class] && ((BawanActionButton *)modelSetup).primary,
             @"First setup must explain the license and model download beside a clear primary setup action");
         Capture(window, @"needs-download");
         [start performClick:nil];

@@ -144,7 +144,7 @@ static void CheckBounds(NSWindow *window) {
             @"shortcut-selection-reset", @"shortcut-selection-status", @"shortcut-selection-permission",
             @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
             @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-help",
-            @"shortcut-selection-card", @"shortcut-panel-card", @"settings-model-status",
+            @"shortcut-selection-row", @"shortcut-panel-row", @"settings-model-status",
             @"settings-model-license", @"settings-model-setup", @"settings-model-message", @"settings-model-progress",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
             @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
@@ -194,32 +194,32 @@ static void CheckBounds(NSWindow *window) {
                 std::abs(control.font.pointSize - 13) < 0.1,
                 @"Key recorders and press counts must use 28pt inputs and 13pt type");
     }
-    NSView *selectionCard = FindView(root, @"shortcut-selection-card");
-    NSView *panelCard = FindView(root, @"shortcut-panel-card");
-    NSRect selectionFrame = FrameInRoot(selectionCard);
-    NSRect panelFrame = FrameInRoot(panelCard);
-    Require(!NSIntersectsRect(selectionFrame, panelFrame) &&
-        std::abs(selectionFrame.size.width - panelFrame.size.width) < 1 &&
-        std::abs(selectionFrame.size.height - panelFrame.size.height) < 1 &&
-        std::abs(NSMinY(selectionFrame) - NSMinY(panelFrame)) < 1,
-        @"The two shortcut capabilities must occupy equal side-by-side cards without overlap");
-    for (NSString *prefix in @[@"selection", @"panel"]) {
-        NSView *card = FindView(root, [NSString stringWithFormat:@"shortcut-%@-card", prefix]);
+    NSRect selectionRow = FrameInRoot(FindView(root, @"shortcut-selection-row"));
+    NSRect panelRow = FrameInRoot(FindView(root, @"shortcut-panel-row"));
+    Require(!NSIntersectsRect(selectionRow, panelRow) &&
+        std::abs(selectionRow.size.width - panelRow.size.width) < 1 &&
+        std::abs(NSMinX(selectionRow) - NSMinX(panelRow)) < 1,
+        @"The two shortcut capabilities must be full-width rows, matching onboarding");
+    for (NSUInteger i = 0; i < 2; ++i) {
+        NSString *prefix = i == 0 ? @"selection" : @"panel";
+        auto action = static_cast<bawan::ShortcutAction>(i);
+        NSView *row = FindView(root, [NSString stringWithFormat:@"shortcut-%@-row", prefix]);
         NSButton *enabled = (NSButton *)FindView(root, [NSString stringWithFormat:@"shortcut-%@-enabled", prefix]);
         NSView *status = FindView(root, [NSString stringWithFormat:@"shortcut-%@-status", prefix]);
         NSView *permission = FindView(root, [NSString stringWithFormat:@"shortcut-%@-permission", prefix]);
-        Require([enabled isKindOfClass:NSButton.class] && [enabled.title isEqualToString:@"Use shortcut"] &&
-            [status isDescendantOf:card] && [permission isDescendantOf:card],
-            @"Preference, readiness, and permission action must be grouped within their own capability");
+        Require([enabled isKindOfClass:NSButton.class] && [enabled.title isEqualToString:ShortcutActionTitle(action)] &&
+            [enabled isDescendantOf:row] && [status isDescendantOf:row] && [permission isDescendantOf:row],
+            @"Preference, readiness, and permission action must be grouped within their own capability row");
     }
     Require(FindView(root, @"settings-sidebar") == nil && FindView(root, @"settings-tabs") == nil,
         @"Everyday settings must have no tabs or sidebar");
     NSView *shortcut = FindView(root, @"shortcut-group");
     NSView *login = FindView(root, @"login-group");
     NSView *privacy = FindView(root, @"local-processing");
+    // Groups scroll beneath the fixed footer, so compare the footer with the scroll view's visible area.
     Require(!NSIntersectsRect(FrameInRoot(shortcut), FrameInRoot(login)) &&
-            !NSIntersectsRect(FrameInRoot(login), FrameInRoot(privacy)),
-            @"Settings groups and privacy footer must not overlap");
+            !NSIntersectsRect(FrameInRoot(scroll), FrameInRoot(privacy)),
+            @"Settings groups must not overlap, and the footer note must sit outside the scrolling area");
 }
 
 static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
@@ -508,17 +508,19 @@ static void RunSmoke(void) {
     Require([source.string isEqualToString:edited], @"Edit Undo in Settings must not change the hidden source");
     [NSApp sendAction:@selector(redo:) to:nil from:window];
     Require([source.string isEqualToString:edited], @"Edit Redo in Settings must not change the hidden source");
-    [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
     NSInteger pasteboardCount = NSPasteboard.generalPasteboard.changeCount;
     [window performKeyEquivalent:KeyEvent(window, @"C", NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
-    Require(translations == 0 && cancellations == 0 && NSPasteboard.generalPasteboard.changeCount == pasteboardCount,
-        @"Settings must not translate or copy the hidden translator through local shortcuts");
-    [back performClick:nil];
+    Require(NSPasteboard.generalPasteboard.changeCount == pasteboardCount && window.contentView == settings.view,
+        @"Settings must not copy the hidden translator through its local shortcut");
+    // ⌘Return is each page's footer primary action: Done here, never Translate.
+    [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
+    Require(translations == 0 && cancellations == 0,
+        @"⌘Return in Settings must act as Done without translating the hidden source");
     Require(window.contentView == translationRoot && NSEqualRects(window.frame, hostFrame) &&
         window.firstResponder == source && [source.string isEqualToString:edited] &&
         NSEqualRanges(source.selectedRange, selection) &&
         [[(NSButton *)FindView(translationRoot, @"copy") title] isEqualToString:@"Copied"] && closes == 0,
-        @"Back must preserve text, selection, focus, copy feedback and the live host window");
+        @"Done must preserve text, selection, focus, copy feedback and the live host window");
     [source.undoManager undo];
     Require([source.string isEqualToString:original], @"The source edit must remain undoable after returning from Settings");
     [source.undoManager redo];
@@ -537,7 +539,7 @@ static void RunSmoke(void) {
     Require(BawanMascotImage() != nil && BawanPaperImage() != nil,
             @"Settings captures must load the real mascot and paper assets");
     NSView *root = window.contentView;
-    NSSwitch *login = (NSSwitch *)FindView(root, @"launch-at-login");
+    NSButton *login = (NSButton *)FindView(root, @"launch-at-login");
     NSTextField *hint = (NSTextField *)FindView(root, @"login-hint");
     NSTextField *selectionStatus = (NSTextField *)FindView(root, @"shortcut-selection-status");
     NSTextField *panelStatus = (NSTextField *)FindView(root, @"shortcut-panel-status");
@@ -629,7 +631,7 @@ static void RunSmoke(void) {
     Require(modelLicenses == 1 && [modelStatus.stringValue isEqualToString:@"Ready"] && modelSetup.hidden,
         @"Ready models must expose the license without showing a false retry action");
     [settings setModelPhase:BawanModelSetupNeedsDownload message:@"Prepare the local model first." progress:0];
-    Require([modelStatus.stringValue isEqualToString:@"Not prepared"] && !modelSetup.hidden && modelProgress.hidden,
+    Require([modelStatus.stringValue isEqualToString:@"Not set up"] && !modelSetup.hidden && modelProgress.hidden,
         @"An unprepared model must expose setup without claiming readiness");
     [modelSetup performClick:nil];
     Require(modelSetups == 1, @"The model setup action must reach its owner");
@@ -645,7 +647,7 @@ static void RunSmoke(void) {
     Require(modelProgress.indeterminate && modelProgress.doubleValue == 0,
         @"A negative progress sentinel must not become a negative percentage");
     [settings setModelPhase:BawanModelSetupFailed message:@"The model could not be verified. Please try again." progress:0];
-    Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Retry"] && !modelMessage.hidden &&
+    Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Retry Model Setup"] && !modelMessage.hidden &&
         [modelStatus.stringValue isEqualToString:@"Needs attention"],
         @"Model setup failures must retain their message and expose Retry");
     [modelSetup performClick:nil];

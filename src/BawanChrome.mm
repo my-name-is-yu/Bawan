@@ -273,8 +273,10 @@ NSTextField *BawanAddFooterHint(NSView *footer, NSString *identifier, NSString *
     ActivateConstraints(@[
         leading ? [hint.leadingAnchor constraintEqualToAnchor:leading.trailingAnchor constant:12] :
                   [hint.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:BawanChromeInset],
+        // Without a trailing button, mirror the leading inset so the note stays centered.
         trailing ? [hint.trailingAnchor constraintEqualToAnchor:trailing.leadingAnchor constant:-12] :
-                   [hint.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor constant:-BawanChromeInset],
+                   [hint.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor
+                       constant:-(leading ? BawanChromeInset + BawanFooterPrimaryWidth + 12 : BawanChromeInset)],
         [hint.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor]
     ]);
     return hint;

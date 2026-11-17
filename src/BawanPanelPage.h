@@ -7,6 +7,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setActive:(BOOL)active;
 - (void)focusInitialControl;
 - (void)refresh;
+// The page's footer primary action, also bound to ⌘Return like the translator's.
+- (void)performPrimaryAction;
 @end
 
 NS_ASSUME_NONNULL_END

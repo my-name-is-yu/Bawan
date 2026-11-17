@@ -464,7 +464,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 }
 
 - (void)performPrimaryAction:(id)sender {
-    if ([self isShowingPage]) return;
+    if ([self isShowingPage]) {
+        [_page performPrimaryAction];
+        return;
+    }
     if (_busy) { if (self.onCancel) self.onCancel(); }
     else [self translate:sender];
 }

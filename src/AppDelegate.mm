@@ -366,7 +366,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         auto binding = [_shortcutPreferences bindingForAction:action];
         ShortcutAvailability availability = [_shortcut availabilityForAction:action];
         item.state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
-        NSString *verb = action == bawan::ShortcutAction::TranslateSelection ? @"Selection Translation" : @"Open Translator";
+        NSString *verb = ShortcutActionTitle(action);
         NSString *suffix = @"";
         if (binding.enabled && availability != ShortcutAvailabilityAvailable) {
             suffix = availability == ShortcutAvailabilityFailed ? @" (monitoring unavailable)" : @" (permission required)";

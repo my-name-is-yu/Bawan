@@ -15,9 +15,6 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
     return BawanLabel(text, size, weight, BawanColor(role));
 }
 
-NSTextField *Heading(NSString *text, CGFloat size) {
-    return BawanLabelWithFont(text, BawanLabelFont(size), BawanColor(BawanText));
-}
 }
 
 @interface OnboardingViewController () {
@@ -32,7 +29,6 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     NSImageView *_modelIcon;
     NSProgressIndicator *_progress;
     NSButton *_modelSetup;
-    NSView *_modelAction;
     NSButton *_modelLicense;
     NSButton *_start;
     NSTextField *_error;
@@ -62,12 +58,11 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     BawanChromeHeader header = BawanAddHeader(root, @"onboarding-header", @"onboarding-mascot");
     _mascot = header.mascot;
     BawanChromeFooter footer = BawanAddFooter(root, @"onboarding-footer");
-    BawanActionButton *start = BawanAddFooterPrimary(footer.footer, @"onboarding-start", @"Start translating",
+    BawanActionButton *start = BawanAddFooterPrimary(footer.footer, @"onboarding-start", @"Start Translating  ⌘↵",
         self, @selector(goBack:));
     _start = start;
-    start.keyEquivalent = @"\r";
-    start.toolTip = @"Start translating (Return)";
-    _modelLicense = BawanAddFooterSecondary(footer.footer, @"onboarding-model-license", @"Model License",
+    start.toolTip = @"Start translating (⌘Return)";
+    _modelLicense = BawanAddFooterSecondary(footer.footer, @"onboarding-model-license", BawanModelLicenseTitle,
         self, @selector(openModelLicense:));
     _modelLicense.image = BawanSymbol(@"doc.text", @"", 13);
     _modelLicense.imagePosition = NSImageLeft;
@@ -85,40 +80,26 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     document.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.documentView = document;
 
-    _title = Heading(@"Prepare your translator", 24);
+    _title = BawanSetupHeading(@"Prepare Your Translator", BawanSetupTitleSize);
     _title.identifier = @"onboarding-title";
     _modelIcon = [[NSImageView alloc] init];
     _modelIcon.translatesAutoresizingMaskIntoConstraints = NO;
     [_modelIcon setAccessibilityElement:NO];
-    [NSLayoutConstraint activateConstraints:@[
-        [_modelIcon.widthAnchor constraintEqualToConstant:20],
-        [_modelIcon.heightAnchor constraintEqualToConstant:20]
-    ]];
-    NSTextField *modelName = Label(@"Translation model", 15, NSFontWeightSemibold, BawanText);
+    [_modelIcon.widthAnchor constraintEqualToConstant:16].active = YES;
+    [_modelIcon.heightAnchor constraintEqualToConstant:16].active = YES;
+    NSTextField *modelName = Label(@"Translation Model", BawanSetupRowTitleSize, NSFontWeightSemibold, BawanText);
     modelName.identifier = @"onboarding-model-title";
-    _modelStatus = Label(@"Not set up", 15, NSFontWeightRegular, BawanSecondaryText);
+    _modelStatus = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanSecondaryText);
     _modelStatus.identifier = @"onboarding-model-status";
-    NSStackView *model = BawanSetupStack(@[_modelIcon, modelName, _modelStatus],
-        NSUserInterfaceLayoutOrientationHorizontal, 8);
-
-    _modelMessage = Label(@"", 14, NSFontWeightRegular, BawanSecondaryText);
-    _modelMessage.identifier = @"onboarding-model-message";
-    _modelAction = [[NSView alloc] init];
-    _modelAction.identifier = @"onboarding-model-action";
-    _modelAction.translatesAutoresizingMaskIntoConstraints = NO;
-    BawanActionButton *modelSetup = BawanAddActionButton(_modelAction, @"onboarding-model-setup",
-        @"Review license & download", self, @selector(setUpModel:), YES);
-    modelSetup.wantsLayer = YES;
-    modelSetup.pressFeedback = YES;
+    NSStackView *modelState = BawanSetupStack(@[_modelIcon, _modelStatus], NSUserInterfaceLayoutOrientationHorizontal, 6);
+    BawanActionButton *modelSetup = BawanSetupButton(@"onboarding-model-setup", @"", BawanSetupModelActionWidth, self, @selector(setUpModel:));
+    modelSetup.primary = YES;
     _modelSetup = modelSetup;
-    [NSLayoutConstraint activateConstraints:@[
-        [_modelAction.heightAnchor constraintEqualToConstant:BawanFooterButtonHeight],
-        [modelSetup.leadingAnchor constraintEqualToAnchor:_modelAction.leadingAnchor],
-        [modelSetup.topAnchor constraintEqualToAnchor:_modelAction.topAnchor],
-        [modelSetup.widthAnchor constraintEqualToConstant:240],
-        [modelSetup.heightAnchor constraintEqualToConstant:BawanFooterButtonHeight]
-    ]];
-    _progress = [[NSProgressIndicator alloc] init];
+    NSView *model = BawanSetupRow(@"onboarding-model-row", modelName, modelState, @[modelSetup]);
+
+    _modelMessage = Label(@"", BawanSetupBodySize, NSFontWeightRegular, BawanSecondaryText);
+    _modelMessage.identifier = @"onboarding-model-message";
+    _progress = [[BawanProgressBar alloc] init];
     _progress.identifier = @"onboarding-model-progress";
     _progress.style = NSProgressIndicatorStyleBar;
     _progress.indeterminate = NO;
@@ -126,21 +107,22 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     _progress.maxValue = 1;
     _progress.translatesAutoresizingMaskIntoConstraints = NO;
     [_progress setAccessibilityLabel:@"Model setup progress"];
-    [_progress.heightAnchor constraintEqualToConstant:6].active = YES;
+    [_progress.heightAnchor constraintEqualToConstant:8].active = YES;
 
-    NSTextField *optional = Heading(@"Optional shortcuts", 20);
+    NSTextField *optional = BawanSetupHeading(@"Optional Shortcuts", BawanSetupSectionSize);
     optional.identifier = @"onboarding-shortcuts-title";
     NSView *firstRow = [self shortcutRow:0];
     NSView *secondRow = [self shortcutRow:1];
-    _error = Label(@"", 13, NSFontWeightRegular, BawanError);
+    _error = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanError);
     _error.identifier = @"onboarding-error";
     _error.hidden = YES;
 
-    NSArray<NSView *> *sections = @[_title, model, _modelMessage, _modelAction, _progress, BawanSetupRule(),
+    NSArray<NSView *> *sections = @[_title, model, _modelMessage, _progress, BawanSetupRule(),
         optional, firstRow, BawanSetupRule(), secondRow, _error];
-    NSStackView *content = BawanSetupStack(sections, NSUserInterfaceLayoutOrientationVertical, 12);
-    [content setCustomSpacing:20 afterView:_progress];
-    [content setCustomSpacing:20 afterView:_modelAction];
+    NSStackView *content = BawanSetupStack(sections, NSUserInterfaceLayoutOrientationVertical, 8);
+    [content setCustomSpacing:24 afterView:_modelMessage];
+    [content setCustomSpacing:24 afterView:_progress];
+    [content setCustomSpacing:24 afterView:model];
     [document addSubview:content];
     for (NSView *view in sections) {
         [view.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
@@ -164,46 +146,31 @@ NSTextField *Heading(NSString *text, CGFloat size) {
 }
 
 - (NSView *)shortcutRow:(NSUInteger)index {
-    NSView *row = [[NSView alloc] init];
-    row.identifier = ShortcutID(index, @"row");
-    row.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField *name = Label(index == 0 ? @"Translate selected text" : @"Open Bawan from anywhere",
-        15, NSFontWeightSemibold, BawanText);
+    auto action = static_cast<bawan::ShortcutAction>(index);
+    NSTextField *name = Label(ShortcutActionTitle(action), BawanSetupRowTitleSize, NSFontWeightSemibold, BawanText);
     name.identifier = ShortcutID(index, @"title");
-    NSTextField *status = Label(@"", 13, NSFontWeightRegular, BawanSecondaryText);
+    NSTextField *status = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanSecondaryText);
     status.identifier = ShortcutID(index, @"status");
-    NSStackView *description = BawanSetupStack(@[name, status], NSUserInterfaceLayoutOrientationVertical, 3);
-    [row addSubview:description];
     NSTextField *key = [[BawanSetupKeycap alloc] initWithFrame:NSZeroRect];
     key.translatesAutoresizingMaskIntoConstraints = NO;
     key.identifier = ShortcutID(index, @"key");
-    NSTextField *presses = Label(@"twice", 13, NSFontWeightRegular, BawanSecondaryText);
+    NSTextField *presses = [[BawanSetupKeycap alloc] initWithFrame:NSZeroRect];
+    presses.translatesAutoresizingMaskIntoConstraints = NO;
     presses.identifier = ShortcutID(index, @"presses");
-    BawanActionButton *setup = BawanAddActionButton(nil, ShortcutID(index, @"setup"), @"Set up…",
-        self, @selector(setUpShortcut:), NO);
-    setup.font = BawanLabelFont(13);
-    setup.tag = index;
-    NSStackView *controls = BawanSetupStack(@[key, presses, setup], NSUserInterfaceLayoutOrientationHorizontal, 10);
-    [row addSubview:controls];
     [NSLayoutConstraint activateConstraints:@[
-        [row.heightAnchor constraintEqualToConstant:56],
-        [description.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
-        [description.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        [description.topAnchor constraintGreaterThanOrEqualToAnchor:row.topAnchor constant:4],
-        [description.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-4],
-        [description.trailingAnchor constraintLessThanOrEqualToAnchor:controls.leadingAnchor constant:-12],
-        [controls.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
-        [controls.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        [key.widthAnchor constraintEqualToConstant:64],
+        [key.widthAnchor constraintEqualToConstant:BawanSetupKeyWidth],
         [key.heightAnchor constraintEqualToConstant:BawanInputHeight],
-        [setup.widthAnchor constraintEqualToConstant:96],
-        [setup.heightAnchor constraintEqualToConstant:32]
+        [presses.widthAnchor constraintEqualToConstant:BawanSetupCountWidth],
+        [presses.heightAnchor constraintEqualToConstant:BawanInputHeight]
     ]];
+    BawanActionButton *setup = BawanSetupButton(ShortcutID(index, @"setup"), @"Set Up…",
+        BawanSetupActionWidth, self, @selector(setUpShortcut:));
+    setup.tag = index;
     [_shortcutKeys addObject:key];
     [_shortcutPresses addObject:presses];
     [_shortcutStatuses addObject:status];
     [_shortcutSetup addObject:setup];
-    return row;
+    return BawanSetupRow(ShortcutID(index, @"row"), name, status, @[key, presses, setup]);
 }
 
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {
@@ -212,18 +179,18 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     BOOL ready = phase == BawanModelSetupReady;
     BOOL preparing = phase == BawanModelSetupPreparing;
     BOOL failed = phase == BawanModelSetupFailed;
-    _title.stringValue = ready ? @"You’re ready to start" : failed ? @"Let’s finish setting up" : @"Prepare your translator";
-    _modelStatus.stringValue = ready ? @"Ready" : preparing ? @"Preparing…" : failed ? @"Needs attention" : @"Not set up";
-    _modelStatus.textColor = BawanColor(failed ? BawanError : ready ? BawanSuccess : BawanSecondaryText);
-    _modelIcon.image = BawanSymbol(ready ? @"checkmark.circle.fill" : failed ? @"exclamationmark.circle" : @"arrow.down.circle", nil, 17);
-    _modelIcon.contentTintColor = BawanColor(ready ? BawanGold : failed ? BawanError : BawanSecondaryText);
+    const BawanModelPresentation presentation = BawanPresentModel(phase);
+    _title.stringValue = ready ? @"You’re Ready to Start" : failed ? @"Let’s Finish Setting Up" : @"Prepare Your Translator";
+    _modelStatus.stringValue = presentation.status;
+    _modelStatus.textColor = BawanColor(presentation.statusColor);
+    _modelIcon.image = BawanSymbol(presentation.symbol, nil, 15);
+    _modelIcon.contentTintColor = BawanColor(presentation.symbolColor);
     _modelMessage.stringValue = phase == BawanModelSetupNeedsDownload ?
         @"Review the model license, then download the translation model (about 573 MB)." : message;
     _modelMessage.textColor = BawanColor(failed ? BawanError : BawanSecondaryText);
     _modelMessage.hidden = ready || _modelMessage.stringValue.length == 0;
-    _modelSetup.title = failed ? @"Retry model setup" : @"Review license & download";
-    _modelAction.hidden = ready || preparing;
-    _modelSetup.hidden = ready || preparing;
+    _modelSetup.title = presentation.actionTitle;
+    _modelSetup.hidden = presentation.actionTitle.length == 0;
     _modelSetup.enabled = !preparing;
     _progress.hidden = !preparing;
     _progress.indeterminate = !std::isfinite(progress) || progress < 0;
@@ -247,7 +214,7 @@ NSTextField *Heading(NSString *text, CGFloat size) {
         ShortcutAvailability availability = binding.enabled ? [_monitor availabilityForAction:action] : ShortcutAvailabilityOff;
         const auto presentation = BawanPresentShortcut(availability);
         _shortcutKeys[index].stringValue = ShortcutKeyLabel(binding);
-        _shortcutPresses[index].stringValue = binding.pressCount == 1 ? @"once" : @"twice";
+        _shortcutPresses[index].stringValue = ShortcutPressCountTitle(binding.pressCount);
         _shortcutStatuses[index].stringValue = presentation.status;
         _shortcutStatuses[index].textColor = BawanColor(presentation.color);
         NSButton *setup = _shortcutSetup[index];
@@ -305,6 +272,7 @@ NSTextField *Heading(NSString *text, CGFloat size) {
 - (void)goBack:(id)sender {
     if (_modelPhase == BawanModelSetupReady && self.onBack) self.onBack();
 }
+- (void)performPrimaryAction { [self goBack:nil]; }
 - (void)setUpModel:(id)sender { if (self.onModelSetup) self.onModelSetup(); }
 - (void)openModelLicense:(id)sender { if (self.onModelLicense) self.onModelLicense(); }
 
