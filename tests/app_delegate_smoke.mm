@@ -647,7 +647,8 @@ static void CheckSelectionTrial(void) {
                 [delegate shortcutPreferencesDidChange:nil];
             } else if (scenario == Case::Permission) {
                 monitor.selectionAvailable = NO;
-                [delegate applicationDidBecomeActive:nil];
+                [delegate applicationDidBecomeActive:[NSNotification
+                    notificationWithName:NSApplicationDidBecomeActiveNotification object:NSApp]];
             } else if (scenario == Case::Revisit) {
                 [panel showForManualInput];
                 [delegate showOnboarding];

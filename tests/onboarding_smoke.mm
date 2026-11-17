@@ -1,4 +1,5 @@
 #import "OnboardingViewController.h"
+#import "TranslationPanel.h"
 #import "BawanChrome.h"
 #import "BawanMascotView.h"
 #import <QuartzCore/QuartzCore.h>
@@ -138,22 +139,19 @@ static void RunSmoke(void) {
     OnboardingSmokeMonitor *monitor = [[OnboardingSmokeMonitor alloc] initWithPreferences:preferences];
     OnboardingViewController *onboarding = [[OnboardingViewController alloc]
         initWithPreferences:preferences monitor:monitor];
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, 720, 500)
-        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable |
-                  NSWindowStyleMaskFullSizeContentView
-        backing:NSBackingStoreBuffered defer:NO];
-    window.releasedWhenClosed = NO;
-    window.titleVisibility = NSWindowTitleHidden;
-    window.titlebarAppearsTransparent = YES;
-    window.contentView = onboarding.view;
-    [NSApp activateIgnoringOtherApps:YES];
-    [window makeKeyAndOrderFront:nil];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    NSWindow *window = panel.window;
+    [window setContentSize:NSMakeSize(720, 500)];
     __block NSUInteger setups = 0, licenses = 0, finishes = 0, backs = 0;
     onboarding.onModelSetup = ^{ ++setups; };
     onboarding.onModelLicense = ^{ ++licenses; };
     onboarding.onFinish = ^{ ++finishes; };
-    onboarding.onBack = ^{ ++backs; };
     @try {
+        [panel showOnboarding:onboarding onBack:^{ ++backs; }];
+        [window makeKeyWindow];
+        Settle(window);
+        Require(window.visible && window.isKeyWindow && NSApp.keyWindow == window,
+            @"The onboarding fixture must own a real key window before testing selected-text practice");
         NSView *root = onboarding.view;
         Require([root.identifier isEqualToString:@"bawan-onboarding"], @"The first-run page needs its own view identity");
         NSView *modelStep = FindView(root, @"onboarding-step-model");
@@ -412,8 +410,7 @@ static void RunSmoke(void) {
         std::cout << "PASS: onboarding setup, selection practice visibility, binding changes, completion, invalidation and responsive captures\n";
     } @finally {
         [onboarding setActive:NO];
-        [window orderOut:nil];
-        [window close];
+        [panel close];
         [defaults removePersistentDomainForName:suite];
     }
 }
