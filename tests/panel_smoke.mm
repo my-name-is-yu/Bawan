@@ -85,16 +85,19 @@ static void CheckFooterHintLayout(void) {
                     hint.stringValue = text;
                     Settle(window);
                     NSRect frame = hint.frame;
+                    NSRect alignment = [hint alignmentRectForFrame:frame];
                     CGFloat left = leading ? NSMaxX(leading.frame) + 12 : 24;
                     CGFloat right = trailing ? NSMinX(trailing.frame) - 12 : NSWidth(footer.bounds) - 24;
-                    Require(!hint.hasAmbiguousLayout && NSWidth(frame) > 0 && NSHeight(frame) > 0 &&
-                        std::abs(NSMidX(frame) - NSMidX(footer.bounds)) < 0.5 &&
-                        std::abs(NSMidY(frame) - NSMidY(footer.bounds)) < 0.5 &&
-                        NSMinX(frame) >= left - 0.5 && NSMaxX(frame) <= right + 0.5 &&
+                    // Anchors constrain the label's alignment rect, excluding its horizontal padding.
+                    // Include the half-point tie produced when AppKit rounds an odd-sized label.
+                    Require(!hint.hasAmbiguousLayout && NSWidth(alignment) > 0 && NSHeight(alignment) > 0 &&
+                        std::abs(NSMidX(alignment) - NSMidX(footer.bounds)) <= 0.5 &&
+                        std::abs(NSMidY(alignment) - NSMidY(footer.bounds)) <= 0.5 &&
+                        NSMinX(alignment) >= left - 0.5 && NSMaxX(alignment) <= right + 0.5 &&
                         NSContainsRect(NSInsetRect(footer.bounds, -0.5, -0.5), frame),
                         [NSString stringWithFormat:@"Footer hint must stay centered, inside the footer and clear of arbitrary neighbors: "
-                            @"width=%@ neighbors=%@ hint=%@ footer=%@", width, widths,
-                            NSStringFromRect(frame), NSStringFromRect(footer.bounds)]);
+                            @"width=%@ neighbors=%@ frame=%@ alignment=%@ footer=%@", width, widths,
+                            NSStringFromRect(frame), NSStringFromRect(alignment), NSStringFromRect(footer.bounds)]);
                     Require(!hint.editable && !hint.selectable && hint.maximumNumberOfLines == 2,
                         @"The footer hint must remain a bounded decorative note");
                 }

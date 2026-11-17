@@ -109,7 +109,9 @@ compilation, execution and rendered PNGs still require macOS verification.
 `panel_smoke` exercises the real footer-hint helper with asymmetric 48/96pt and
 128/52pt neighbors, either neighbor missing, and both missing. At 720, 640 and
 360pt widths, short, long and unbroken messages must remain centered in the
-footer, fit inside it, and keep at least 12pt clear of each neighbor. The narrow
+footer, fit inside it, and keep at least 12pt clear of each neighbor. Layout
+checks use the label's alignment rectangle, allow AppKit's half-point centering
+tie, and separately require its padded frame to fit inside the footer. The narrow
 fixtures save `panel-smoke/footer-hint-*.png`. The panel's mascot lookup now uses
 the `BawanMascotView` API rather than the removed image-view API.
 
@@ -118,7 +120,8 @@ and plain styles in Aqua and Dark Aqua. It checks tint priority, repainting,
 normal/pressed/disabled face colors and opacity, and disabled navigation. An
 explicit `contentTintColor`, including nil for AppKit's native tint, takes
 priority over later style changes; a button without an override uses its style's
-foreground. Captures are saved as `settings-smoke/action-*.png`.
+foreground. The 36pt button's face sample uses bitmap row 6, clear of the stroke
+and centered gear. Captures are saved as `settings-smoke/action-*.png`.
 
 `mascot_smoke` checks the view-only API, 72pt medallion and requested plain
 intrinsic sizes, plain Auto Layout sizing, decorative accessibility and keyboard

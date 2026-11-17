@@ -418,7 +418,8 @@ static void CheckActionButtonStyles(NSWindow *window) {
                 close.enabled = state != 2;
                 [close highlight:state == 1];
                 NSBitmapImageRep *bitmap = ControlAppearanceChecks::Render(close);
-                NSColor *face = BitmapColor(bitmap, bitmap.pixelsWide / 2, 4);
+                // In this 36pt fixture, row 6 clears the face's stroke and the centered gear.
+                NSColor *face = BitmapColor(bitmap, bitmap.pixelsWide / 2, 6);
                 CGFloat expectedAlpha = style == BawanActionButtonStylePlain ? (state == 1 ? 0.12 : 0) :
                     (state == 2 ? 0.4 : 1);
                 Require(std::abs(face.alphaComponent - expectedAlpha) < 0.02,
