@@ -78,8 +78,8 @@ static void CheckBounds(NSWindow *window) {
         [NSString stringWithFormat:@"The onboarding must use one unambiguous vertically scrollable document: root=%@ document=%@ frame=%@ clip=%@",
             @(root.hasAmbiguousLayout), @(document.hasAmbiguousLayout),
             NSStringFromRect(document.frame), NSStringFromRect(scroll.contentView.bounds)]);
-    for (NSString *identifier in @[@"onboarding-header", @"onboarding-mascot", @"onboarding-back",
-            @"onboarding-hero-mascot", @"onboarding-title", @"onboarding-model-status",
+    for (NSString *identifier in @[@"onboarding-header", @"onboarding-mascot", @"onboarding-footer",
+            @"onboarding-later", @"onboarding-title", @"onboarding-model-status",
             @"onboarding-model-license", @"onboarding-shortcut-selection-title",
             @"onboarding-shortcut-selection-key", @"onboarding-shortcut-selection-status",
             @"onboarding-shortcut-selection-setup", @"onboarding-shortcut-panel-title",
@@ -97,12 +97,10 @@ static void CheckBounds(NSWindow *window) {
     }
     Require(document.bounds.size.width <= scroll.contentView.bounds.size.width + 1,
         @"Onboarding must remain readable without horizontal scrolling at minimum size");
-    if (NSWidth(root.bounds) >= 700 && NSHeight(root.bounds) >= 490) {
-        NSView *start = FindView(root, @"onboarding-start");
-        NSRect startRect = [start convertRect:start.bounds toView:document];
-        Require(NSContainsRect(NSInsetRect(document.visibleRect, -0.5, -0.5), startRect),
-            @"The ready-state Start action must be visible without scrolling at the normal window size");
-    }
+    NSView *start = FindView(root, @"onboarding-start");
+    NSView *footer = FindView(root, @"onboarding-footer");
+    Require([start isDescendantOf:footer] && ![start isDescendantOf:document],
+        @"Start must stay in the fixed footer, visible at every window size without scrolling");
 }
 
 static void Capture(NSWindow *window, NSString *name) {
@@ -257,8 +255,6 @@ static void RunSmoke(void) {
             @"Initial keyboard focus must belong to the visible onboarding page");
         [start performClick:nil];
         Require(completions == 1, @"Starting translation must invoke the owner's completion action once");
-        [(NSButton *)FindView(root, @"onboarding-back") performClick:nil];
-        Require(completions == 2, @"Ready-state Back must use the same completion action");
 
         for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
                                 [NSValue valueWithSize:NSMakeSize(640, 420)]]) {

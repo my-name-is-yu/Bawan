@@ -1,3 +1,7 @@
+# Onboarding and Settings chrome update — 2026-11-17
+
+The setup pages now reuse the translator's chrome from `src/BawanChrome.{h,mm}`: the 80pt masthead with the 72pt medallion and trailing icon slot, the 72pt footer with its divider, the beveled serif buttons, and serif labels throughout. Settings shows a filled gear that returns to the translator, plus a footer Done button. Onboarding moves Start translating and Model License into the footer and drops the hero mascot, because the masthead medallion now carries the brand. Tests assert the shared header and footer metrics. Captures in `build-check/{onboarding,settings}-smoke/` were checked at 720×500 and 640×420 in light and dark. The sections below describe the earlier slim-masthead pass and are superseded where they conflict.
+
 # Onboarding and Settings implementation QA — 2026-11-17
 
 final result: passed

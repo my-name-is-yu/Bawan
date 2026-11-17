@@ -3,18 +3,11 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface BawanSetupPaper : NSView
-@property(nonatomic) BOOL masthead;
-@end
-
-@interface BawanSetupDocument : BawanSetupPaper
+// A flipped, transparent document so scrolled setup content starts at the top.
+@interface BawanSetupDocument : NSView
 @end
 
 @interface BawanSetupGroup : NSBox
-@end
-
-@interface BawanSetupActionButton : NSButton
-@property(nonatomic) BOOL primary;
 @end
 
 @interface BawanSetupKeycap : NSTextField

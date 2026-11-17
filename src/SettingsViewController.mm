@@ -1,6 +1,7 @@
 #import "SettingsViewController.h"
 #import "BawanAppearance.h"
 #import "SetupUI.h"
+#import "BawanChrome.h"
 #import "BawanMascotView.h"
 #import <CoreGraphics/CoreGraphics.h>
 
@@ -119,33 +120,21 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _restoreButtons = [NSMutableArray array];
     _statuses = [NSMutableArray array];
     _permissionButtons = [NSMutableArray array];
-    BawanSetupPaper *root = [[BawanSetupPaper alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
+    BawanSurfaceView *root = BawanMakeWindowSurface(@"bawan-settings", NSMakeRect(0, 0, 720, 500));
     self.view = root;
-    root.identifier = @"bawan-settings";
 
-    BawanSetupPaper *masthead = [[BawanSetupPaper alloc] init];
-    masthead.masthead = YES;
-    masthead.identifier = @"settings-header";
-    masthead.translatesAutoresizingMaskIntoConstraints = NO;
-    [root addSubview:masthead];
-    _mascot = [[BawanMascotView alloc] init];
-    _mascot.identifier = @"settings-mascot";
-    _mascot.translatesAutoresizingMaskIntoConstraints = NO;
-    [_mascot setAccessibilityElement:NO];
-    [masthead addSubview:_mascot];
-    NSTextField *subtitle = BawanLabelWithFont(@"Settings", BawanLabelFont(16), BawanColor(BawanHeaderText));
-    subtitle.identifier = @"settings-subtitle";
-    subtitle.selectable = NO;
-    [masthead addSubview:subtitle];
-    _back = BawanSetupLink(@"Back to translator", self, @selector(goBack:));
-    _back.identifier = @"settings-back";
-    _back.contentTintColor = BawanColor(BawanHeaderText);
-    _back.image = BawanSymbol(@"chevron.left", nil, 12);
-    _back.imagePosition = NSImageLeft;
-    _back.imageHugsTitle = YES;
+    BawanChromeHeader header = BawanAddHeader(root, @"settings-header", @"settings-mascot");
+    _mascot = header.mascot;
+    // The gear sits where the translator's gear opens Settings, and closes it again.
+    BawanActionButton *close = BawanAddHeaderButton(header.header, @"settings-close", @"gearshape.fill",
+        @"Back to translator", self, @selector(goBack:));
+    close.toolTip = @"Back to translator (Esc)";
+    BawanChromeFooter footer = BawanAddFooter(root, @"settings-footer");
+    _back = BawanAddFooterPrimary(footer.footer, @"settings-back", @"Done", self, @selector(goBack:));
     _back.toolTip = @"Back to translator (Esc)";
     [_back setAccessibilityLabel:@"Back to translator"];
-    [masthead addSubview:_back];
+    BawanAddFooterHint(footer.footer, @"local-processing",
+        @"Shortcut permissions do not affect typing or pasting.", _back, nil);
 
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     scroll.identifier = @"settings-scroll";
@@ -179,7 +168,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
             BawanLabelFont(18), BawanColor(BawanText));
         name.identifier = RowID(i, @"name");
         NSButton *enabled = [NSButton checkboxWithTitle:@"Use shortcut" target:self action:@selector(toggleEnabled:)];
-        enabled.font = [NSFont systemFontOfSize:14];
+        enabled.font = BawanBodyFont(14);
         enabled.translatesAutoresizingMaskIntoConstraints = NO;
         enabled.tag = i;
         enabled.identifier = RowID(i, @"enabled");
@@ -191,7 +180,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         record.title = @"";
         record.bordered = NO;
         record.focusRingType = NSFocusRingTypeExterior;
-        record.font = [NSFont systemFontOfSize:BawanInputFontSize weight:NSFontWeightMedium];
+        record.font = BawanLabelFont(BawanInputFontSize);
         record.contentTintColor = BawanColor(BawanText);
         record.translatesAutoresizingMaskIntoConstraints = NO;
         record.tag = i;
@@ -204,7 +193,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [count addItemsWithTitles:@[@"Once", @"Twice"]];
         count.bordered = NO;
         count.focusRingType = NSFocusRingTypeExterior;
-        count.font = [NSFont systemFontOfSize:BawanInputFontSize weight:NSFontWeightMedium];
+        count.font = BawanLabelFont(BawanInputFontSize);
         count.contentTintColor = BawanColor(BawanText);
         count.translatesAutoresizingMaskIntoConstraints = NO;
         count.target = self;
@@ -227,20 +216,16 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [restore.heightAnchor constraintEqualToConstant:28].active = YES;
         [restore setAccessibilityLabel:[@"Restore defaults for " stringByAppendingString:ShortcutActionTitle(action)]];
         NSStackView *controls = BawanSetupStack(@[record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 6);
-        NSTextField *status = BawanSystemLabel(@"", 13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+        NSTextField *status = BawanLabel(@"", 13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
         status.identifier = RowID(i, @"status");
         [status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                        forOrientation:NSLayoutConstraintOrientationHorizontal];
-        BawanSetupActionButton *permission = [[BawanSetupActionButton alloc] initWithFrame:NSZeroRect];
-        permission.title = @"Set up…";
-        permission.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
-        permission.target = self;
-        permission.action = @selector(requestPermission:);
+        BawanActionButton *permission = BawanAddActionButton(nil, RowID(i, @"permission"), @"Set up…",
+            self, @selector(requestPermission:), NO);
+        permission.font = BawanLabelFont(13);
         permission.tag = i;
-        permission.identifier = RowID(i, @"permission");
-        permission.translatesAutoresizingMaskIntoConstraints = NO;
-        [permission.widthAnchor constraintEqualToConstant:76].active = YES;
-        [permission.heightAnchor constraintEqualToConstant:28].active = YES;
+        [permission.widthAnchor constraintEqualToConstant:84].active = YES;
+        [permission.heightAnchor constraintEqualToConstant:32].active = YES;
         NSStackView *state = BawanSetupStack(@[status, [[NSView alloc] init], permission],
             NSUserInterfaceLayoutOrientationHorizontal, 8);
         NSStackView *cardContent = BawanSetupStack(@[name, enabled, controls, state],
@@ -262,11 +247,11 @@ NSString *RowID(NSUInteger index, NSString *control) {
     shortcutCards.alignment = NSLayoutAttributeTop;
     shortcutCards.distribution = NSStackViewDistributionFillEqually;
     [cards[0].heightAnchor constraintEqualToAnchor:cards[1].heightAnchor].active = YES;
-    _reservation = BawanSystemLabel(@"Custom shortcuts reserve their keys in other apps.",
+    _reservation = BawanLabel(@"Custom shortcuts reserve their keys in other apps.",
         12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _reservation.identifier = @"shortcut-reservation";
     _reservation.hidden = YES;
-    _shortcutHint = BawanSystemLabel(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _shortcutHint = BawanLabel(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-feedback";
     _shortcutHint.hidden = YES;
 
@@ -275,14 +260,14 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _loginSwitch.action = @selector(changeLogin:);
     _loginSwitch.identifier = @"launch-at-login";
     [_loginSwitch setAccessibilityLabel:@"Launch Bawan at login"];
-    NSTextField *loginTitle = BawanSystemLabel(@"Launch at login", 15, NSFontWeightSemibold, BawanColor(BawanText));
+    NSTextField *loginTitle = BawanLabel(@"Launch at login", 15, NSFontWeightSemibold, BawanColor(BawanText));
     NSStackView *loginRow = BawanSetupStack(@[loginTitle, [[NSView alloc] init], _loginSwitch],
         NSUserInterfaceLayoutOrientationHorizontal, 10);
     _loginSettings = BawanSetupLink(@"Login Items…", self, @selector(openLoginSettings:));
     _loginSettings.identifier = @"login-items";
     _loginSettings.hidden = YES;
     [_loginSettings setAccessibilityLabel:@"Open Login Items settings"];
-    _loginHint = BawanSystemLabel(@"", 13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _loginHint = BawanLabel(@"", 13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _loginHint.identifier = @"login-hint";
     _loginHint.hidden = YES;
     NSStackView *loginContent = BawanSetupStack(@[loginRow, _loginSettings, _loginHint],
@@ -298,8 +283,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
     [_modelCheck.widthAnchor constraintEqualToConstant:20].active = YES;
     [_modelCheck.heightAnchor constraintEqualToConstant:20].active = YES;
     [_modelCheck setAccessibilityElement:NO];
-    NSTextField *modelTitle = BawanSystemLabel(@"Translation model", 15, NSFontWeightSemibold, BawanColor(BawanText));
-    _modelStatus = BawanSystemLabel(@"Not prepared", 14, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    NSTextField *modelTitle = BawanLabel(@"Translation model", 15, NSFontWeightSemibold, BawanColor(BawanText));
+    _modelStatus = BawanLabel(@"Not prepared", 14, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _modelStatus.identifier = @"settings-model-status";
     NSButton *modelLicense = BawanSetupLink(@"Model license", self, @selector(openModelLicense:));
     modelLicense.identifier = @"settings-model-license";
@@ -307,7 +292,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _modelSetup.identifier = @"settings-model-setup";
     NSStackView *modelRow = BawanSetupStack(@[modelTitle, _modelCheck,
         _modelStatus, modelLicense, _modelSetup, [[NSView alloc] init]], NSUserInterfaceLayoutOrientationHorizontal, 10);
-    _modelHint = BawanSystemLabel(@"", 13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _modelHint = BawanLabel(@"", 13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _modelHint.identifier = @"settings-model-message";
     _modelHint.hidden = YES;
     _modelProgress = [[NSProgressIndicator alloc] init];
@@ -324,41 +309,15 @@ NSString *RowID(NSUInteger index, NSString *control) {
     for (NSView *view in @[modelRow, _modelHint, _modelProgress]) {
         [view.widthAnchor constraintEqualToAnchor:modelContent.widthAnchor].active = YES;
     }
-    NSImageView *privacyIcon = [[NSImageView alloc] init];
-    privacyIcon.image = BawanSymbol(@"lock.shield", nil, 16);
-    privacyIcon.contentTintColor = BawanColor(BawanSecondaryText);
-    privacyIcon.translatesAutoresizingMaskIntoConstraints = NO;
-    [privacyIcon.widthAnchor constraintEqualToConstant:20].active = YES;
-    [privacyIcon.heightAnchor constraintEqualToConstant:20].active = YES;
-    [privacyIcon setAccessibilityElement:NO];
-    NSTextField *privacy = BawanSystemLabel(@"Shortcut permissions do not affect typing or pasting.",
-        14, NSFontWeightRegular, BawanColor(BawanSecondaryText));
-    privacy.identifier = @"local-processing";
-    NSStackView *footer = BawanSetupStack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
     NSStackView *content = BawanSetupStack(@[headingRow, shortcutCards, _reservation, _shortcutHint,
-        BawanSetupRule(), loginContent, BawanSetupRule(), modelContent, BawanSetupRule(), footer],
+        BawanSetupRule(), loginContent, BawanSetupRule(), modelContent],
         NSUserInterfaceLayoutOrientationVertical, 14);
     [document addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
-        [masthead.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
-        [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [masthead.topAnchor constraintEqualToAnchor:root.topAnchor],
-        [masthead.heightAnchor constraintEqualToConstant:52],
-        [_mascot.centerXAnchor constraintEqualToAnchor:masthead.centerXAnchor],
-        [_mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [_mascot.widthAnchor constraintEqualToConstant:40],
-        [_mascot.heightAnchor constraintEqualToConstant:40],
-        [subtitle.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:88],
-        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:_mascot.leadingAnchor constant:-18],
-        [subtitle.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [_back.trailingAnchor constraintEqualToAnchor:masthead.trailingAnchor constant:-24],
-        [_back.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [_back.widthAnchor constraintEqualToConstant:140],
-        [_back.heightAnchor constraintEqualToConstant:30],
         [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [scroll.topAnchor constraintEqualToAnchor:masthead.bottomAnchor],
-        [scroll.bottomAnchor constraintEqualToAnchor:root.bottomAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:header.header.bottomAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:footer.divider.topAnchor],
         [document.leadingAnchor constraintEqualToAnchor:scroll.contentView.leadingAnchor],
         [document.topAnchor constraintEqualToAnchor:scroll.contentView.topAnchor],
         [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],

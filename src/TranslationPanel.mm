@@ -3,6 +3,7 @@
 #import "OnboardingViewController.h"
 #import "BawanPanelPage.h"
 #import "BawanAppearance.h"
+#import "BawanChrome.h"
 #import "BawanMascotView.h"
 #import <QuartzCore/CALayer.h>
 #import <QuartzCore/CAAnimation.h>
@@ -10,32 +11,6 @@
 #import <QuartzCore/CATransaction.h>
 
 #include <algorithm>
-
-namespace {
-void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL enabled) {
-    NSColor *fill = primary ? BawanPrimaryButtonFill(highlighted) : BawanColor(gold ? BawanGold : BawanBackground);
-    if (!enabled) fill = [fill colorWithAlphaComponent:0.4];
-    else if (highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
-    NSRect face = NSInsetRect(frame, 1, 1);
-    face.size.height -= 3;
-    NSBezierPath *path = gold ? BawanCutCornerPath(face) :
-        [NSBezierPath bezierPathWithRoundedRect:face xRadius:8 yRadius:8];
-    if (enabled) {
-        NSBezierPath *shadow = [path copy];
-        NSAffineTransform *offset = [NSAffineTransform transform];
-        [offset translateXBy:0 yBy:3];
-        [shadow transformUsingAffineTransform:offset];
-        [BawanColor(BawanBorder) setFill];
-        [shadow fill];
-    }
-    [fill setFill];
-    [path fill];
-    [BawanColor(BawanBorder) setStroke];
-    path.lineWidth = 1.5;
-    [path stroke];
-}
-
-}
 
 @interface BawanPanel : NSPanel
 @property(nonatomic, copy) void (^onTranslateKey)(void);
@@ -71,127 +46,6 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
         return YES;
     }
     return [super performKeyEquivalent:event];
-}
-@end
-
-@interface BawanSurfaceView : NSView
-@property(nonatomic, strong) NSColor *fillColor;
-@property(nonatomic, strong) NSColor *borderColor;
-@property(nonatomic) CGFloat cornerRadius;
-@property(nonatomic) BOOL textured;
-@property(nonatomic) BOOL masthead;
-@end
-
-@implementation BawanSurfaceView
-- (BOOL)isFlipped { return YES; }
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
-- (void)drawRect:(NSRect)dirtyRect {
-    if (self.masthead) { BawanDrawHeader(self.bounds); return; }
-    NSRect frame = self.borderColor ? NSInsetRect(self.bounds, 0.75, 0.75) : self.bounds;
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:frame xRadius:self.cornerRadius yRadius:self.cornerRadius];
-    [self.fillColor setFill];
-    [path fill];
-    if (self.textured) {
-        [NSGraphicsContext saveGraphicsState];
-        [path addClip];
-        BawanDrawPaper(self.bounds);
-        [NSGraphicsContext restoreGraphicsState];
-    }
-    if (self.borderColor) {
-        [self.borderColor setStroke];
-        path.lineWidth = 1.5;
-        [path stroke];
-    }
-}
-@end
-
-@interface BawanActionButton : NSButton {
-    BOOL _trackingPointer;
-}
-@property(nonatomic) BOOL primary;
-@property(nonatomic) BOOL gold;
-@property(nonatomic) BOOL plain;
-@property(nonatomic) BOOL pressFeedback;
-- (void)resetPressFeedback;
-@end
-
-@implementation BawanActionButton
-// Our bezel fills the bounds; native button ornament insets must not enlarge it.
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (void)resetPressFeedback {
-    _trackingPointer = NO;
-    [self.layer removeAnimationForKey:@"bawan.press"];
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    self.layer.transform = CATransform3DIdentity;
-    [CATransaction commit];
-}
-- (void)animatePressed:(BOOL)pressed {
-    CALayer *layer = self.layer;
-    if (!layer || !self.window.visible || NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
-        [self resetPressFeedback];
-        return;
-    }
-    CALayer *presentation = layer.presentationLayer;
-    CATransform3D current = presentation ? presentation.transform : layer.transform;
-    CGFloat scale = pressed ? 0.98 : 1;
-    CATransform3D target = CATransform3DMakeScale(scale, scale, 1);
-    // AppKit owns anchorPoint/position. Compensate inside the transform so the
-    // control scales around its center without changing hit testing or layout.
-    target.m41 = (0.5 - layer.anchorPoint.x) * NSWidth(self.bounds) * (1 - scale);
-    target.m42 = (0.5 - layer.anchorPoint.y) * NSHeight(self.bounds) * (1 - scale);
-    CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"transform"];
-    animation.fromValue = [NSValue valueWithCATransform3D:current];
-    animation.toValue = [NSValue valueWithCATransform3D:target];
-    animation.duration = 0.12;
-    animation.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.23 :1 :0.32 :1];
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    layer.transform = target;
-    [layer addAnimation:animation forKey:@"bawan.press"];
-    [CATransaction commit];
-}
-- (void)mouseDown:(NSEvent *)event {
-    if (!self.pressFeedback || !self.enabled) {
-        [super mouseDown:event];
-        return;
-    }
-    _trackingPointer = YES;
-    [self animatePressed:YES];
-    @try {
-        [super mouseDown:event];
-    } @finally {
-        // Dragging outside the button does not send an action, but still releases.
-        if (_trackingPointer) {
-            _trackingPointer = NO;
-            [self animatePressed:NO];
-        }
-    }
-}
-- (BOOL)sendAction:(SEL)action to:(id)target {
-    if (_trackingPointer) {
-        _trackingPointer = NO;
-        [self animatePressed:NO];
-    }
-    return [super sendAction:action to:target];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
-- (void)drawRect:(NSRect)dirtyRect {
-    BOOL highlighted = self.cell.highlighted;
-    if (!self.plain) {
-        DrawButton(self.bounds, self.primary, self.gold, highlighted, self.enabled);
-    } else if (highlighted) {
-        [[BawanColor(BawanHeaderText) colorWithAlphaComponent:0.12] setFill];
-        [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:6 yRadius:6] fill];
-    }
-    [super drawRect:dirtyRect];
 }
 @end
 
@@ -239,37 +93,9 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
 
 @implementation TranslationPanel
 
-static BawanSurfaceView *SurfaceView(NSView *parent, NSString *identifier, BawanColorRole role) {
-    BawanSurfaceView *view = [[BawanSurfaceView alloc] initWithFrame:NSZeroRect];
-    view.identifier = identifier;
-    view.fillColor = BawanColor(role);
-    view.translatesAutoresizingMaskIntoConstraints = NO;
-    [parent addSubview:view];
-    return view;
-}
-
 static void AddConstraints(NSArray<NSLayoutConstraint *> *constraints) {
     for (NSLayoutConstraint *constraint in constraints) constraint.identifier = @"bawan.layout";
     [NSLayoutConstraint activateConstraints:constraints];
-}
-
-static BawanActionButton *ButtonView(NSView *parent, NSString *identifier, NSString *title,
-                               id target, SEL action, BOOL primary, BOOL plain) {
-    BawanActionButton *button = [[BawanActionButton alloc] initWithFrame:NSZeroRect];
-    button.identifier = identifier;
-    [button setButtonType:NSButtonTypeMomentaryPushIn];
-    button.bordered = NO;
-    button.title = title;
-    button.font = BawanLabelFont(14);
-    button.contentTintColor = BawanColor(primary ? BawanHeaderText : BawanText);
-    button.primary = primary;
-    button.plain = plain;
-    button.target = target;
-    button.action = action;
-    button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.focusRingType = NSFocusRingTypeExterior;
-    [parent addSubview:button];
-    return button;
 }
 
 static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView, BOOL editable,
@@ -357,41 +183,24 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         else [owner close];
     };
 
-    BawanSurfaceView *content = [[BawanSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
-    content.identifier = @"bawan-panel";
-    content.fillColor = BawanColor(BawanBackground);
-    content.borderColor = BawanColor(BawanBorder);
-    content.textured = YES;
-    content.cornerRadius = 16;
-    content.wantsLayer = YES;
-    content.layer.cornerRadius = 16;
-    content.layer.masksToBounds = YES;
+    BawanSurfaceView *content = BawanMakeWindowSurface(@"bawan-panel", NSMakeRect(0, 0, 720, 500));
     _panel.contentView = content;
     _panel.editingContent = content;
     _translationContent = content;
 
-    BawanSurfaceView *header = SurfaceView(content, @"header", BawanHeader);
-    header.masthead = YES;
-    BawanSurfaceView *footer = SurfaceView(content, @"footer", BawanBackground);
-    footer.textured = YES;
-    BawanSurfaceView *footerLine = SurfaceView(content, @"footer-divider", BawanBorder);
-    BawanSurfaceView *dividerTop = SurfaceView(content, @"pane-divider-top", BawanBorder);
-    BawanSurfaceView *dividerBottom = SurfaceView(content, @"pane-divider-bottom", BawanBorder);
-
-    BawanMascotView *mascot = [[BawanMascotView alloc] init];
-    _mascot = mascot;
-    mascot.identifier = @"mascot";
-    mascot.translatesAutoresizingMaskIntoConstraints = NO;
-    [mascot setAccessibilityElement:NO];
-    [header addSubview:mascot];
-    BawanActionButton *settings = ButtonView(header, @"settings", @"", self, @selector(openSettings:), NO, YES);
-    settings.image = BawanSymbol(@"gearshape", @"Settings", 20);
-    settings.contentTintColor = BawanColor(BawanHeaderText);
-    settings.imagePosition = NSImageOnly;
+    BawanChromeHeader chrome = BawanAddHeader(content, @"header", @"mascot");
+    BawanSurfaceView *header = chrome.header;
+    _mascot = chrome.mascot;
+    BawanActionButton *settings = BawanAddHeaderButton(header, @"settings", @"gearshape", @"Settings",
+        self, @selector(openSettings:));
     settings.toolTip = @"Settings";
-    [settings setAccessibilityLabel:@"Settings"];
+    BawanChromeFooter footerChrome = BawanAddFooter(content, @"footer");
+    BawanSurfaceView *footer = footerChrome.footer;
+    BawanSurfaceView *footerLine = footerChrome.divider;
+    BawanSurfaceView *dividerTop = BawanAddSurface(content, @"pane-divider-top", BawanBorder);
+    BawanSurfaceView *dividerBottom = BawanAddSurface(content, @"pane-divider-bottom", BawanBorder);
 
-    _swap = ButtonView(content, @"swap", @"", self, @selector(swapText:), NO, NO);
+    _swap = BawanAddActionButton(content, @"swap", @"", self, @selector(swapText:), NO);
     _swap.gold = YES;
     _swap.contentTintColor = BawanColor(BawanGoldText);
     _swap.image = BawanSymbol(@"arrow.right.arrow.left", @"", 17);
@@ -422,39 +231,18 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     [content addSubview:messages];
     _messageSpacing = [sourceScroll.bottomAnchor constraintEqualToAnchor:messages.topAnchor];
 
-    _translate = ButtonView(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:), YES, NO);
+    _translate = BawanAddFooterPrimary(footer, @"translate", @"Translate  ⌘↵", self, @selector(performPrimaryAction:));
     _translate.toolTip = @"Translate or cancel (⌘Return)";
-    _copy = ButtonView(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:), NO, NO);
+    _copy = BawanAddFooterSecondary(footer, @"copy", @"Copy Translation", self, @selector(copyOutput:));
     _copy.toolTip = @"Copy Translation (⇧⌘C)";
     _copyIcon = BawanSymbol(@"doc.on.doc", @"", 13);
     _copiedIcon = BawanSymbol(@"checkmark", @"", 13);
     _copy.image = _copyIcon;
     _copy.imagePosition = NSImageLeft;
     _copy.imageHugsTitle = YES;
-    _shortcutHint = BawanLabel(@"Type or paste text to translate", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
-    _shortcutHint.identifier = @"shortcut-hint";
-    _shortcutHint.selectable = NO;
-    _shortcutHint.alignment = NSTextAlignmentCenter;
-    _shortcutHint.maximumNumberOfLines = 2;
-    [footer addSubview:_shortcutHint];
-    for (BawanActionButton *button in @[_translate, _copy]) {
-        button.wantsLayer = YES;
-        button.pressFeedback = YES;
-    }
+    _shortcutHint = BawanAddFooterHint(footer, @"shortcut-hint", @"Type or paste text to translate", _translate, _copy);
 
     AddConstraints(@[
-        [header.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [header.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-        [header.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [header.heightAnchor constraintEqualToConstant:BawanHeaderHeight],
-        [mascot.centerXAnchor constraintEqualToAnchor:header.centerXAnchor],
-        [mascot.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [mascot.widthAnchor constraintEqualToConstant:BawanBrandMarkSize],
-        [mascot.heightAnchor constraintEqualToConstant:BawanBrandMarkSize],
-        [settings.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-24],
-        [settings.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [settings.widthAnchor constraintEqualToConstant:36],
-        [settings.heightAnchor constraintEqualToConstant:36],
         [_swap.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
         [_swap.centerYAnchor constraintEqualToAnchor:sourceScroll.centerYAnchor],
         [_swap.widthAnchor constraintEqualToConstant:36],
@@ -480,25 +268,6 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         [messages.bottomAnchor constraintEqualToAnchor:footerLine.topAnchor constant:-16],
         [_instructions.widthAnchor constraintEqualToAnchor:messages.widthAnchor],
         [_status.widthAnchor constraintEqualToAnchor:messages.widthAnchor],
-        [footerLine.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-        [footerLine.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [footerLine.bottomAnchor constraintEqualToAnchor:footer.topAnchor],
-        [footerLine.heightAnchor constraintEqualToConstant:1.5],
-        [footer.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-        [footer.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [footer.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
-        [footer.heightAnchor constraintEqualToConstant:72],
-        [_translate.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:24],
-        [_translate.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [_translate.widthAnchor constraintEqualToConstant:184],
-        [_translate.heightAnchor constraintEqualToConstant:40],
-        [_copy.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor constant:-24],
-        [_copy.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [_copy.widthAnchor constraintEqualToConstant:176],
-        [_copy.heightAnchor constraintEqualToAnchor:_translate.heightAnchor],
-        [_shortcutHint.leadingAnchor constraintEqualToAnchor:_translate.trailingAnchor constant:12],
-        [_shortcutHint.trailingAnchor constraintEqualToAnchor:_copy.leadingAnchor constant:-12],
-        [_shortcutHint.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor]
     ]);
     [self setShortcutAvailable:NO];
     [self updateButtons];

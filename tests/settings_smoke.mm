@@ -2,6 +2,7 @@
 #import "TranslationPanel.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import "BawanAppearance.h"
+#import "BawanChrome.h"
 
 #include <cstdlib>
 #include <cmath>
@@ -93,12 +94,10 @@ static void CheckFrameDragging(NSWindow *window) {
     NSView *root = window.contentView;
     NSView *header = FindView(root, @"settings-header");
     NSView *mascot = FindView(root, @"settings-mascot");
-    NSButton *back = (NSButton *)FindView(root, @"settings-back");
-    NSTextField *subtitle = (NSTextField *)FindView(root, @"settings-subtitle");
+    NSButton *close = (NSButton *)FindView(root, @"settings-close");
     NSView *scroll = FindView(root, @"settings-scroll");
-    Require(!subtitle.editable && !subtitle.selectable &&
-        window.movable && window.movableByWindowBackground,
-        @"The Settings masthead must share native background dragging with its decorative label");
+    Require(window.movable && window.movableByWindowBackground,
+        @"The Settings masthead must share native background dragging with the translator");
     for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
                             [NSValue valueWithSize:NSMakeSize(640, 420)]]) {
         NSRect frame = window.frame;
@@ -107,10 +106,9 @@ static void CheckFrameDragging(NSWindow *window) {
         for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
             window.appearance = [NSAppearance appearanceNamed:appearance];
             Settle(window);
-            CheckBackgroundDragGrid(window, header, @[mascot, back]);
-            CheckBackgroundDragCenter(window, subtitle, YES);
+            CheckBackgroundDragGrid(window, header, @[mascot, close]);
             CheckBackgroundDragCenter(window, mascot, NO);
-            CheckBackgroundDragCenter(window, back, NO);
+            CheckBackgroundDragCenter(window, close, NO);
             CheckBackgroundDragPoint(window, scroll, NSMakePoint(8, NSMidY(scroll.bounds)), NO, scroll);
         }
     }
@@ -150,7 +148,7 @@ static void CheckBounds(NSWindow *window) {
             @"settings-model-license", @"settings-model-setup", @"settings-model-message", @"settings-model-progress",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
             @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
-            @"settings-subtitle", @"settings-back", @"settings-scroll"]) {
+            @"settings-close", @"settings-footer", @"settings-back", @"settings-scroll"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -161,34 +159,34 @@ static void CheckBounds(NSWindow *window) {
                 [NSString stringWithFormat:@"Settings view clipped: %@ %@ in %@", identifier,
                     NSStringFromRect(frame), NSStringFromRect(container.bounds)]);
     }
+    // Settings reuses the translator's chrome: the same masthead, medallion, trailing
+    // icon slot and footer metrics, so switching pages never shifts the frame.
     NSView *header = FindView(root, @"settings-header");
     NSView *mascot = FindView(root, @"settings-mascot");
-    NSView *subtitle = FindView(root, @"settings-subtitle");
-    NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
-    // Anchors measure alignment rectangles; text-field frames include native ornament insets.
-    NSRect subtitleAlignment = [subtitle.superview convertRect:[subtitle alignmentRectForFrame:subtitle.frame] toView:header];
-    NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
+    NSView *close = FindView(root, @"settings-close");
+    NSView *footer = FindView(root, @"settings-footer");
     NSView *back = FindView(root, @"settings-back");
-    NSRect backFrame = [back convertRect:back.bounds toView:header];
-    constexpr CGFloat expectedHeaderHeight = 52;
-    constexpr CGFloat expectedMascotSize = 40;
-    Require(FindView(root, @"settings-brand-name") == nil, @"The Settings header must omit the wordmark");
-    Require(std::abs(header.bounds.size.height - expectedHeaderHeight) < 1 &&
-            std::abs(mascot.bounds.size.width - expectedMascotSize) < 1 &&
-            std::abs(mascot.bounds.size.height - expectedMascotSize) < 1 &&
+    NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
+    NSRect closeFrame = [close convertRect:close.bounds toView:header];
+    NSRect backFrame = [back convertRect:back.bounds toView:footer];
+    Require(FindView(root, @"settings-brand-name") == nil && FindView(root, @"settings-subtitle") == nil,
+        @"The Settings header must match the translator's, without a wordmark or title");
+    Require(std::abs(header.bounds.size.height - BawanHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - BawanBrandMarkSize) < 1 &&
+            std::abs(mascot.bounds.size.height - BawanBrandMarkSize) < 1 &&
             std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
             std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1 &&
-            std::abs(NSMinX(subtitleAlignment) - NSMinX(header.bounds) - 88) < 1 &&
-            std::abs(NSMidY(subtitleAlignment) - NSMidY(header.bounds)) < 1,
-            [NSString stringWithFormat:
-        @"The Settings mascot must retain its size and stay centered, with the label after the native window controls: "
-        @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f labelAlignment=%@",
-        NSStringFromRect(header.bounds), expectedHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), expectedMascotSize, NSStringFromRect(subtitleAlignment)]);
-    Require(NSContainsRect(header.bounds, mascotFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
-            NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(mascotFrame, subtitleFrame) &&
-            !NSIntersectsRect(backFrame, subtitleFrame) && !NSIntersectsRect(backFrame, mascotFrame),
-            @"The Settings label, centered mascot and Back must fit without overlapping each other");
+            std::abs(NSMaxX(header.bounds) - NSMaxX(closeFrame) - BawanChromeInset) < 1 &&
+            std::abs(NSMidY(closeFrame) - NSMidY(header.bounds)) < 1,
+            [NSString stringWithFormat:@"The Settings masthead must match the translator's: header=%@ mascot=%@ close=%@",
+                NSStringFromRect(header.bounds), NSStringFromRect(mascotFrame), NSStringFromRect(closeFrame)]);
+    Require(std::abs(footer.bounds.size.height - BawanFooterHeight) < 1 &&
+            std::abs(NSMinX(backFrame) - BawanChromeInset) < 1 &&
+            std::abs(backFrame.size.width - BawanFooterPrimaryWidth) < 1 &&
+            std::abs(backFrame.size.height - BawanFooterButtonHeight) < 1 &&
+            std::abs(NSMaxY(FrameInRoot(footer)) - NSMaxY(root.bounds)) < 1,
+            [NSString stringWithFormat:@"Settings must use the translator's footer and primary button slot: footer=%@ back=%@",
+                NSStringFromRect(footer.bounds), NSStringFromRect(backFrame)]);
     for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
                                    @"shortcut-panel-count"]) {
         NSControl *control = (NSControl *)FindView(root, identifier);

@@ -120,11 +120,6 @@ static inline NSTextField *BawanLabel(NSString *text, CGFloat size, NSFontWeight
     return BawanLabelWithFont(text, weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size), color);
 }
 
-// Setup pages pair serif headings with system-font body text.
-static inline NSTextField *BawanSystemLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
-    return BawanLabelWithFont(text, [NSFont systemFontOfSize:size weight:weight], color);
-}
-
 inline NSImage *BawanLoadImage(NSString *name) {
 #ifdef BAWAN_TEST_RESOURCE_DIR
     NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:
@@ -136,7 +131,6 @@ inline NSImage *BawanLoadImage(NSString *name) {
 }
 
 NSImage *BawanMascotImage(void);
-NSImage *BawanMascotImageAtSize(CGFloat pointSize);
 
 inline NSImage *BawanPaperImage(void) {
     static NSImage *image;

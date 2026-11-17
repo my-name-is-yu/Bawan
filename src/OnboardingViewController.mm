@@ -1,6 +1,7 @@
 #import "OnboardingViewController.h"
 #import "BawanMascotView.h"
 #import "SetupUI.h"
+#import "BawanChrome.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +12,7 @@ NSString *ShortcutID(NSUInteger index, NSString *part) {
 }
 
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColorRole role) {
-    return BawanSystemLabel(text, size, weight, BawanColor(role));
+    return BawanLabel(text, size, weight, BawanColor(role));
 }
 
 NSTextField *Heading(NSString *text, CGFloat size) {
@@ -33,7 +34,6 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     NSButton *_modelSetup;
     NSView *_modelAction;
     NSButton *_modelLicense;
-    NSButton *_back;
     NSButton *_start;
     NSTextField *_error;
     NSMutableArray<NSTextField *> *_shortcutKeys;
@@ -56,31 +56,23 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     _shortcutStatuses = [NSMutableArray array];
     _shortcutSetup = [NSMutableArray array];
 
-    BawanSetupPaper *root = [[BawanSetupPaper alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
-    root.identifier = @"bawan-onboarding";
+    BawanSurfaceView *root = BawanMakeWindowSurface(@"bawan-onboarding", NSMakeRect(0, 0, 720, 500));
     self.view = root;
 
-    BawanSetupPaper *header = [[BawanSetupPaper alloc] init];
-    header.identifier = @"onboarding-header";
-    header.masthead = YES;
-    header.translatesAutoresizingMaskIntoConstraints = NO;
-    [root addSubview:header];
-    NSTextField *brand = Label(@"Bawan", 13, NSFontWeightSemibold, BawanHeaderText);
-    brand.identifier = @"onboarding-brand";
-    [header addSubview:brand];
-    _mascot = [[BawanMascotView alloc] init];
-    _mascot.identifier = @"onboarding-mascot";
-    _mascot.translatesAutoresizingMaskIntoConstraints = NO;
-    [_mascot setAccessibilityElement:NO];
-    [header addSubview:_mascot];
-    _back = BawanSetupLink(@"Back to translator", self, @selector(goBack:));
-    _back.identifier = @"onboarding-back";
-    _back.image = BawanSymbol(@"chevron.left", nil, 12);
-    _back.imagePosition = NSImageLeft;
-    _back.contentTintColor = BawanColor(BawanHeaderText);
-    _back.toolTip = @"Start translating (Esc)";
-    [_back setAccessibilityLabel:@"Back to translator"];
-    [header addSubview:_back];
+    BawanChromeHeader header = BawanAddHeader(root, @"onboarding-header", @"onboarding-mascot");
+    _mascot = header.mascot;
+    BawanChromeFooter footer = BawanAddFooter(root, @"onboarding-footer");
+    BawanActionButton *start = BawanAddFooterPrimary(footer.footer, @"onboarding-start", @"Start translating",
+        self, @selector(goBack:));
+    _start = start;
+    start.keyEquivalent = @"\r";
+    start.toolTip = @"Start translating (Return)";
+    _modelLicense = BawanAddFooterSecondary(footer.footer, @"onboarding-model-license", @"Model License",
+        self, @selector(openModelLicense:));
+    _modelLicense.image = BawanSymbol(@"doc.text", @"", 13);
+    _modelLicense.imagePosition = NSImageLeft;
+    _modelLicense.imageHugsTitle = YES;
+    BawanAddFooterHint(footer.footer, @"onboarding-later", @"You can add shortcuts later.", start, _modelLicense);
 
     NSScrollView *scroll = [[NSScrollView alloc] init];
     scroll.identifier = @"onboarding-scroll";
@@ -93,19 +85,8 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     document.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.documentView = document;
 
-    NSImageView *heroMascot = [[NSImageView alloc] init];
-    heroMascot.identifier = @"onboarding-hero-mascot";
-    heroMascot.image = BawanMascotImageAtSize(120);
-    heroMascot.imageScaling = NSImageScaleProportionallyUpOrDown;
-    heroMascot.translatesAutoresizingMaskIntoConstraints = NO;
-    [heroMascot setAccessibilityElement:NO];
-    [NSLayoutConstraint activateConstraints:@[
-        [heroMascot.widthAnchor constraintEqualToConstant:120],
-        [heroMascot.heightAnchor constraintEqualToConstant:120]
-    ]];
-    _title = Heading(@"Prepare your translator", 28);
+    _title = Heading(@"Prepare your translator", 24);
     _title.identifier = @"onboarding-title";
-
     _modelIcon = [[NSImageView alloc] init];
     _modelIcon.translatesAutoresizingMaskIntoConstraints = NO;
     [_modelIcon setAccessibilityElement:NO];
@@ -113,40 +94,29 @@ NSTextField *Heading(NSString *text, CGFloat size) {
         [_modelIcon.widthAnchor constraintEqualToConstant:20],
         [_modelIcon.heightAnchor constraintEqualToConstant:20]
     ]];
-    NSTextField *modelName = Label(@"Translation model", 14, NSFontWeightSemibold, BawanText);
+    NSTextField *modelName = Label(@"Translation model", 15, NSFontWeightSemibold, BawanText);
     modelName.identifier = @"onboarding-model-title";
-    _modelStatus = Label(@"Not set up", 14, NSFontWeightRegular, BawanSecondaryText);
+    _modelStatus = Label(@"Not set up", 15, NSFontWeightRegular, BawanSecondaryText);
     _modelStatus.identifier = @"onboarding-model-status";
-    _modelLicense = BawanSetupLink(@"Model license", self, @selector(openModelLicense:));
-    _modelLicense.identifier = @"onboarding-model-license";
-    _modelLicense.font = [NSFont systemFontOfSize:14];
-    BawanSetupActionButton *modelSetup = [[BawanSetupActionButton alloc] init];
-    _modelSetup = modelSetup;
-    modelSetup.primary = YES;
-    modelSetup.font = [NSFont systemFontOfSize:14 weight:NSFontWeightSemibold];
-    modelSetup.target = self;
-    modelSetup.action = @selector(setUpModel:);
-    modelSetup.translatesAutoresizingMaskIntoConstraints = NO;
-    _modelSetup.identifier = @"onboarding-model-setup";
-    NSStackView *model = BawanSetupStack(@[_modelIcon, modelName, _modelStatus, _modelLicense],
+    NSStackView *model = BawanSetupStack(@[_modelIcon, modelName, _modelStatus],
         NSUserInterfaceLayoutOrientationHorizontal, 8);
-    NSStackView *intro = BawanSetupStack(@[_title, model], NSUserInterfaceLayoutOrientationVertical, 10);
-    NSStackView *hero = BawanSetupStack(@[heroMascot, intro], NSUserInterfaceLayoutOrientationHorizontal, 20);
-    [intro setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
 
-    _modelMessage = Label(@"", 13,
-        NSFontWeightRegular, BawanSecondaryText);
+    _modelMessage = Label(@"", 14, NSFontWeightRegular, BawanSecondaryText);
     _modelMessage.identifier = @"onboarding-model-message";
     _modelAction = [[NSView alloc] init];
     _modelAction.identifier = @"onboarding-model-action";
     _modelAction.translatesAutoresizingMaskIntoConstraints = NO;
-    [_modelAction addSubview:modelSetup];
+    BawanActionButton *modelSetup = BawanAddActionButton(_modelAction, @"onboarding-model-setup",
+        @"Review license & download", self, @selector(setUpModel:), YES);
+    modelSetup.wantsLayer = YES;
+    modelSetup.pressFeedback = YES;
+    _modelSetup = modelSetup;
     [NSLayoutConstraint activateConstraints:@[
-        [_modelAction.heightAnchor constraintEqualToConstant:40],
+        [_modelAction.heightAnchor constraintEqualToConstant:BawanFooterButtonHeight],
         [modelSetup.leadingAnchor constraintEqualToAnchor:_modelAction.leadingAnchor],
         [modelSetup.topAnchor constraintEqualToAnchor:_modelAction.topAnchor],
-        [modelSetup.widthAnchor constraintEqualToConstant:252],
-        [modelSetup.heightAnchor constraintEqualToConstant:40]
+        [modelSetup.widthAnchor constraintEqualToConstant:240],
+        [modelSetup.heightAnchor constraintEqualToConstant:BawanFooterButtonHeight]
     ]];
     _progress = [[NSProgressIndicator alloc] init];
     _progress.identifier = @"onboarding-model-progress";
@@ -158,76 +128,35 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     [_progress setAccessibilityLabel:@"Model setup progress"];
     [_progress.heightAnchor constraintEqualToConstant:6].active = YES;
 
-    NSTextField *optional = Heading(@"Optional shortcuts", 22);
+    NSTextField *optional = Heading(@"Optional shortcuts", 20);
     optional.identifier = @"onboarding-shortcuts-title";
     NSView *firstRow = [self shortcutRow:0];
     NSView *secondRow = [self shortcutRow:1];
-    NSView *topRule = BawanSetupRule();
-    NSView *middleRule = BawanSetupRule();
-    NSView *bottomRule = BawanSetupRule();
-
     _error = Label(@"", 13, NSFontWeightRegular, BawanError);
     _error.identifier = @"onboarding-error";
     _error.hidden = YES;
-    NSTextField *later = Label(@"You can add shortcuts later.", 13, NSFontWeightRegular, BawanSecondaryText);
-    later.identifier = @"onboarding-later";
-    BawanSetupActionButton *start = [[BawanSetupActionButton alloc] init];
-    _start = start;
-    start.primary = YES;
-    start.title = @"Start translating";
-    start.font = BawanLabelFont(18);
-    start.target = self;
-    start.action = @selector(goBack:);
-    start.identifier = @"onboarding-start";
-    start.translatesAutoresizingMaskIntoConstraints = NO;
-    start.keyEquivalent = @"\r";
-    NSView *footer = [[NSView alloc] init];
-    footer.translatesAutoresizingMaskIntoConstraints = NO;
-    [footer addSubview:later];
-    [footer addSubview:start];
-    [NSLayoutConstraint activateConstraints:@[
-        [footer.heightAnchor constraintEqualToConstant:44],
-        [later.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor],
-        [later.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [later.trailingAnchor constraintLessThanOrEqualToAnchor:start.leadingAnchor constant:-16],
-        [start.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor],
-        [start.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
-        [start.widthAnchor constraintEqualToConstant:264],
-        [start.heightAnchor constraintEqualToConstant:44]
-    ]];
-    NSStackView *content = BawanSetupStack(@[hero, _modelMessage, _modelAction, _progress, topRule, optional,
-        firstRow, middleRule, secondRow, bottomRule, _error, footer],
-        NSUserInterfaceLayoutOrientationVertical, 10);
+
+    NSArray<NSView *> *sections = @[_title, model, _modelMessage, _modelAction, _progress, BawanSetupRule(),
+        optional, firstRow, BawanSetupRule(), secondRow, _error];
+    NSStackView *content = BawanSetupStack(sections, NSUserInterfaceLayoutOrientationVertical, 12);
+    [content setCustomSpacing:20 afterView:_progress];
+    [content setCustomSpacing:20 afterView:_modelAction];
     [document addSubview:content];
-    for (NSView *view in @[hero, _modelMessage, _modelAction, _progress, topRule, optional, firstRow,
-                           middleRule, secondRow, bottomRule, _error, footer]) {
+    for (NSView *view in sections) {
         [view.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
     }
     [NSLayoutConstraint activateConstraints:@[
-        [header.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
-        [header.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [header.topAnchor constraintEqualToAnchor:root.topAnchor],
-        [header.heightAnchor constraintEqualToConstant:52],
-        [brand.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:88],
-        [brand.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [_mascot.centerXAnchor constraintEqualToAnchor:header.centerXAnchor],
-        [_mascot.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [_mascot.widthAnchor constraintEqualToConstant:40],
-        [_mascot.heightAnchor constraintEqualToConstant:40],
-        [_back.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-20],
-        [_back.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [_back.heightAnchor constraintEqualToConstant:28],
         [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [scroll.topAnchor constraintEqualToAnchor:header.bottomAnchor],
-        [scroll.bottomAnchor constraintEqualToAnchor:root.bottomAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:header.header.bottomAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:footer.divider.topAnchor],
         [document.leadingAnchor constraintEqualToAnchor:scroll.contentView.leadingAnchor],
         [document.topAnchor constraintEqualToAnchor:scroll.contentView.topAnchor],
         [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
-        [content.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
-        [content.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
-        [content.topAnchor constraintEqualToAnchor:document.topAnchor constant:20],
-        [content.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-20]
+        [content.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:BawanChromeInset],
+        [content.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-BawanChromeInset],
+        [content.topAnchor constraintEqualToAnchor:document.topAnchor constant:BawanChromeInset],
+        [content.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-BawanChromeInset]
     ]];
     [self setModelPhase:BawanModelSetupNeedsDownload message:_modelMessage.stringValue progress:0];
     [self refresh];
@@ -239,9 +168,9 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     row.identifier = ShortcutID(index, @"row");
     row.translatesAutoresizingMaskIntoConstraints = NO;
     NSTextField *name = Label(index == 0 ? @"Translate selected text" : @"Open Bawan from anywhere",
-        16, NSFontWeightSemibold, BawanText);
+        15, NSFontWeightSemibold, BawanText);
     name.identifier = ShortcutID(index, @"title");
-    NSTextField *status = Label(@"", 14, NSFontWeightRegular, BawanSecondaryText);
+    NSTextField *status = Label(@"", 13, NSFontWeightRegular, BawanSecondaryText);
     status.identifier = ShortcutID(index, @"status");
     NSStackView *description = BawanSetupStack(@[name, status], NSUserInterfaceLayoutOrientationVertical, 3);
     [row addSubview:description];
@@ -250,28 +179,25 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     key.identifier = ShortcutID(index, @"key");
     NSTextField *presses = Label(@"twice", 13, NSFontWeightRegular, BawanSecondaryText);
     presses.identifier = ShortcutID(index, @"presses");
-    BawanSetupActionButton *setup = [[BawanSetupActionButton alloc] initWithFrame:NSZeroRect];
-    setup.title = @"Set up…";
-    setup.target = self;
-    setup.action = @selector(setUpShortcut:);
-    setup.translatesAutoresizingMaskIntoConstraints = NO;
-    setup.identifier = ShortcutID(index, @"setup");
+    BawanActionButton *setup = BawanAddActionButton(nil, ShortcutID(index, @"setup"), @"Set up…",
+        self, @selector(setUpShortcut:), NO);
+    setup.font = BawanLabelFont(13);
     setup.tag = index;
     NSStackView *controls = BawanSetupStack(@[key, presses, setup], NSUserInterfaceLayoutOrientationHorizontal, 10);
     [row addSubview:controls];
     [NSLayoutConstraint activateConstraints:@[
-        [row.heightAnchor constraintEqualToConstant:64],
-        [description.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:16],
+        [row.heightAnchor constraintEqualToConstant:56],
+        [description.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
         [description.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        [description.topAnchor constraintGreaterThanOrEqualToAnchor:row.topAnchor constant:5],
-        [description.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-5],
+        [description.topAnchor constraintGreaterThanOrEqualToAnchor:row.topAnchor constant:4],
+        [description.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-4],
         [description.trailingAnchor constraintLessThanOrEqualToAnchor:controls.leadingAnchor constant:-12],
-        [controls.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-12],
+        [controls.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
         [controls.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
         [key.widthAnchor constraintEqualToConstant:64],
-        [key.heightAnchor constraintEqualToConstant:28],
-        [setup.widthAnchor constraintEqualToConstant:94],
-        [setup.heightAnchor constraintEqualToConstant:30]
+        [key.heightAnchor constraintEqualToConstant:BawanInputHeight],
+        [setup.widthAnchor constraintEqualToConstant:96],
+        [setup.heightAnchor constraintEqualToConstant:32]
     ]];
     [_shortcutKeys addObject:key];
     [_shortcutPresses addObject:presses];
@@ -305,7 +231,6 @@ NSTextField *Heading(NSString *text, CGFloat size) {
     if (preparing && _active && _progress.indeterminate) [_progress startAnimation:nil];
     else [_progress stopAnimation:nil];
     _start.enabled = ready;
-    _back.hidden = !ready;
     [self.view layoutSubtreeIfNeeded];
     if (changed && failed && message.length && self.view.window.visible) {
         NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
