@@ -198,12 +198,23 @@ static NSString *StringFromUTF8(const std::string &text) {
         __weak AppDelegate *weakSelf = self;
         _onboardingViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
         _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
     }
     [self pushModelStateToPage:_onboardingViewController];
     __weak AppDelegate *weakSelf = self;
     [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
+// The shortcut step's button: leave for the translator even while the model is
+// still downloading. The translator shows preparation and translates once ready.
+- (void)finishOnboardingFromShortcuts {
+    if (_modelPhase != BawanModelSetupPreparing && _modelPhase != BawanModelSetupReady) return;
+    [self markOnboardingComplete];
+    [_translationPanel showForManualInput];
+    [self warmUpEngine];
+}
+
+// Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
 - (void)finishOnboarding {
     if (_modelPhase != BawanModelSetupReady) {
         [_translationPanel close];

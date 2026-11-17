@@ -80,12 +80,12 @@ static void CheckBounds(NSWindow *window) {
             @(root.hasAmbiguousLayout), @(document.hasAmbiguousLayout),
             NSStringFromRect(document.frame), NSStringFromRect(scroll.contentView.bounds)]);
     for (NSString *identifier in @[@"onboarding-header", @"onboarding-mascot", @"onboarding-footer",
-            @"onboarding-later", @"onboarding-title", @"onboarding-model-status",
-            @"onboarding-model-license", @"onboarding-shortcut-selection-title",
-            @"onboarding-shortcut-selection-key", @"onboarding-shortcut-selection-status",
-            @"onboarding-shortcut-selection-setup", @"onboarding-shortcut-panel-title",
-            @"onboarding-shortcut-panel-key", @"onboarding-shortcut-panel-status",
-            @"onboarding-shortcut-panel-setup", @"onboarding-start"]) {
+            @"onboarding-footer-note", @"onboarding-step-model", @"onboarding-step-shortcut",
+            @"onboarding-title", @"onboarding-model-status", @"onboarding-model-message",
+            @"onboarding-model-setup", @"onboarding-model-license", @"onboarding-shortcut-title",
+            @"onboarding-shortcut-selection-title", @"onboarding-shortcut-selection-key",
+            @"onboarding-shortcut-selection-status", @"onboarding-shortcut-selection-setup",
+            @"onboarding-shortcut-more", @"onboarding-start"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing onboarding control: " stringByAppendingString:identifier]);
         if (!IsShown(view)) continue;
@@ -98,10 +98,14 @@ static void CheckBounds(NSWindow *window) {
     }
     Require(document.bounds.size.width <= scroll.contentView.bounds.size.width + 1,
         @"Onboarding must remain readable without horizontal scrolling at minimum size");
-    NSView *start = FindView(root, @"onboarding-start");
     NSView *footer = FindView(root, @"onboarding-footer");
-    Require([start isDescendantOf:footer] && ![start isDescendantOf:document],
-        @"Start must stay in the fixed footer, visible at every window size without scrolling");
+    for (NSString *identifier in @[@"onboarding-start", @"onboarding-model-setup", @"onboarding-model-license"]) {
+        NSView *button = FindView(root, identifier);
+        Require([button isDescendantOf:footer] && ![button isDescendantOf:document],
+            [identifier stringByAppendingString:@" must stay in the fixed footer, visible without scrolling"]);
+    }
+    Require(FindView(root, @"onboarding-shortcut-panel-row") == nil,
+        @"Onboarding offers only the selection shortcut; the window shortcut lives in Settings");
 }
 
 static void Capture(NSWindow *window, NSString *name) {
@@ -137,126 +141,122 @@ static void RunSmoke(void) {
     window.contentView = onboarding.view;
     [NSApp activateIgnoringOtherApps:YES];
     [window makeKeyAndOrderFront:nil];
-    __block NSUInteger setups = 0, licenses = 0, completions = 0;
+    __block NSUInteger setups = 0, licenses = 0, finishes = 0, backs = 0;
     onboarding.onModelSetup = ^{ ++setups; };
     onboarding.onModelLicense = ^{ ++licenses; };
-    onboarding.onBack = ^{ ++completions; };
+    onboarding.onFinish = ^{ ++finishes; };
+    onboarding.onBack = ^{ ++backs; };
     @try {
         NSView *root = onboarding.view;
         Require([root.identifier isEqualToString:@"bawan-onboarding"], @"The first-run page needs its own view identity");
+        NSView *modelStep = FindView(root, @"onboarding-step-model");
+        NSView *shortcutStep = FindView(root, @"onboarding-step-shortcut");
         NSButton *start = (NSButton *)FindView(root, @"onboarding-start");
-        NSButton *modelSetup = (NSButton *)FindView(root, @"onboarding-model-setup");
+        NSButton *download = (NSButton *)FindView(root, @"onboarding-model-setup");
         NSButton *license = (NSButton *)FindView(root, @"onboarding-model-license");
-        NSProgressIndicator *progress = (NSProgressIndicator *)FindView(root, @"onboarding-model-progress");
+        NSTextField *note = (NSTextField *)FindView(root, @"onboarding-footer-note");
         NSTextField *modelMessage = (NSTextField *)FindView(root, @"onboarding-model-message");
         NSButton *selectionSetup = (NSButton *)FindView(root, @"onboarding-shortcut-selection-setup");
-        NSButton *panelSetup = (NSButton *)FindView(root, @"onboarding-shortcut-panel-setup");
         NSTextField *selectionStatus = (NSTextField *)FindView(root, @"onboarding-shortcut-selection-status");
-        NSTextField *panelStatus = (NSTextField *)FindView(root, @"onboarding-shortcut-panel-status");
-        Require(start && modelSetup && license && progress && modelMessage && selectionSetup &&
-            panelSetup && selectionStatus && panelStatus, @"The first-run page must expose each required setup control");
+        NSTextField *shortcutError = (NSTextField *)FindView(root, @"onboarding-error");
+        Require(modelStep && shortcutStep && start && download && license && note && modelMessage &&
+            selectionSetup && selectionStatus && shortcutError, @"The first-run page must expose each setup control");
         [onboarding refresh];
         [onboarding setActive:YES];
         [onboarding setActive:NO];
         Require(monitor.permissionRequests == 0,
             @"Creating, refreshing and activating onboarding must not request OS permissions");
 
-        [onboarding setModelPhase:BawanModelSetupNeedsDownload message:@"Review the model license before setup." progress:0];
-        Require(!start.enabled && IsShown(modelSetup) && modelSetup.enabled,
-            @"An unprepared model must offer setup and keep translation disabled");
-        Require([modelMessage.stringValue containsString:@"license"] &&
-            [modelMessage.stringValue containsString:@"573 MB"] &&
-            [modelSetup isKindOfClass:BawanActionButton.class] && ((BawanActionButton *)modelSetup).primary,
-            @"First setup must explain the license and model download beside a clear primary setup action");
+        // Step 1: the model. Download and Model License are the only actions.
+        [onboarding setModelPhase:BawanModelSetupNeedsDownload message:@"" progress:0];
+        Settle(window);
+        Require(IsShown(modelStep) && !IsShown(shortcutStep) && IsShown(download) && IsShown(license) &&
+            !IsShown(start) && [download.title hasPrefix:@"Download Model"] &&
+            [download isKindOfClass:BawanActionButton.class] && ((BawanActionButton *)download).primary &&
+            [modelMessage.stringValue containsString:@"license"] && [modelMessage.stringValue containsString:@"573 MB"],
+            @"The model step must explain the download and offer only Download and Model License");
+        CheckBounds(window);
         Capture(window, @"needs-download");
-        [start performClick:nil];
-        [modelSetup performClick:nil];
-        Require(completions == 0 && setups == 1,
-            @"Model setup must reach the owner without completing an unusable first-run flow");
+        [download performClick:nil];
         [license performClick:nil];
-        Require(licenses == 1, @"The model license action must remain available during setup");
+        Require(setups == 1 && licenses == 1 && finishes == 0,
+            @"Download and Model License must reach their owner actions without finishing onboarding");
+        [onboarding performPrimaryAction];
+        Require(setups == 2, @"⌘Return on the model step must start the download");
 
+        // Step 2: preparation moves on to the shortcut while the model downloads.
         [onboarding setModelPhase:BawanModelSetupPreparing message:@"Downloading the translation model…" progress:0.37];
         Settle(window);
-        Require(!start.enabled && (!IsShown(modelSetup) || !modelSetup.enabled) &&
-            IsShown(progress) && !progress.indeterminate && progress.maxValue > 0 &&
-            std::abs(progress.doubleValue / progress.maxValue - 0.37) < 0.01 &&
-            [modelMessage.stringValue containsString:@"Downloading"],
-            @"Model preparation must show its real progress and remain non-completable");
+        Require(!IsShown(modelStep) && IsShown(shortcutStep) && IsShown(start) && start.enabled &&
+            !IsShown(download) && !IsShown(license) &&
+            [note.stringValue containsString:@"Downloading"] && [note.stringValue containsString:@"37%"],
+            @"Downloading must show the shortcut step, its progress in the footer, and an enabled continue action");
+        Require([start.title hasPrefix:@"Set Up Later"] && [selectionStatus.stringValue containsString:@"Input Monitoring"],
+            @"While the shortcut needs permission, the single footer action must read Set Up Later");
+        CheckBounds(window);
         Capture(window, @"preparing");
+        [start performClick:nil];
+        Require(finishes == 1, @"Set Up Later must leave onboarding even while the model is still downloading");
 
-        NSString *failure = @"The model could not be verified. Check available disk space and try again.";
-        [onboarding setModelPhase:BawanModelSetupFailed message:failure progress:0];
-        Require(!start.enabled && IsShown(modelSetup) && modelSetup.enabled &&
-            [modelSetup.title localizedCaseInsensitiveContainsString:@"Retry"] &&
-            [modelMessage.stringValue isEqualToString:failure],
-            @"A failed setup must retain its error and offer an explicit retry");
-        [modelSetup performClick:nil];
-        Require(setups == 2 && completions == 0, @"Retry must reach setup without completing onboarding");
-        Capture(window, @"failed");
-
-        [onboarding setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
-        Require(start.enabled && !IsShown(modelSetup) &&
-            [selectionStatus.stringValue containsString:@"Input Monitoring"] &&
-            [panelStatus.stringValue containsString:@"Accessibility"],
-            @"A ready model must allow translation while both optional shortcut permissions are missing");
         [selectionSetup performClick:nil];
         Require(monitor.permissionRequests == 1 &&
             monitor.lastPermissionAction == bawan::ShortcutAction::TranslateSelection,
-            @"Selection setup must request only the selected-text shortcut's permission");
-        [panelSetup performClick:nil];
-        Require(monitor.permissionRequests == 2 && monitor.lastPermissionAction == bawan::ShortcutAction::OpenPanel,
-            @"Window shortcut setup must reach its own permission action");
+            @"Set Up must request only the selection shortcut's permission");
 
-        auto binding = [preferences bindingForAction:bawan::ShortcutAction::OpenPanel];
-        binding.enabled = false;
+        // A conflict while enabling stays local and never blocks continuing.
         NSString *error = nil;
-        Require([preferences setBinding:binding forAction:bawan::ShortcutAction::OpenPanel error:&error],
-            @"The optional window shortcut must be independently disableable");
+        auto selection = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+        auto panel = selection;
+        selection.enabled = false;
+        Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error] &&
+            [preferences setBinding:panel forAction:bawan::ShortcutAction::OpenPanel error:&error],
+            @"The conflict fixture must give the window shortcut the selection key");
         [onboarding refresh];
-        Require([panelStatus.stringValue isEqualToString:@"Off"] &&
-            ![preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled && monitor.permissionRequests == 2,
-            @"Refreshing an intentionally disabled shortcut must preserve Off without asking for permission");
-        [panelSetup performClick:nil];
-        Require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled &&
-            monitor.permissionRequests == 3 && monitor.lastPermissionAction == bawan::ShortcutAction::OpenPanel,
-            @"Explicit setup may enable the chosen optional shortcut and request its own permission");
-
-        auto duplicate = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-        duplicate.enabled = false;
-        Require([preferences setBinding:duplicate forAction:bawan::ShortcutAction::OpenPanel error:&error],
-            @"A disabled duplicate fixture must be accepted until it is enabled");
-        [onboarding refresh];
-        [panelSetup performClick:nil];
-        NSTextField *shortcutError = (NSTextField *)FindView(root, @"onboarding-error");
-        Require(monitor.permissionRequests == 3 &&
-            ![preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled &&
-            IsShown(shortcutError) && shortcutError.stringValue.length && start.enabled,
-            @"A shortcut conflict must stay local, preserve the old preference and never gate manual translation");
+        Require([selectionStatus.stringValue isEqualToString:@"Off"],
+            @"A disabled selection shortcut must read Off without asking for permission");
+        [selectionSetup performClick:nil];
+        Require(monitor.permissionRequests == 1 && IsShown(shortcutError) && shortcutError.stringValue.length &&
+            ![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled && start.enabled,
+            @"A shortcut conflict must stay local, keep the old preference and never block continuing");
         Require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:&error],
-            @"The default window shortcut must be restorable after an optional conflict");
+            @"The window shortcut must be restorable after the conflict");
         [onboarding refresh];
-        [panelSetup performClick:nil];
-        Require(monitor.permissionRequests == 4 && !IsShown(shortcutError),
-            @"A valid setup action after a shortcut conflict must recover and clear the obsolete error");
+        [selectionSetup performClick:nil];
+        Require(monitor.permissionRequests == 2 && !IsShown(shortcutError) &&
+            [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled,
+            @"Set Up after resolving the conflict must enable the shortcut and clear the error");
 
+        // A failed download returns to the model step with Retry.
+        NSString *failure = @"The model could not be verified. Check available disk space and try again.";
+        [onboarding setModelPhase:BawanModelSetupFailed message:failure progress:0];
+        Settle(window);
+        Require(IsShown(modelStep) && !IsShown(shortcutStep) && IsShown(download) &&
+            [download.title localizedCaseInsensitiveContainsString:@"Retry"] &&
+            [modelMessage.stringValue isEqualToString:failure],
+            @"A failed download must return to the model step with its error and Retry");
+        Capture(window, @"failed");
+        [download performClick:nil];
+        Require(setups == 3 && finishes == 1, @"Retry must reach setup without finishing onboarding");
+
+        // Once the shortcut works, the same footer action simply starts translating.
+        [onboarding setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
         monitor.permissionsGranted = YES;
         [onboarding setActive:YES];
-        Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
-            [panelStatus.stringValue isEqualToString:@"Shortcut ready"] && start.enabled,
-            @"Returning after permission changes must replace stale setup warnings with actual readiness");
+        Require(IsShown(shortcutStep) && [selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
+            !IsShown(selectionSetup) && [start.title hasPrefix:@"Start Translating"] &&
+            [note.stringValue containsString:@"ready"],
+            @"A working shortcut and ready model must turn the footer action into Start Translating");
+        [onboarding performPrimaryAction];
+        Require(finishes == 2 && backs == 0, @"⌘Return on the shortcut step must finish onboarding");
         [onboarding setActive:NO];
         monitor.permissionsGranted = NO;
         monitor.selectionAvailability = ShortcutAvailabilityNeedsInputMonitoring;
-        monitor.panelAvailability = ShortcutAvailabilityNeedsAccessibility;
         [onboarding refresh];
         [onboarding focusInitialControl];
         NSResponder *focused = window.firstResponder;
         NSScrollView *scroll = (NSScrollView *)FindView(root, @"onboarding-scroll");
         Require(focused == root && scroll.contentView.bounds.origin.y == 0,
             @"Onboarding must open at the top with its ring-less surface focused");
-        [start performClick:nil];
-        Require(completions == 1, @"Starting translation must invoke the owner's completion action once");
 
         for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
                                 [NSValue valueWithSize:NSMakeSize(640, 420)]]) {
@@ -268,15 +268,8 @@ static void RunSmoke(void) {
             window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
             CheckBounds(window);
             Capture(window, [prefix stringByAppendingString:@"-dark"]);
-            if (size.sizeValue.width < 700) {
-                [start scrollRectToVisible:start.bounds];
-                Settle(window);
-                Require(NSContainsRect(NSInsetRect(start.visibleRect, -0.5, -0.5), start.bounds),
-                    @"The primary action must remain fully reachable by scrolling at minimum size");
-                Capture(window, @"minimum-dark-scrolled");
-            }
         }
-        std::cout << "PASS: onboarding phases, optional permissions, callbacks, state refresh and responsive captures\n";
+        std::cout << "PASS: onboarding model and shortcut steps, footer actions, conflicts, retry and responsive captures\n";
     } @finally {
         [onboarding setActive:NO];
         [window orderOut:nil];

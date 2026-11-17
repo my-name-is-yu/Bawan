@@ -1,3 +1,7 @@
+# Two-step onboarding — 2026-11-17
+
+Onboarding is now two steps on one page: the model step (Download Model… and Model License in the footer) and the shortcut step (Translate Selection only, with one footer action that reads Set Up Later until the shortcut works and Start Translating afterwards). Accepting the license moves on at once while the model downloads, and the footer shows the progress. A failed download returns to the model step with Retry. The Open Translator shortcut is offered only in Settings. ⌘↵ triggers each step's footer action.
+
 # Onboarding layout — 2026-11-17
 
 Onboarding restores the earlier body layout: a hero with the 120pt mascot beside the title and a one-line model status, then the explanation and setup button, then indented shortcut rows with full-width rules above and below. Every element in it (header, footer, type scale, controls, copy and status presentation) is the shared version described below.

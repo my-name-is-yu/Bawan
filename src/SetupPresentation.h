@@ -25,7 +25,7 @@ inline BawanModelPresentation BawanPresentModel(BawanModelSetupPhase phase) {
     switch (phase) {
         case BawanModelSetupNeedsDownload:
             return {@"Not set up", BawanSecondaryText, @"arrow.down.circle", BawanSecondaryText,
-                @"Review License & Download"};
+                @"Download Model…"};
         case BawanModelSetupPreparing:
             return {@"Preparing…", BawanSecondaryText, @"arrow.down.circle", BawanSecondaryText, @""};
         case BawanModelSetupReady:

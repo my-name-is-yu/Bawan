@@ -411,8 +411,10 @@ static void CheckFirstRunIntegration(void) {
         NSInteger pasteboardCount = NSPasteboard.generalPasteboard.changeCount;
         [window performKeyEquivalent:SetupKey(window, @"\r", NSEventModifierFlagCommand, 36)];
         [window performKeyEquivalent:SetupKey(window, @"c", NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
-        Require(translations == 0 && NSPasteboard.generalPasteboard.changeCount == pasteboardCount,
-            @"Translator Translate and Copy shortcuts must stay inactive while onboarding is visible");
+        Require(translations == 0 && NSPasteboard.generalPasteboard.changeCount == pasteboardCount &&
+            delegate.licenseViews == 1 && store.preparations == 0,
+            @"While onboarding is visible, ⌘Return must mean Download (asking for the license) and never Translate or Copy");
+        delegate.licenseViews = 0;
         [window cancelOperation:nil];
         Require(!window.visible && ![defaults boolForKey:@"firstLaunchShown"],
             @"Escape before model readiness must close guidance without recording completion");
@@ -420,7 +422,8 @@ static void CheckFirstRunIntegration(void) {
         [delegate startInitialSetup];
         NSButton *modelSetup = (NSButton *)FindView(window.contentView, @"onboarding-model-setup");
         NSButton *start = (NSButton *)FindView(window.contentView, @"onboarding-start");
-        Require(modelSetup && start && !start.enabled, @"The pending model must expose setup and disable Start");
+        Require(modelSetup && start && !modelSetup.hiddenOrHasHiddenAncestor && start.hiddenOrHasHiddenAncestor,
+            @"The model step must offer Download and keep the shortcut step's continue action hidden");
         delegate.allowLicense = NO;
         [modelSetup performClick:nil];
         Require(delegate.licenseViews == 1 && store.preparations == 0 &&
@@ -430,9 +433,10 @@ static void CheckFirstRunIntegration(void) {
         delegate.allowLicense = YES;
         [modelSetup performClick:nil];
         Require(delegate.licenseViews == 2 && store.preparations == 1 && store.revalidations == 0 &&
-            [defaults boolForKey:@"modelLicenseNoticeShown20261109"] && !start.enabled &&
+            [defaults boolForKey:@"modelLicenseNoticeShown20261109"] &&
+            !start.hiddenOrHasHiddenAncestor && start.enabled && modelSetup.hiddenOrHasHiddenAncestor &&
             ![defaults boolForKey:@"firstLaunchShown"],
-            @"Accepting the model notice must begin preparation while keeping first use incomplete");
+            @"Accepting the model notice must begin preparation and move on to the shortcut step, first use still incomplete");
         [window cancelOperation:nil];
         Require(![defaults boolForKey:@"firstLaunchShown"], @"Closing during preparation must not finish onboarding");
         [delegate startInitialSetup];
@@ -442,13 +446,13 @@ static void CheckFirstRunIntegration(void) {
         [delegate setValue:@(BawanModelSetupFailed) forKey:@"modelPhase"];
         [delegate setValue:@"The model could not be verified. Try again." forKey:@"modelStatus"];
         [delegate updateStatus];
-        Require(!start.enabled && modelSetup.enabled && !modelSetup.hiddenOrHasHiddenAncestor &&
+        Require(start.hiddenOrHasHiddenAncestor && modelSetup.enabled && !modelSetup.hiddenOrHasHiddenAncestor &&
             [modelSetup.title localizedCaseInsensitiveContainsString:@"retry"],
-            @"A preparation failure must disable completion and expose Retry in the same page");
+            @"A preparation failure must return to the model step with Retry");
         [modelSetup performClick:nil];
         Require(store.preparations == 3 && store.revalidations == 2 && delegate.licenseViews == 2 &&
-            !Flag(delegate, @"modelFailed") && !start.enabled,
-            @"Retry must prepare again and leave the introduction pending without asking for the accepted license");
+            !Flag(delegate, @"modelFailed") && !start.hiddenOrHasHiddenAncestor,
+            @"Retry must prepare again and return to the shortcut step without asking for the accepted license");
         SetAvailableModel(delegate);
         Require(start.enabled && monitor.permissionRequests == 0 &&
             ![defaults boolForKey:@"firstLaunchShown"],
@@ -481,9 +485,20 @@ static void CheckFirstRunIntegration(void) {
             [window.contentView.identifier isEqualToString:@"bawan-panel"] && monitor.permissionRequests == 0,
             @"Escape from ready guidance must finish first use without optional shortcut permissions");
         [defaults setBool:NO forKey:@"firstLaunchShown"];
+        [delegate setValue:@(BawanModelSetupPreparing) forKey:@"modelPhase"];
         [delegate showOnboarding];
+        NSButton *later = (NSButton *)FindView(window.contentView, @"onboarding-start");
+        Require([later.title hasPrefix:@"Set Up Later"], @"An unset shortcut must offer Set Up Later");
+        [later performClick:nil];
+        Require([defaults boolForKey:@"firstLaunchShown"] &&
+            [window.contentView.identifier isEqualToString:@"bawan-panel"],
+            @"Set Up Later must finish onboarding and open the translator while the model still downloads");
+        SetAvailableModel(delegate);
+        [defaults setBool:NO forKey:@"firstLaunchShown"];
+        [delegate showOnboarding];
+        NSUInteger warmUpsBefore = delegate.warmUps;
         [delegate openTranslation:nil];
-        Require([defaults boolForKey:@"firstLaunchShown"] && delegate.warmUps == 1 &&
+        Require([defaults boolForKey:@"firstLaunchShown"] && delegate.warmUps == warmUpsBefore + 1 &&
             [window.contentView.identifier isEqualToString:@"bawan-panel"],
             @"Open Translator must leave ready guidance and prepare the actual translation surface");
 
