@@ -525,11 +525,10 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleSelectionText:(NSString *)text {
     [_translationPanel showForSelection:text];
+    [self translateText:text direction:bawan::Direction::Automatic];
     if (_model.setupNotStarted()) {
         [self showOnboarding];
-        return;
     }
-    [self translateText:text direction:bawan::Direction::Automatic];
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
