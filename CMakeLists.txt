@@ -207,6 +207,14 @@ if(BAWAN_BUILD_TESTS)
         add_test(NAME mascot_hover COMMAND mascot_smoke)
         set_tests_properties(mascot_hover PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 15)
+        add_executable(progress_smoke tests/progress_smoke.mm src/SetupUI.mm src/BawanChrome.mm
+            src/BawanAppearance.mm src/BawanMascotView.mm)
+        target_include_directories(progress_smoke PRIVATE src)
+        target_link_libraries(progress_smoke PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework ImageIO")
+        target_compile_options(progress_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME progress_motion COMMAND progress_smoke)
+        set_tests_properties(progress_motion PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 20)
     endif()
 endif()
 if(BAWAN_BUILD_SMOKE)
