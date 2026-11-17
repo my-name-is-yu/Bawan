@@ -366,9 +366,11 @@ struct ShortcutRow {
 }
 
 - (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt {
-    [self refresh];
-    return attempt && attempt == _trialAttempt && _active && _selectionReady &&
-        ![self showingModelStep] && _trialPhase == TrialPhase::Translating;
+    const auto binding = [_preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+    return attempt && attempt == _trialAttempt && _active &&
+        ![self showingModelStep] && _trialPhase == TrialPhase::Translating &&
+        binding == _trialBinding && binding.enabled &&
+        [_monitor availabilityForAction:bawan::ShortcutAction::TranslateSelection] == ShortcutAvailabilityAvailable;
 }
 
 - (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(NSString *)output direction:(bawan::Direction)direction {

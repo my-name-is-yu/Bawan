@@ -145,12 +145,16 @@ identity, empty/truncated/error/cancelled results, no premature onboarding compl
 queued preparation, duplicate firing, binding/permission/page changes, and exact
 source/result/direction handoff to the translator. It also runs in the default
 `app_delegate_smoke`. Controlled callbacks do not establish model quality.
-The practice fixtures set their real host panel's `becomesKeyOnlyIfNeeded` to
-`NO` because programmatic selection does not provide a mouse hit to request key
-status. They require actual key ownership before a trial callback and report
-activation, panel and responder state if that fixture prerequisite fails. The
-AppDelegate executable explicitly finishes AppKit launch before constructing
-windows; production panel policy and trial focus guards are unchanged.
+The practice fixtures dispatch queued `NSApplication` events for up to one
+second before requiring actual key ownership. They report activation, panel and
+responder state if that prerequisite fails. The AppDelegate executable explicitly
+finishes AppKit launch before constructing windows; production panel policy and
+trial focus guards are unchanged.
+
+Current-trial validity queries must not refresh presentation. The onboarding smoke
+checks zero refreshes from those queries, one explicit refresh followed by a query
+without another refresh, and stale completion rejection after live binding,
+permission or enabled-state changes before any presentation refresh.
 
 Verification on 2026-11-17: Linux x86_64, GCC 14.2, Release with
 `BAWAN_WARNINGS_AS_ERRORS=ON`, using

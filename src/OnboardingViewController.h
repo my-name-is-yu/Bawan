@@ -23,6 +23,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Only the real selection callback may begin a trial; selection or setup alone cannot finish it.
 - (BOOL)isSelectionTrialText:(NSString *)text;
 - (NSUInteger)beginSelectionTrial;
+// Reads live binding/availability without refreshing the page.
 - (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt;
 - (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(nullable NSString *)output
                   direction:(bawan::Direction)direction;
