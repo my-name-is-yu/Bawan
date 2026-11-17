@@ -75,8 +75,9 @@ chmod +x .git/hooks/pre-push
 To isolate the first-run selected-text regression, run
 `./build-check/app_delegate_smoke --first-run-selection`. It exercises the real
 delegate and translator controls with isolated preferences, simulated model
-readiness and controlled engine completion. The default `app_delegate_smoke`
-also includes this scenario.
+readiness and controlled engine completion. It checks both readiness before
+leaving onboarding and leaving onboarding before readiness. The default
+`app_delegate_smoke` also includes this scenario.
 
 Run the model-backed command separately there as well. The native CTests cover
 preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four

@@ -448,8 +448,9 @@ static NSEvent *SetupKey(NSWindow *window, NSString *characters, NSEventModifier
 }
 
 static void CheckFirstRunSelection(void) {
-    enum class Change { None, NewSelection, Edit, Cancel, Close };
-    for (Change change : {Change::None, Change::NewSelection, Change::Edit, Change::Cancel, Change::Close}) {
+    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, Edit, Cancel, Close };
+    for (Change change : {Change::None, Change::ReadyBeforeFinish, Change::ReadyBeforeReplacement,
+            Change::NewSelection, Change::Edit, Change::Cancel, Change::Close}) {
         NSString *suite = [@"local.bawan.FirstSelectionSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
@@ -490,11 +491,43 @@ static void CheckFirstRunSelection(void) {
             [primary performClick:nil];
             Require(store.preparations == 1 && [defaults boolForKey:@"modelLicenseNoticeShown20261109"],
                 @"Accepting model setup must start preparation for the queued selection");
+            const bool readyBeforeFinish = change == Change::ReadyBeforeFinish ||
+                change == Change::ReadyBeforeReplacement;
+            if (readyBeforeFinish) {
+                for (int readiness = 0; readiness < 2; ++readiness) {
+                    SetAvailableModel(delegate);
+                    Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                        [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                        [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                        @"Model readiness must preserve the selection and leave unfinished onboarding open without inference");
+                }
+            }
+            if (change == Change::ReadyBeforeFinish) {
+                [delegate openSettings:nil];
+                Require([window.contentView.identifier isEqualToString:@"bawan-settings"],
+                    @"Settings must open while a selection is waiting for first-run guidance");
+                [window cancelOperation:nil];
+                Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                    [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                    @"Back from Settings must return to unfinished guidance without consuming the selection");
+            }
+            if (change == Change::ReadyBeforeReplacement) {
+                expectedSource = @"A newer selection after the model is ready";
+                [delegate handleSelectionText:expectedSource];
+                Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                    [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                    @"A newer selection must replace the pending text without bypassing unfinished onboarding");
+            }
             [primary performClick:nil];
             Require([defaults boolForKey:@"firstLaunchShown"] &&
                 [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
-                [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
-                @"Finishing guidance during preparation must return to the translator without starting inference");
+                ([[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] != 0) == readyBeforeFinish,
+                @"Finishing guidance must start inference only if the model is already ready");
             NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
             NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
             NSButton *translate = (NSButton *)FindView(window.contentView, @"translate");
@@ -506,21 +539,23 @@ static void CheckFirstRunSelection(void) {
             } else if (change == Change::Cancel) {
                 [translate performClick:nil];
             }
-            const BOOL shouldTranslate = change == Change::None || change == Change::NewSelection;
-            if (shouldTranslate) {
-                Require([[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource],
-                    @"Only the latest surviving selection may be submitted when the model becomes ready");
-            } else {
-                Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil,
-                    @"Editing, cancelling or closing must discard the first-run selection before readiness");
+            const BOOL shouldTranslate = change == Change::None || readyBeforeFinish || change == Change::NewSelection;
+            if (!readyBeforeFinish) {
+                if (shouldTranslate) {
+                    Require([[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource],
+                        @"Only the latest surviving selection may be submitted when the model becomes ready");
+                } else {
+                    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil,
+                        @"Editing, cancelling or closing must discard the first-run selection before readiness");
+                }
+                SetAvailableModel(delegate);
             }
-            SetAvailableModel(delegate);
             ScopedEngineCallbackSuppression callbacks(delegate);
             const uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
             Require((request != 0) == shouldTranslate && Flag(delegate, @"busy") == shouldTranslate &&
                 [delegate valueForKey:@"pendingText"] == nil && [source.string isEqualToString:expectedSource] &&
                 output.string.length == 0,
-                @"Model readiness must automatically submit only the surviving selection and consume the queue");
+                @"Finishing setup and model readiness must submit only the surviving selection and consume the queue");
             SetAvailableModel(delegate);
             Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
                 @"Repeated readiness must not submit the first-run selection a second time");
