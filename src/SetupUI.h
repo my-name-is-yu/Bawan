@@ -37,6 +37,10 @@ static constexpr CGFloat BawanSetupModelActionWidth = 224; // Model setup or ret
 @interface BawanProgressBar : NSProgressIndicator
 @end
 
+// Shows a page from the top with its ring-less surface focused: Esc and ⌘Return
+// still work and Tab moves into the controls, but no control shows a focus ring
+// until the user navigates with the keyboard.
+void BawanSetupPresentPage(NSView *page, NSScrollView *scroll);
 NSTextField *BawanSetupHeading(NSString *text, CGFloat size);
 NSStackView *BawanSetupStack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation orientation, CGFloat spacing);
 NSView *BawanSetupRule(void);

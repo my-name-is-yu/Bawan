@@ -70,6 +70,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSButton *_loginSwitch;
     NSButton *_loginSettings;
     NSButton *_back;
+    NSScrollView *_scroll;
     NSTextField *_modelStatus;
     NSTextField *_modelHint;
     NSProgressIndicator *_modelProgress;
@@ -125,6 +126,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     scroll.identifier = @"settings-scroll";
+    _scroll = scroll;
     scroll.borderType = NSNoBorder;
     BawanConfigurePaperScrollView(scroll);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -328,9 +330,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)focusInitialControl {
-    NSWindow *window = self.view.window;
-    [window recalculateKeyViewLoop];
-    [window makeFirstResponder:_back];
+    BawanSetupPresentPage(self.view, _scroll);
 }
 
 - (void)refresh {

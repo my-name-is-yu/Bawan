@@ -21,6 +21,8 @@ static constexpr CGFloat BawanChromeLineWidth = 1.5;
 @property(nonatomic) CGFloat cornerRadius;
 @property(nonatomic) BOOL textured;
 @property(nonatomic) BOOL masthead;
+// Lets a page surface hold key focus without drawing a focus ring.
+@property(nonatomic) BOOL acceptsKeyFocus;
 @end
 
 @interface BawanActionButton : NSButton

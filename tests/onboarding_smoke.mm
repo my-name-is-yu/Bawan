@@ -252,9 +252,9 @@ static void RunSmoke(void) {
         [onboarding refresh];
         [onboarding focusInitialControl];
         NSResponder *focused = window.firstResponder;
-        Require([focused isKindOfClass:NSView.class] &&
-            (focused == root || [(NSView *)focused isDescendantOf:root]),
-            @"Initial keyboard focus must belong to the visible onboarding page");
+        NSScrollView *scroll = (NSScrollView *)FindView(root, @"onboarding-scroll");
+        Require(focused == root && scroll.contentView.bounds.origin.y == 0,
+            @"Onboarding must open at the top with its ring-less surface focused");
         [start performClick:nil];
         Require(completions == 1, @"Starting translation must invoke the owner's completion action once");
 

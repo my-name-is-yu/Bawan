@@ -492,8 +492,9 @@ static void RunSmoke(void) {
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
     Capture(window, @"entry");
     CheckFrameDragging(window);
-    Require(window.firstResponder == back,
-        [NSString stringWithFormat:@"Entering Settings must focus Back rather than the detached translation editor: %@",
+    NSScrollView *entryScroll = (NSScrollView *)FindView(settings.view, @"settings-scroll");
+    Require(window.firstResponder == settings.view && entryScroll.contentView.bounds.origin.y == 0 && back != nil,
+        [NSString stringWithFormat:@"Entering Settings must start at the top with no control focus ring, away from the detached translation editor: %@",
             window.firstResponder]);
     for (NSUInteger step = 0; step < 12; ++step) {
         [window selectNextKeyView:nil];

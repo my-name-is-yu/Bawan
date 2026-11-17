@@ -31,6 +31,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
     NSButton *_modelSetup;
     NSButton *_modelLicense;
     NSButton *_start;
+    NSScrollView *_scroll;
     NSTextField *_error;
     NSMutableArray<NSTextField *> *_shortcutKeys;
     NSMutableArray<NSTextField *> *_shortcutPresses;
@@ -71,6 +72,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
 
     NSScrollView *scroll = [[NSScrollView alloc] init];
     scroll.identifier = @"onboarding-scroll";
+    _scroll = scroll;
     scroll.borderType = NSNoBorder;
     BawanConfigurePaperScrollView(scroll);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -257,9 +259,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
 }
 
 - (void)focusInitialControl {
-    [self.view.window recalculateKeyViewLoop];
-    NSView *control = _start.enabled ? _start : !_modelSetup.hidden ? _modelSetup : _modelLicense;
-    [self.view.window makeFirstResponder:control];
+    BawanSetupPresentPage(self.view, _scroll);
 }
 
 - (void)setUpShortcut:(NSButton *)sender {

@@ -229,6 +229,14 @@ static constexpr CGFloat BawanCheckboxGap = 8;
 }
 @end
 
+void BawanSetupPresentPage(NSView *page, NSScrollView *scroll) {
+    [scroll.documentView scrollPoint:NSZeroPoint];
+    [scroll reflectScrolledClipView:scroll.contentView];
+    if ([page isKindOfClass:BawanSurfaceView.class]) ((BawanSurfaceView *)page).acceptsKeyFocus = YES;
+    [page.window recalculateKeyViewLoop];
+    [page.window makeFirstResponder:page];
+}
+
 NSTextField *BawanSetupHeading(NSString *text, CGFloat size) {
     return BawanLabelWithFont(text, BawanLabelFont(size), BawanColor(BawanText));
 }

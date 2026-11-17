@@ -32,6 +32,7 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
 
 @implementation BawanSurfaceView
 - (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstResponder { return self.acceptsKeyFocus; }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
