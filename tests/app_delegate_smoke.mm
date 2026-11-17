@@ -2,7 +2,11 @@
 #import "TranslationPanel.h"
 #import "ModelStore.h"
 
+#include <cstdio>
 #include <cstdlib>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/xattr.h>
 #include <iostream>
 #include <stdexcept>
 
@@ -229,18 +233,38 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
         Require(ready == 1 && errors == 0 && [lastReadyURL isEqual:model],
             @"The original model fixture must pass real SHA256 verification at its fixture path");
 
+        Require(getxattr(model.fileSystemRepresentation, "local.bawan.verified-sha256", nullptr, 0, 0, 0) > 0,
+            @"A verified model must carry its verification stamp");
+
         Require(valid.length == corrupt.length, @"The corruption fixture must preserve model size");
-        Require([corrupt writeToURL:model atomically:YES], @"The same-path model must be corrupted");
+        struct stat original {};
+        Require(stat(model.fileSystemRepresentation, &original) == 0, @"The model fixture must be readable");
+        FILE *inPlace = std::fopen(model.fileSystemRepresentation, "r+b");
+        Require(inPlace && std::fwrite(corrupt.bytes, 1, corrupt.length, inPlace) == corrupt.length &&
+            std::fclose(inPlace) == 0, @"The model must be corrupted in place");
+        const struct timespec times[2] = {original.st_atimespec, original.st_mtimespec};
+        Require(utimensat(AT_FDCWD, model.fileSystemRepresentation, times, 0) == 0,
+            @"The in-place corruption must keep the verified modification time");
+        [store prepare];
+        WaitFor(^BOOL { return ready > 1 || errors; }, @"Stamped model check did not complete");
+        Require(ready == 2 && errors == 0, @"Launch must trust an unchanged verification stamp without rehashing");
+
         [delegate retryModel:nil];
-        WaitFor(^BOOL { return ready > 1 || errors; }, @"Retry did not revalidate the changed model");
-        Require(ready == 1 && errors == 1 && [lastError containsString:@"SHA256"],
+        WaitFor(^BOOL { return ready > 2 || errors; }, @"Retry did not revalidate the changed model");
+        Require(ready == 2 && errors == 1 && [lastError containsString:@"SHA256"],
             @"Retry must reject changed model bytes with a SHA256 error instead of reporting Ready");
         Require(![files fileExistsAtPath:model.path], @"Retry must remove the model proven corrupt");
 
+        Require([corrupt writeToURL:model atomically:YES], @"An unstamped model must be written");
+        [store prepare];
+        WaitFor(^BOOL { return ready > 2 || errors > 1; }, @"Unstamped model check did not complete");
+        Require(ready == 2 && errors == 2 && [lastError containsString:@"SHA256"],
+            @"Launch must hash a model without a matching verification stamp");
+
         Require([valid writeToURL:model atomically:YES], @"The valid model fixture must be restored");
         [delegate retryModel:nil];
-        WaitFor(^BOOL { return ready > 1 || errors > 1; }, @"Retry did not verify the restored model");
-        Require(ready == 2 && errors == 1, @"Retry must accept the restored valid model");
+        WaitFor(^BOOL { return ready > 2 || errors > 2; }, @"Retry did not verify the restored model");
+        Require(ready == 3 && errors == 2, @"Retry must accept the restored valid model");
     } @finally {
         [store cancel];
         [delegate setValue:previousStore forKey:@"modelStore"];
@@ -272,7 +296,7 @@ int main() {
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
                 CheckModelRevalidationOnRetry(delegate);
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation and model revalidation\n";
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps and model revalidation\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;
