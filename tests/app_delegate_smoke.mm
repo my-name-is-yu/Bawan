@@ -15,6 +15,7 @@
 - (void)updateStatus;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
+- (void)ensureEngine;
 - (void)cancelTranslation;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
@@ -44,6 +45,26 @@ static void Require(BOOL condition, NSString *message) {
 static BOOL Flag(AppDelegate *delegate, NSString *key) {
     return [[delegate valueForKey:key] boolValue];
 }
+
+class ScopedEngineCallbackSuppression final {
+public:
+    explicit ScopedEngineCallbackSuppression(AppDelegate *delegate) : delegate_(delegate) {
+        [delegate_ ensureEngine];
+        generation_ = [[delegate_ valueForKey:@"engineGeneration"] unsignedLongLongValue];
+        [delegate_ setValue:@(generation_ + 1) forKey:@"engineGeneration"];
+    }
+
+    ~ScopedEngineCallbackSuppression() {
+        [delegate_ setValue:@(generation_) forKey:@"engineGeneration"];
+    }
+
+    ScopedEngineCallbackSuppression(const ScopedEngineCallbackSuppression &) = delete;
+    ScopedEngineCallbackSuppression &operator=(const ScopedEngineCallbackSuppression &) = delete;
+
+private:
+    AppDelegate *__strong delegate_;
+    uint64_t generation_;
+};
 
 static NSView *FindView(NSView *root, NSString *identifier) {
     if ([root.identifier isEqualToString:identifier]) return root;
@@ -127,6 +148,7 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     Require([translate.title isEqualToString:@"Translate  ⌘↵"] && !copy.enabled && !swap.enabled,
         @"Model availability after an edit must leave the revised source ready for an explicit translation");
 
+    ScopedEngineCallbackSuppression callbacks(delegate);
     [translate performClick:nil];
     uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
     Require(oldRequest != 0 && Flag(delegate, @"busy"), @"The edit fixture must start a real active request");
