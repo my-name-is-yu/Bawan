@@ -137,7 +137,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             id = ++revision_;
             if (stopping_) { return id; }
-            dropPendingRequest();
+            dropPendingRequestLocked();
             pendingRequest_ = Request{id, std::move(text), direction};
         }
         changed_.notify_one();
@@ -149,7 +149,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             ++revision_;
             ++cancellation_;
-            dropPendingRequest();
+            dropPendingRequestLocked();
             pendingWarmUp_ = false;
         }
         changed_.notify_one();
@@ -190,9 +190,7 @@ private:
         std::uint64_t cancellation;
     };
 
-    // Requires mutex_. A request replaced or cancelled before the worker picks
-    // it up still gets its terminal Cancelled event, delivered by the worker.
-    void dropPendingRequest() {
+    void dropPendingRequestLocked() {
         if (pendingRequest_) { droppedRequests_.push_back(pendingRequest_->id); }
         pendingRequest_.reset();
     }
