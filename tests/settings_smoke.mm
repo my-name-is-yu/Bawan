@@ -404,9 +404,14 @@ static void CheckActionButtonStyles(NSWindow *window) {
     for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
         window.appearance = [NSAppearance appearanceNamed:appearance];
         for (BawanActionButtonStyle style : styles) {
+            [close displayIfNeeded];
+            [close.layer displayIfNeeded];
             close.needsDisplay = NO;
+            Require(!close.needsDisplay && !close.layer.needsDisplay,
+                @"A style change must start without a pending view or layer repaint");
             close.style = style;
-            Require(close.needsDisplay, @"Changing a button style must repaint its face");
+            Require(close.needsDisplay || close.layer.needsDisplay,
+                @"Changing a button style must request a view or layer repaint");
             RequireTint(window, close.contentTintColor, BawanColor(BawanHeaderText),
                 @"A header button's explicit tint must survive every style change");
             for (NSUInteger state = 0; state < 3; ++state) {
