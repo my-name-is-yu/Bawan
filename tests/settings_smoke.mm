@@ -2,10 +2,12 @@
 #import "TranslationPanel.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import "BawanAppearance.h"
+#import "BawanChrome.h"
 
 #include <cstdlib>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <set>
 
@@ -14,7 +16,7 @@
 @interface SmokeShortcutMonitor : ShortcutMonitor {
     ShortcutPreferences *_testPreferences;
     BOOL _testSuspended;
-    BOOL _testSettingsActive;
+    BOOL _testConfigurationActive;
 }
 @property(nonatomic) ShortcutAvailability selectionAvailability;
 @property(nonatomic) ShortcutAvailability panelAvailability;
@@ -43,8 +45,8 @@
 }
 - (BOOL)suspended { return _testSuspended; }
 - (void)setSuspended:(BOOL)value { _testSuspended = value; }
-- (BOOL)settingsActive { return _testSettingsActive; }
-- (void)setSettingsActive:(BOOL)value { _testSettingsActive = value; }
+- (BOOL)configurationActive { return _testConfigurationActive; }
+- (void)setConfigurationActive:(BOOL)value { _testConfigurationActive = value; }
 - (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {
     if (![_testPreferences bindingForAction:action].enabled) return ShortcutAvailabilityOff;
     return action == bawan::ShortcutAction::TranslateSelection ? _selectionAvailability : _panelAvailability;
@@ -86,18 +88,67 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
 }
 
+static void CheckModelFailureRefresh(SettingsViewController *settings, NSWindow *window) {
+    NSRect originalFrame = window.frame;
+    [window setContentSize:NSMakeSize(640, 420)];
+    NSScrollView *scroll = (NSScrollView *)FindView(settings.view, @"settings-scroll");
+    NSTextField *message = (NSTextField *)FindView(settings.view, @"settings-model-message");
+    NSString *firstError = @"The model could not be verified. Please try again.";
+    NSString *nextError = @"The model could not be downloaded. Check your connection and try again.";
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    Settle(window);
+
+    auto scrollToShortcuts = [&] {
+        [scroll.contentView scrollToPoint:NSZeroPoint];
+        [scroll reflectScrolledClipView:scroll.contentView];
+        Settle(window);
+        return scroll.documentVisibleRect.origin;
+    };
+    auto requireRevealedError = [&] {
+        Settle(window);
+        NSRect messageInDocument = [message convertRect:message.bounds toView:scroll.documentView];
+        Require(scroll.documentVisibleRect.origin.y > 1 &&
+            NSContainsRect(NSInsetRect(scroll.documentVisibleRect, -0.5, -0.5), messageInDocument),
+            @"A new model failure must reveal its message below the shortcut controls");
+    };
+
+    scrollToShortcuts();
+    [settings setModelPhase:BawanModelSetupFailed message:firstError progress:0];
+    requireRevealedError();
+    NSPoint readingPosition = scrollToShortcuts();
+    NSRect messageInDocument = [message convertRect:message.bounds toView:scroll.documentView];
+    Require(!NSContainsRect(scroll.documentVisibleRect, messageInDocument),
+        @"The model refresh fixture must first scroll away from the failure");
+    // Returning from System Settings pushes the current model snapshot again.
+    [settings setModelPhase:BawanModelSetupFailed message:firstError progress:0];
+    Settle(window);
+    Require(NSEqualPoints(scroll.documentVisibleRect.origin, readingPosition),
+        @"Refreshing the same model failure must preserve the user's position at the shortcuts");
+
+    [settings setModelPhase:BawanModelSetupFailed message:nextError progress:0];
+    requireRevealedError();
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    Settle(window);
+    Require(message.hidden, @"Recovery must clear the previously revealed model failure");
+    scrollToShortcuts();
+    [settings setModelPhase:BawanModelSetupFailed message:nextError progress:0];
+    requireRevealedError();
+
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    [window setFrame:originalFrame display:NO];
+    scrollToShortcuts();
+}
+
 static void CheckFrameDragging(NSWindow *window) {
     NSRect originalFrame = window.frame;
     NSAppearance *originalAppearance = window.appearance;
     NSView *root = window.contentView;
     NSView *header = FindView(root, @"settings-header");
     NSView *mascot = FindView(root, @"settings-mascot");
-    NSButton *back = (NSButton *)FindView(root, @"settings-back");
-    NSTextField *subtitle = (NSTextField *)FindView(root, @"settings-subtitle");
+    NSButton *close = (NSButton *)FindView(root, @"settings-close");
     NSView *scroll = FindView(root, @"settings-scroll");
-    Require(!subtitle.editable && !subtitle.selectable &&
-        window.movable && window.movableByWindowBackground,
-        @"The Settings masthead must share native background dragging with its decorative label");
+    Require(window.movable && window.movableByWindowBackground,
+        @"The Settings masthead must share native background dragging with the translator");
     for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(720, 500)],
                             [NSValue valueWithSize:NSMakeSize(640, 420)]]) {
         NSRect frame = window.frame;
@@ -106,10 +157,9 @@ static void CheckFrameDragging(NSWindow *window) {
         for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
             window.appearance = [NSAppearance appearanceNamed:appearance];
             Settle(window);
-            CheckBackgroundDragGrid(window, header, @[mascot, back]);
-            CheckBackgroundDragCenter(window, subtitle, YES);
+            CheckBackgroundDragGrid(window, header, @[mascot, close]);
             CheckBackgroundDragCenter(window, mascot, NO);
-            CheckBackgroundDragCenter(window, back, NO);
+            CheckBackgroundDragCenter(window, close, NO);
             CheckBackgroundDragPoint(window, scroll, NSMakePoint(8, NSMidY(scroll.bounds)), NO, scroll);
         }
     }
@@ -144,11 +194,12 @@ static void CheckBounds(NSWindow *window) {
     for (NSString *identifier in @[@"shortcut-selection-enabled", @"shortcut-selection-key", @"shortcut-selection-count",
             @"shortcut-selection-reset", @"shortcut-selection-status", @"shortcut-selection-permission",
             @"shortcut-panel-enabled", @"shortcut-panel-key", @"shortcut-panel-count", @"shortcut-panel-reset",
-            @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-permission-help",
-            @"shortcut-key-heading", @"shortcut-presses-heading", @"shortcut-help",
+            @"shortcut-panel-status", @"shortcut-panel-permission", @"shortcut-reservation", @"shortcut-help",
+            @"shortcut-selection-row", @"shortcut-panel-row", @"settings-model-status",
+            @"settings-model-license", @"settings-model-setup", @"settings-model-message", @"settings-model-progress",
             @"shortcut-feedback", @"launch-at-login", @"login-items", @"login-hint",
             @"local-processing", @"shortcut-group", @"login-group", @"settings-header", @"settings-mascot",
-            @"settings-subtitle", @"settings-back", @"settings-scroll"]) {
+            @"settings-close", @"settings-footer", @"settings-back", @"settings-scroll"]) {
         NSView *view = FindView(root, identifier);
         Require(view != nil, [@"Missing settings view: " stringByAppendingString:identifier]);
         if (view.hidden) continue;
@@ -159,34 +210,34 @@ static void CheckBounds(NSWindow *window) {
                 [NSString stringWithFormat:@"Settings view clipped: %@ %@ in %@", identifier,
                     NSStringFromRect(frame), NSStringFromRect(container.bounds)]);
     }
+    // Settings reuses the translator's chrome: the same masthead, medallion, trailing
+    // icon slot and footer metrics, so switching pages never shifts the frame.
     NSView *header = FindView(root, @"settings-header");
     NSView *mascot = FindView(root, @"settings-mascot");
-    NSView *subtitle = FindView(root, @"settings-subtitle");
-    NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
-    // Anchors measure alignment rectangles; text-field frames include native ornament insets.
-    NSRect subtitleAlignment = [subtitle.superview convertRect:[subtitle alignmentRectForFrame:subtitle.frame] toView:header];
-    NSRect subtitleFrame = [subtitle convertRect:subtitle.bounds toView:header];
+    NSView *close = FindView(root, @"settings-close");
+    NSView *footer = FindView(root, @"settings-footer");
     NSView *back = FindView(root, @"settings-back");
-    NSRect backFrame = [back convertRect:back.bounds toView:header];
-    constexpr CGFloat expectedHeaderHeight = 80;
-    constexpr CGFloat expectedMascotSize = 72;
-    Require(FindView(root, @"settings-brand-name") == nil, @"The Settings header must omit the wordmark");
-    Require(std::abs(header.bounds.size.height - expectedHeaderHeight) < 1 &&
-            std::abs(mascot.bounds.size.width - expectedMascotSize) < 1 &&
-            std::abs(mascot.bounds.size.height - expectedMascotSize) < 1 &&
+    NSRect mascotFrame = [mascot convertRect:mascot.bounds toView:header];
+    NSRect closeFrame = [close convertRect:close.bounds toView:header];
+    NSRect backFrame = [back convertRect:back.bounds toView:footer];
+    Require(FindView(root, @"settings-brand-name") == nil && FindView(root, @"settings-subtitle") == nil,
+        @"The Settings header must match the translator's, without a wordmark or title");
+    Require(std::abs(header.bounds.size.height - BawanHeaderHeight) < 1 &&
+            std::abs(mascot.bounds.size.width - BawanBrandMarkSize) < 1 &&
+            std::abs(mascot.bounds.size.height - BawanBrandMarkSize) < 1 &&
             std::abs(NSMidX(mascotFrame) - NSMidX(header.bounds)) < 1 &&
             std::abs(NSMidY(mascotFrame) - NSMidY(header.bounds)) < 1 &&
-            std::abs(NSMinX(subtitleAlignment) - NSMinX(header.bounds) - 24) < 1 &&
-            std::abs(NSMidY(subtitleAlignment) - NSMidY(header.bounds)) < 1,
-            [NSString stringWithFormat:
-        @"The Settings mascot must retain its size and stay centered, with the label 24pt from the left: "
-        @"header=%@ expectedHeight=%.2f mascotBounds=%@ frame=%@ expectedSize=%.2f labelAlignment=%@",
-        NSStringFromRect(header.bounds), expectedHeaderHeight, NSStringFromRect(mascot.bounds),
-        NSStringFromRect(mascotFrame), expectedMascotSize, NSStringFromRect(subtitleAlignment)]);
-    Require(NSContainsRect(header.bounds, mascotFrame) && NSContainsRect(header.bounds, subtitleFrame) &&
-            NSContainsRect(header.bounds, backFrame) && !NSIntersectsRect(mascotFrame, subtitleFrame) &&
-            !NSIntersectsRect(backFrame, subtitleFrame) && !NSIntersectsRect(backFrame, mascotFrame),
-            @"The Settings label, centered mascot and Back must fit without overlapping each other");
+            std::abs(NSMaxX(header.bounds) - NSMaxX(closeFrame) - BawanChromeInset) < 1 &&
+            std::abs(NSMidY(closeFrame) - NSMidY(header.bounds)) < 1,
+            [NSString stringWithFormat:@"The Settings masthead must match the translator's: header=%@ mascot=%@ close=%@",
+                NSStringFromRect(header.bounds), NSStringFromRect(mascotFrame), NSStringFromRect(closeFrame)]);
+    Require(std::abs(footer.bounds.size.height - BawanFooterHeight) < 1 &&
+            std::abs(NSMinX(backFrame) - BawanChromeInset) < 1 &&
+            std::abs(backFrame.size.width - BawanFooterPrimaryWidth) < 1 &&
+            std::abs(backFrame.size.height - BawanFooterButtonHeight) < 1 &&
+            std::abs(NSMaxY(FrameInRoot(footer)) - NSMaxY(root.bounds)) < 1,
+            [NSString stringWithFormat:@"Settings must use the translator's footer and primary button slot: footer=%@ back=%@",
+                NSStringFromRect(footer.bounds), NSStringFromRect(backFrame)]);
     for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key", @"shortcut-selection-count",
                                    @"shortcut-panel-count"]) {
         NSControl *control = (NSControl *)FindView(root, identifier);
@@ -194,12 +245,32 @@ static void CheckBounds(NSWindow *window) {
                 std::abs(control.font.pointSize - 13) < 0.1,
                 @"Key recorders and press counts must use 28pt inputs and 13pt type");
     }
+    NSRect selectionRow = FrameInRoot(FindView(root, @"shortcut-selection-row"));
+    NSRect panelRow = FrameInRoot(FindView(root, @"shortcut-panel-row"));
+    Require(!NSIntersectsRect(selectionRow, panelRow) &&
+        std::abs(selectionRow.size.width - panelRow.size.width) < 1 &&
+        std::abs(NSMinX(selectionRow) - NSMinX(panelRow)) < 1,
+        @"The two shortcut capabilities must be full-width rows, matching onboarding");
+    for (NSUInteger i = 0; i < 2; ++i) {
+        NSString *prefix = i == 0 ? @"selection" : @"panel";
+        auto action = static_cast<bawan::ShortcutAction>(i);
+        NSView *row = FindView(root, [NSString stringWithFormat:@"shortcut-%@-row", prefix]);
+        NSButton *enabled = (NSButton *)FindView(root, [NSString stringWithFormat:@"shortcut-%@-enabled", prefix]);
+        NSView *status = FindView(root, [NSString stringWithFormat:@"shortcut-%@-status", prefix]);
+        NSView *permission = FindView(root, [NSString stringWithFormat:@"shortcut-%@-permission", prefix]);
+        Require([enabled isKindOfClass:NSButton.class] && [enabled.title isEqualToString:ShortcutActionTitle(action)] &&
+            [enabled isDescendantOf:row] && [status isDescendantOf:row] && [permission isDescendantOf:row],
+            @"Preference, readiness, and permission action must be grouped within their own capability row");
+    }
+    Require(FindView(root, @"settings-sidebar") == nil && FindView(root, @"settings-tabs") == nil,
+        @"Everyday settings must have no tabs or sidebar");
     NSView *shortcut = FindView(root, @"shortcut-group");
     NSView *login = FindView(root, @"login-group");
     NSView *privacy = FindView(root, @"local-processing");
+    // Groups scroll beneath the fixed footer, so compare the footer with the scroll view's visible area.
     Require(!NSIntersectsRect(FrameInRoot(shortcut), FrameInRoot(login)) &&
-            !NSIntersectsRect(FrameInRoot(login), FrameInRoot(privacy)),
-            @"Settings groups and privacy footer must not overlap");
+            !NSIntersectsRect(FrameInRoot(scroll), FrameInRoot(privacy)),
+            @"Settings groups must not overlap, and the footer note must sit outside the scrolling area");
 }
 
 static NSEvent *KeyEvent(NSWindow *window, NSString *characters,
@@ -248,6 +319,9 @@ static void Capture(NSWindow *window, NSString *name) {
     NSBitmapImageRep *composite = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil
         pixelsWide:bitmap.pixelsWide pixelsHigh:bitmap.pixelsHigh bitsPerSample:8 samplesPerPixel:4
         hasAlpha:YES isPlanar:NO colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    // Composite in the capture's own color space. Converting to Generic RGB here
+    // shifted saved colors, so Settings captures no longer matched the other pages.
+    composite = [composite bitmapImageRepByRetaggingWithColorSpace:bitmap.colorSpace];
     composite.size = root.bounds.size;
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:composite]];
@@ -418,6 +492,7 @@ static void RunSmoke(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SmokeShortcutMonitor *monitor = [[SmokeShortcutMonitor alloc] initWithPreferences:preferences];
     SmokeSettingsViewController *settings = [[SmokeSettingsViewController alloc] initWithPreferences:preferences monitor:monitor];
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     __block NSUInteger translations = 0, cancellations = 0, closes = 0;
     panel.onTranslate = ^(NSString *__unused text, bawan::Direction __unused direction) { ++translations; };
@@ -468,8 +543,9 @@ static void RunSmoke(void) {
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
     Capture(window, @"entry");
     CheckFrameDragging(window);
-    Require(window.firstResponder == back,
-        [NSString stringWithFormat:@"Entering Settings must focus Back rather than the detached translation editor: %@",
+    NSScrollView *entryScroll = (NSScrollView *)FindView(settings.view, @"settings-scroll");
+    Require(window.firstResponder == settings.view && entryScroll.contentView.bounds.origin.y == 0 && back != nil,
+        [NSString stringWithFormat:@"Entering Settings must start at the top with no control focus ring, away from the detached translation editor: %@",
             window.firstResponder]);
     for (NSUInteger step = 0; step < 12; ++step) {
         [window selectNextKeyView:nil];
@@ -484,17 +560,19 @@ static void RunSmoke(void) {
     Require([source.string isEqualToString:edited], @"Edit Undo in Settings must not change the hidden source");
     [NSApp sendAction:@selector(redo:) to:nil from:window];
     Require([source.string isEqualToString:edited], @"Edit Redo in Settings must not change the hidden source");
-    [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
     NSInteger pasteboardCount = NSPasteboard.generalPasteboard.changeCount;
     [window performKeyEquivalent:KeyEvent(window, @"C", NSEventModifierFlagCommand | NSEventModifierFlagShift, 8)];
-    Require(translations == 0 && cancellations == 0 && NSPasteboard.generalPasteboard.changeCount == pasteboardCount,
-        @"Settings must not translate or copy the hidden translator through local shortcuts");
-    [back performClick:nil];
+    Require(NSPasteboard.generalPasteboard.changeCount == pasteboardCount && window.contentView == settings.view,
+        @"Settings must not copy the hidden translator through its local shortcut");
+    // ⌘Return is each page's footer primary action: Done here, never Translate.
+    [window performKeyEquivalent:KeyEvent(window, @"\r", NSEventModifierFlagCommand, 36)];
+    Require(translations == 0 && cancellations == 0,
+        @"⌘Return in Settings must act as Done without translating the hidden source");
     Require(window.contentView == translationRoot && NSEqualRects(window.frame, hostFrame) &&
         window.firstResponder == source && [source.string isEqualToString:edited] &&
         NSEqualRanges(source.selectedRange, selection) &&
         [[(NSButton *)FindView(translationRoot, @"copy") title] isEqualToString:@"Copied"] && closes == 0,
-        @"Back must preserve text, selection, focus, copy feedback and the live host window");
+        @"Done must preserve text, selection, focus, copy feedback and the live host window");
     [source.undoManager undo];
     Require([source.string isEqualToString:original], @"The source edit must remain undoable after returning from Settings");
     [source.undoManager redo];
@@ -513,19 +591,16 @@ static void RunSmoke(void) {
     Require(BawanMascotImage() != nil && BawanPaperImage() != nil,
             @"Settings captures must load the real mascot and paper assets");
     NSView *root = window.contentView;
-    NSSwitch *login = (NSSwitch *)FindView(root, @"launch-at-login");
+    NSButton *login = (NSButton *)FindView(root, @"launch-at-login");
     NSTextField *hint = (NSTextField *)FindView(root, @"login-hint");
     NSTextField *selectionStatus = (NSTextField *)FindView(root, @"shortcut-selection-status");
     NSTextField *panelStatus = (NSTextField *)FindView(root, @"shortcut-panel-status");
     NSTextField *feedback = (NSTextField *)FindView(root, @"shortcut-feedback");
-    NSTextField *permissionHelp = (NSTextField *)FindView(root, @"shortcut-permission-help");
     NSTextField *reservation = (NSTextField *)FindView(root, @"shortcut-reservation");
-    NSTextField *keyHeading = (NSTextField *)FindView(root, @"shortcut-key-heading");
-    NSTextField *pressesHeading = (NSTextField *)FindView(root, @"shortcut-presses-heading");
     NSButton *help = (NSButton *)FindView(root, @"shortcut-help");
     NSTextField *privacy = (NSTextField *)FindView(root, @"local-processing");
-    NSSwitch *selectionEnabled = (NSSwitch *)FindView(root, @"shortcut-selection-enabled");
-    NSSwitch *panelEnabled = (NSSwitch *)FindView(root, @"shortcut-panel-enabled");
+    NSButton *selectionEnabled = (NSButton *)FindView(root, @"shortcut-selection-enabled");
+    NSButton *panelEnabled = (NSButton *)FindView(root, @"shortcut-panel-enabled");
     NSButton *selectionKey = (NSButton *)FindView(root, @"shortcut-selection-key");
     NSButton *panelKey = (NSButton *)FindView(root, @"shortcut-panel-key");
     NSPopUpButton *selectionCount = (NSPopUpButton *)FindView(root, @"shortcut-selection-count");
@@ -535,11 +610,11 @@ static void RunSmoke(void) {
         [selectionKey.title isEqualToString:ShortcutKeyLabel(bawan::defaultShortcuts()[0])] &&
         [panelKey.title isEqualToString:ShortcutKeyLabel(bawan::defaultShortcuts()[1])],
         @"Both shortcuts must show their enabled defaults and separate press counts");
-    Require([keyHeading.stringValue containsString:@"click"] &&
-        [pressesHeading.stringValue isEqualToString:@"Presses"] && help != nil && window.attachedSheet == nil,
-        @"Shortcut editing and press counts must be discoverable before opening optional help");
-    Require(!permissionHelp.hidden && [permissionHelp.stringValue containsString:@"Typing and pasting"] && reservation.hidden,
-        @"Missing permissions must explain the manual fallback without an irrelevant default-key reservation warning");
+    Require([selectionKey.toolTip containsString:@"Click"] &&
+        selectionCount.accessibilityLabel.length > 0 && help != nil && window.attachedSheet == nil,
+        @"Shortcut editing and press counts must stay labeled with optional help available");
+    Require([privacy.stringValue containsString:@"do not affect typing or pasting"] && reservation.hidden,
+        @"The settings footer must explain the manual fallback without a default-key reservation warning");
     [help performClick:nil];
     Settle(window);
     NSWindow *helpSheet = window.attachedSheet;
@@ -576,15 +651,19 @@ static void RunSmoke(void) {
     [(NSButton *)FindView(root, @"shortcut-panel-permission") performClick:nil];
     Require(monitor.permissionRequests == 2 && monitor.lastPermissionAction == bawan::ShortcutAction::OpenPanel,
         @"Panel permission action must reach its own monitor action");
-    [(NSButton *)FindView(root, @"login-items") performClick:nil];
+    NSButton *loginItems = (NSButton *)FindView(root, @"login-items");
+    Require(loginItems.hidden, @"Normal login settings must not show a repair action");
+    [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
+    Require(!loginItems.hidden, @"A pending login approval must expose its System Settings action");
+    [loginItems performClick:nil];
     login.state = NSControlStateValueOn;
     SendControlAction(login);
     Require(loginSettings == 1 && loginChanges == 1 && requestedLogin,
         @"Login actions must forward exactly once without changing system services");
 
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
-    Require(login.state == NSControlStateValueOff && hint.hidden,
-        @"Unregistered login service must show off without a stale message");
+    Require(login.state == NSControlStateValueOff && hint.hidden && loginItems.hidden,
+        @"Unregistered login service must show off without stale feedback or a repair action");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     Require([selectionStatus.stringValue isEqualToString:@"Input Monitoring required"] &&
         [panelStatus.stringValue isEqualToString:@"Accessibility required"],
@@ -593,6 +672,55 @@ static void RunSmoke(void) {
         @"Input Monitoring permission must use the shared warning color");
     RequireTintInBothAppearances(window, panelStatus.textColor, BawanColor(BawanWarning),
         @"Accessibility permission must use the same warning color");
+    NSTextField *modelStatus = (NSTextField *)FindView(root, @"settings-model-status");
+    NSTextField *modelMessage = (NSTextField *)FindView(root, @"settings-model-message");
+    NSButton *modelSetup = (NSButton *)FindView(root, @"settings-model-setup");
+    NSProgressIndicator *modelProgress = (NSProgressIndicator *)FindView(root, @"settings-model-progress");
+    __block NSUInteger modelLicenses = 0, modelSetups = 0;
+    settings.onModelLicense = ^{ ++modelLicenses; };
+    settings.onModelSetup = ^{ ++modelSetups; };
+    [(NSButton *)FindView(root, @"settings-model-license") performClick:nil];
+    Require(modelLicenses == 1 && [modelStatus.stringValue isEqualToString:@"Ready"] && modelSetup.hidden,
+        @"Ready models must expose the license without showing a false retry action");
+    [settings setModelPhase:BawanModelSetupNeedsDownload message:@"Prepare the local model first." progress:0];
+    Require([modelStatus.stringValue isEqualToString:@"Not set up"] && !modelSetup.hidden && modelProgress.hidden,
+        @"An unprepared model must expose setup without claiming readiness");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 1, @"The model setup action must reach its owner");
+    [settings setModelPhase:BawanModelSetupPreparing message:@"Verifying the saved model…" progress:0.4];
+    Require(!modelProgress.hidden && std::abs(modelProgress.doubleValue - 0.4) < 0.001 && modelSetup.hidden &&
+        [modelMessage.stringValue containsString:@"Verifying"],
+        @"Model preparation must show progress and its current message without allowing duplicate setup");
+    [settings setModelPhase:BawanModelSetupPreparing message:@"Checking the local model…"
+        progress:std::numeric_limits<double>::quiet_NaN()];
+    Require(modelProgress.indeterminate && std::isfinite(modelProgress.doubleValue),
+        @"Unknown model progress must remain a finite indeterminate presentation");
+    [settings setModelPhase:BawanModelSetupPreparing message:@"Checking the local model…" progress:-1];
+    Require(modelProgress.indeterminate && modelProgress.doubleValue == 0,
+        @"A negative progress sentinel must not become a negative percentage");
+    [settings setModelPhase:BawanModelSetupFailed message:@"The model could not be verified. Please try again." progress:0];
+    Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Retry Model Setup"] && !modelMessage.hidden &&
+        [modelStatus.stringValue isEqualToString:@"Needs attention"],
+        @"Model setup failures must retain their message and expose Retry");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 2, @"Retrying model setup must reach the same owner action");
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    Require(modelMessage.hidden && modelProgress.hidden && modelSetup.hidden,
+        @"A recovered model must clear stale progress and error actions");
+    CheckModelFailureRefresh(settings, window);
+    bawan::ShortcutBinding panelBinding = [preferences bindingForAction:bawan::ShortcutAction::OpenPanel];
+    auto disabledPanel = panelBinding;
+    disabledPanel.enabled = false;
+    Require([preferences setBinding:disabledPanel forAction:bawan::ShortcutAction::OpenPanel error:nil],
+        @"The chosen design fixture must disable the window-opening shortcut");
+    [settings refresh];
+    NSScrollView *captureScroll = (NSScrollView *)FindView(root, @"settings-scroll");
+    [captureScroll.contentView scrollToPoint:NSZeroPoint];
+    [captureScroll reflectScrolledClipView:captureScroll.contentView];
+    Capture(window, @"target-light");
+    Require([preferences setBinding:panelBinding forAction:bawan::ShortcutAction::OpenPanel error:nil],
+        @"The design fixture must restore the original window-opening preference");
+    [settings refresh];
     Capture(window, @"light");
     CheckInputFaces(window);
     NSScrollView *scroll = (NSScrollView *)FindView(root, @"settings-scroll");
@@ -600,12 +728,12 @@ static void RunSmoke(void) {
     CGFloat baseHeight = document.bounds.size.height;
     NSRect settingsFrame = window.frame;
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
-    Require(login.state == NSControlStateValueOn && !hint.hidden && hint.stringValue.length > 0,
-        @"Pending approval must remain on with an explanatory message");
+    Require(login.state == NSControlStateValueOn && !hint.hidden && hint.stringValue.length > 0 && !loginItems.hidden,
+        @"Pending approval must remain on with an explanatory message and repair action");
     Capture(window, @"approval");
     [settings setLoginStatus:SMAppServiceStatusEnabled message:nil error:NO];
-    Require(login.state == NSControlStateValueOn && hint.hidden,
-        @"Enabled service must show on and clear approval feedback");
+    Require(login.state == NSControlStateValueOn && hint.hidden && loginItems.hidden,
+        @"Enabled service must show on and clear approval feedback and repair actions");
     [panel showTranslation];
     monitor.permissionsGranted = YES;
     [panel showSettings:settings];
@@ -618,8 +746,9 @@ static void RunSmoke(void) {
     Require([selectionStatus.stringValue isEqualToString:@"Shortcut ready"] &&
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
         @"Reopening Settings must replace stale permission warnings with the current ready state");
-    Require(permissionHelp.hidden && reservation.hidden,
-        @"Ready default shortcuts must remove setup-only explanations");
+    Require(FindView(root, @"shortcut-selection-permission").hidden &&
+        FindView(root, @"shortcut-panel-permission").hidden && reservation.hidden,
+        @"Ready default shortcuts must hide local repair actions and reservation warnings");
     RequireTintInBothAppearances(window, selectionStatus.textColor, BawanColor(BawanSuccess),
         @"Ready shortcuts must use the shared success color");
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
@@ -644,11 +773,13 @@ static void RunSmoke(void) {
     [scroll reflectScrolledClipView:scroll.contentView];
     CGFloat errorBaseHeight = document.bounds.size.height;
     NSRect errorFrame = window.frame;
-    NSString *longError = @"Bawan could not change the launch-at-login setting. The operating system returned an error while updating this application’s registration. Open Login Items in System Settings, review the current permissions, and try again.";
+    NSString *longError = @"Bawan could not change the launch-at-login setting. The operating system returned an error while updating this application’s registration. Open Login Items in System Settings, review the current permissions, and try again.\n\n"
+        @"The registration response also includes details from the background-items service. The previous launch-at-login setting remains unchanged while the operation is incomplete. The application may need to be opened from a stable installation location before macOS can associate the registration with its current bundle.\n\n"
+        @"After reviewing the system setting, return to Bawan and try the requested change again. If the operation still fails, retain the complete system message, including all nested error descriptions, when investigating the registration failure. This message is deliberately long so the same error must be revealed again after the user scrolls away from it.";
     [settings setLoginStatus:SMAppServiceStatusNotRegistered message:longError error:YES];
     CheckBounds(window);
-    Require(login.state == NSControlStateValueOff && !hint.hidden && [hint.stringValue isEqualToString:longError],
-        @"Failed changes must restore the actual login state and retain the full error");
+    Require(login.state == NSControlStateValueOff && !hint.hidden && [hint.stringValue isEqualToString:longError] &&
+        !loginItems.hidden, @"Failed changes must retain the actual state, full error and repair action");
     RequireTintInBothAppearances(window, hint.textColor, BawanColor(BawanError),
         @"Login failures must use the common error color");
     NSRect textBounds = [hint.attributedStringValue boundingRectWithSize:NSMakeSize(hint.bounds.size.width, CGFLOAT_MAX)
@@ -773,14 +904,14 @@ static void RunSmoke(void) {
     // focus lifecycle explicitly so orderOut is not an implicit prerequisite.
     id<NSWindowDelegate> delegate = window.delegate;
     [delegate windowDidBecomeKey:[NSNotification notificationWithName:NSWindowDidBecomeKeyNotification object:window]];
-    Require(monitor.settingsActive, @"The become-key callback must mark settings active before focus-loss testing");
+    Require(monitor.configurationActive, @"The become-key callback must mark settings active before focus-loss testing");
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     Require(monitor.suspended, @"An invalid key keeps the recorder active");
     [window orderOut:nil];
     Settle(window);
     [delegate windowDidResignKey:[NSNotification notificationWithName:NSWindowDidResignKeyNotification object:window]];
-    Require(monitor.suspended && !monitor.settingsActive,
+    Require(monitor.suspended && !monitor.configurationActive,
         @"Focus loss must cancel recording but keep a swallowed held key suspended");
     [settings setRecordedKey:0 down:NO];
     NSDate *releaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
@@ -788,8 +919,8 @@ static void RunSmoke(void) {
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     }
     Require(!monitor.suspended, [NSString stringWithFormat:
-        @"Physical release after focus loss must restore global monitoring (keyWindow=%@, settingsActive=%@, recorderEnabled=%@, feedback=%@)",
-        @(window.keyWindow), @(monitor.settingsActive), @(selectionKey.enabled), feedback.stringValue]);
+        @"Physical release after focus loss must restore global monitoring (keyWindow=%@, configurationActive=%@, recorderEnabled=%@, feedback=%@)",
+        @(window.keyWindow), @(monitor.configurationActive), @(selectionKey.enabled), feedback.stringValue]);
     [gear performClick:nil];
     [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
     bawan::ShortcutBinding restored = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
@@ -800,7 +931,7 @@ static void RunSmoke(void) {
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     [back performClick:nil];
-    Require(window.contentView == translationRoot && !monitor.settingsActive && monitor.suspended && window.visible,
+    Require(window.contentView == translationRoot && !monitor.configurationActive && monitor.suspended && window.visible,
         @"Back during recording must leave Settings while retaining the held-key release guard");
     [settings setRecordedKey:0 down:NO];
     NSDate *backReleaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
@@ -822,7 +953,7 @@ static void RunSmoke(void) {
     [gear performClick:nil];
     [panel showForSelection:@"A newly selected passage"];
     Require(window.contentView == translationRoot && [source.string isEqualToString:@"A newly selected passage"] &&
-        !source.undoManager.canUndo && !monitor.settingsActive,
+        !source.undoManager.canUndo && !monitor.configurationActive,
         @"A new selection from Settings must return to translation and clear the previous passage's undo history");
     [gear performClick:nil];
     [selectionKey interpretKeyEvents:@[KeyEvent(window, @"\x1b", 0, 53)]];
@@ -833,7 +964,7 @@ static void RunSmoke(void) {
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     [[window standardWindowButton:NSWindowCloseButton] performClick:nil];
-    Require(!window.visible && closes == 1 && !monitor.settingsActive && monitor.suspended,
+    Require(!window.visible && closes == 1 && !monitor.configurationActive && monitor.suspended,
         @"The shared red close button must close once and retain held-key cleanup while recording");
     [settings setRecordedKey:0 down:NO];
     NSDate *closeReleaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
@@ -844,7 +975,7 @@ static void RunSmoke(void) {
     [panel showForManualInput];
     [gear performClick:nil];
     Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand, 13)] &&
-        !window.visible && closes == 2 && !monitor.settingsActive,
+        !window.visible && closes == 2 && !monitor.configurationActive,
         @"Command-W outside recording must close the same shared window exactly once");
     [defaults removePersistentDomainForName:suite];
     std::cout << "settings_smoke_complete=true\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";

@@ -4,6 +4,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class SettingsViewController;
+@class OnboardingViewController;
 
 typedef NS_ENUM(NSInteger, BawanStatusKind) {
     BawanStatusInformation, BawanStatusWarning, BawanStatusError
@@ -14,14 +15,19 @@ typedef NS_ENUM(NSInteger, BawanStatusKind) {
 @property(nonatomic, copy, nullable) void (^onCancel)(void);
 @property(nonatomic, copy, nullable) void (^onClose)(void);
 @property(nonatomic, copy, nullable) void (^onSettings)(void);
+@property(nonatomic, readonly) NSWindow *window;
 
 - (void)showForSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
 - (void)showSettings:(SettingsViewController *)settings;
+// The host decides what leaving onboarding means (finish or close).
+- (void)showOnboarding:(OnboardingViewController *)onboarding onBack:(void (^)(void))onBack;
 - (void)showTranslation;
 - (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;
+// Update controls without replacing the current status message.
+- (void)setAvailable:(BOOL)available busy:(BOOL)busy;
 - (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(BawanStatusKind)kind;
 - (void)setOutput:(NSString *)output direction:(bawan::Direction)direction;
 - (void)close;

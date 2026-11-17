@@ -1,8 +1,10 @@
 #import "AppDelegate.h"
 #import "ModelStore.h"
+#import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
+#import "OnboardingViewController.h"
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -16,6 +18,8 @@
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
     SettingsViewController *_settingsViewController;
+    OnboardingViewController *_onboardingViewController;
+    NSUserDefaults *_defaults;
     ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
@@ -24,19 +28,33 @@
     std::unique_ptr<bawan::TranslationEngine> _engine;
     uint64_t _activeRequestId;
     uint64_t _engineGeneration;
-    NSURL *_modelURL;
     NSString *_pendingText;
     bawan::Direction _pendingDirection;
     BOOL _warmUpWhenAvailable;
-    BOOL _modelAvailable;
     BOOL _busy;
     BOOL _terminating;
-    BOOL _modelFailed;
-    NSString *_modelStatus;
+    BOOL _showingModelStatus;
+    BawanModelState _model;
 }
 @end
 
+static NSString *const BawanOnboardingCompletedKey = @"firstLaunchShown";
+static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown20261109";
+
 @implementation AppDelegate
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _defaults = NSUserDefaults.standardUserDefaults;
+    }
+    return self;
+}
+
+- (BOOL)hasVerifiedModelFile { return _model.hasVerifiedFile(); }
+- (BOOL)modelFailed { return _model.failed(); }
+- (NSURL *)modelURL { return _model.url(); }
+- (NSString *)modelStatus { return _model.message(); }
 
 static NSString *StringFromUTF8(const std::string &text) {
     return [[NSString alloc] initWithBytes:text.data() length:text.size()
@@ -46,7 +64,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
     [self buildMenus];
-    _modelStatus = @"Checking the model…";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
     _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
@@ -62,55 +79,31 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_resume(_memoryPressure);
 
     _modelStore = [[ModelStore alloc] init];
-    _modelStore.onProgress = ^(__unused double progress, NSString *message) {
+    _modelStore.onProgress = ^(double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        owner->_modelStatus = message;
-        [owner updateStatus];
+        if (owner && !owner->_terminating) [owner modelFileDidProgress:progress message:message];
     };
     _modelStore.onReady = ^(NSURL *fileURL) {
         AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        owner->_modelURL = fileURL;
-        owner->_modelAvailable = YES;
-        owner->_modelFailed = NO;
-        owner->_modelStatus = @"Ready to translate · On-device processing";
-        if (owner->_pendingText) {
-            NSString *text = owner->_pendingText;
-            auto direction = owner->_pendingDirection;
-            [owner translateText:text direction:direction];
-        } else if (owner->_warmUpWhenAvailable) {
-            [owner warmUpEngine];
-        }
-        [owner updateStatus];
+        if (owner && !owner->_terminating) [owner modelFileDidBecomeReady:fileURL];
     };
     _modelStore.onError = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        owner->_modelAvailable = NO;
-        owner->_modelURL = nil;
-        owner->_pendingText = nil;
-        owner->_warmUpWhenAvailable = NO;
-        owner->_busy = NO;
-        owner->_activeRequestId = 0;
-        owner->_modelFailed = YES;
-        owner->_modelStatus = message;
-        [owner updateStatus];
+        if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
     _shortcut.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner->_translationPanel showForSelection:text];
-        [owner translateText:text direction:bawan::Direction::Automatic];
+        [owner handleSelectionText:text];
     };
     _shortcut.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
         [owner->_translationPanel showWithoutChangingInput];
-        [owner->_translationPanel setAvailable:owner->_modelAvailable busy:owner->_busy status:message kind:BawanStatusWarning];
+        [owner showTranslationStatus:message kind:BawanStatusWarning];
         owner->_statusItem.button.toolTip = message;
     };
     _shortcut.onOpenPanel = ^{
@@ -127,15 +120,115 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
-    if (![NSUserDefaults.standardUserDefaults boolForKey:@"modelLicenseNoticeShown20261109"]) {
-        [self showModelLicense:nil];
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    [self startInitialSetup];
+}
+
+- (void)modelFileDidProgress:(double)progress message:(NSString *)message {
+    _model.fileProgress(progress, message);
+    [self updateStatus];
+}
+
+- (void)modelFileDidBecomeReady:(NSURL *)fileURL {
+    _model.fileReady(fileURL);
+    if (_pendingText) {
+        NSString *text = _pendingText;
+        [self translateText:text direction:_pendingDirection];
+    } else if (_warmUpWhenAvailable) {
+        [self warmUpEngine];
     }
+    [self updateStatus];
+}
+
+- (void)modelFileDidFail:(NSString *)message {
+    _model.fileFailed(message);
+    _pendingText = nil;
+    _warmUpWhenAvailable = NO;
+    _busy = NO;
+    _activeRequestId = 0;
+    [self updateStatus];
+}
+
+- (BOOL)needsOnboarding { return ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
+
+- (void)markOnboardingComplete {
+    if ([self needsOnboarding]) [_defaults setBool:YES forKey:BawanOnboardingCompletedKey];
+}
+
+- (void)startInitialSetup {
+    if ([self needsOnboarding]) {
+        [self showOnboarding];
+        if ([_defaults boolForKey:BawanModelLicenseAcceptedKey]) [self beginModelSetup];
+    } else {
+        [self beginModelSetup];
+    }
+}
+
+- (void)beginModelSetup {
+    if ([_defaults boolForKey:BawanModelLicenseAcceptedKey]) {
+        [self prepareModel];
+        return;
+    }
+    __weak AppDelegate *weakSelf = self;
+    [self requestModelLicenseAcceptance:^(BOOL accepted) {
+        AppDelegate *owner = weakSelf;
+        if (!accepted || !owner || owner->_terminating) return;
+        [owner->_defaults setBool:YES forKey:BawanModelLicenseAcceptedKey];
+        [owner prepareModel];
+    }];
+}
+
+// A first setup prepares the model; any later request revalidates it from scratch.
+- (void)prepareModel {
+    if (!_model.setupNotStarted()) {
+        [self retryModel:nil];
+        return;
+    }
+    _model.beginPreparing();
+    [self updateStatus];
     [_modelStore prepare];
-    if (![NSUserDefaults.standardUserDefaults boolForKey:@"firstLaunchShown"]) {
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"firstLaunchShown"];
-        [_translationPanel showForManualInput];
+}
+
+- (void)showOnboarding {
+    if (!_onboardingViewController) {
+        _onboardingViewController = [[OnboardingViewController alloc]
+            initWithPreferences:_shortcutPreferences monitor:_shortcut];
+        __weak AppDelegate *weakSelf = self;
+        _onboardingViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
+        _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
     }
+    [self pushModelStateToPage:_onboardingViewController];
+    __weak AppDelegate *weakSelf = self;
+    [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOnboarding]; }];
+}
+
+// The shortcut step's button: leave for the translator even while the model is
+// still downloading. The translator shows preparation and translates once ready.
+- (void)finishOnboardingFromShortcuts {
+    if (!_model.canFinishSetup()) return;
+    [self markOnboardingComplete];
+    [_translationPanel showForManualInput];
+    [self warmUpEngine];
+}
+
+// Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
+- (void)finishOnboarding {
+    if (!_model.canEnterTranslator()) {
+        [_translationPanel close];
+        return;
+    }
+    [self markOnboardingComplete];
+    [_translationPanel showForManualInput];
+}
+
+- (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
+    [page setModelPhase:_model.phase() message:_model.message() progress:_model.progress()];
+}
+
+// Hidden pages are brought up to date when they are shown.
+- (void)refreshSetupPages {
+    if (_onboardingViewController.view.window) [self pushModelStateToPage:_onboardingViewController];
+    if (_settingsViewController.view.window) [self pushModelStateToPage:_settingsViewController];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -144,14 +237,15 @@ static NSString *StringFromUTF8(const std::string &text) {
     return item;
 }
 
-- (void)showModelLicense:(id)sender {
+- (NSAlert *)modelLicenseAlertForSetup:(BOOL)forSetup {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Built with PLaMo";
     alert.informativeText = @"Bawan uses PLaMo 3 Translate 0.8B under the PLaMo Community License, separately from Bawan’s MIT License. Using the model is subject to PFN’s terms.\n\n"
         "Personal and non-commercial use, including academic use, is free without registration.\n\n"
         "Commercial use includes internal business use. If you or your affiliates’ annual revenue or sales does not exceed JPY 1 billion, register with PFN before commercial use. Above that threshold, a separate commercial agreement is required.\n\n"
         "The model (~573 MB) downloads directly from PFN to your Mac. Review the official terms for your use.";
-    [alert addButtonWithTitle:sender ? @"Done" : @"Continue to Model Setup"];
+    [alert addButtonWithTitle:forSetup ? @"Continue to Model Setup" : @"Done"];
+    if (forSetup) [alert addButtonWithTitle:@"Not Now"];
     NSStackView *links = [[NSStackView alloc] init];
     links.orientation = NSUserInterfaceLayoutOrientationVertical;
     links.alignment = NSLayoutAttributeLeading;
@@ -166,8 +260,29 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     links.frame = NSMakeRect(0, 0, 360, 96);
     alert.accessoryView = links;
+    return alert;
+}
+
+// Attach to the visible panel as a sheet so model progress keeps updating;
+// fall back to an app-modal alert when the license is opened from the menu.
+- (void)presentModelLicenseAlert:(NSAlert *)alert completion:(void (^)(NSModalResponse response))completion {
     [NSApp activateIgnoringOtherApps:YES];
-    [alert runModal];
+    NSWindow *window = _translationPanel.window;
+    if (window.visible && !window.attachedSheet) {
+        [alert beginSheetModalForWindow:window completionHandler:completion];
+    } else {
+        completion([alert runModal]);
+    }
+}
+
+- (void)showModelLicense:(id)sender {
+    [self presentModelLicenseAlert:[self modelLicenseAlertForSetup:NO] completion:^(NSModalResponse) {}];
+}
+
+- (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion {
+    [self presentModelLicenseAlert:[self modelLicenseAlertForSetup:YES] completion:^(NSModalResponse response) {
+        completion(response == NSAlertFirstButtonReturn);
+    }];
 }
 
 - (void)openModelLicenseLink:(NSButton *)sender {
@@ -237,14 +352,28 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateStatus {
-    _modelItem.title = _modelStatus ?: @"Preparing the model…";
-    _retryItem.hidden = !_modelFailed;
-    _retryItem.enabled = _modelFailed;
+    [self refreshSetupPages];
+    _modelItem.title = _model.message();
+    BOOL failed = [self modelFailed];
+    BOOL available = [self hasVerifiedModelFile];
+    _retryItem.hidden = !failed;
+    _retryItem.enabled = failed;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:_modelAvailable busy:NO status:_modelAvailable ? @"" : _modelItem.title
-                                         kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
-    else if (!_modelAvailable) [_translationPanel setAvailable:NO busy:YES status:_modelItem.title
-                                                        kind:_modelFailed ? BawanStatusError : BawanStatusInformation];
+    BOOL hasModelMessage = _model.phase() != BawanModelSetupReady;
+    if (hasModelMessage || _showingModelStatus) {
+        // Ready clears a preceding model message, including Loading while busy.
+        // It must not erase a translation outcome or a shortcut warning.
+        _showingModelStatus = hasModelMessage;
+        [_translationPanel setAvailable:available busy:_busy status:hasModelMessage ? _modelItem.title : @""
+                                  kind:failed ? BawanStatusError : BawanStatusInformation];
+    } else {
+        [_translationPanel setAvailable:available busy:_busy];
+    }
+}
+
+- (void)showTranslationStatus:(NSString *)message kind:(BawanStatusKind)kind {
+    _showingModelStatus = NO;
+    [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy status:message kind:kind];
 }
 
 - (void)updateShortcutItem {
@@ -255,7 +384,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         auto binding = [_shortcutPreferences bindingForAction:action];
         ShortcutAvailability availability = [_shortcut availabilityForAction:action];
         item.state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
-        NSString *verb = action == bawan::ShortcutAction::TranslateSelection ? @"Selection Translation" : @"Open Translator";
+        NSString *verb = ShortcutActionTitle(action);
         NSString *suffix = @"";
         if (binding.enabled && availability != ShortcutAvailabilityAvailable) {
             suffix = availability == ShortcutAvailabilityFailed ? @" (monitoring unavailable)" : @" (permission required)";
@@ -269,6 +398,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
     [_settingsViewController refresh];
+    [_onboardingViewController refresh];
 }
 
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
@@ -279,12 +409,13 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)ensureEngine {
-    if (_engine || !_modelAvailable || !_modelURL || _terminating) return;
+    NSURL *modelURL = _model.url();
+    if (_engine || !modelURL || _terminating) return;
     const uint64_t generation = ++_engineGeneration;
     __weak AppDelegate *weakSelf = self;
     auto mailbox = std::make_shared<bawan::EngineEventMailbox>();
     _engine = std::make_unique<bawan::TranslationEngine>(
-        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
+        std::string(modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
             if (!mailbox->push(std::move(event))) return;
             @autoreleasepool {
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -300,15 +431,15 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)warmUpEngine {
     if (_terminating) return;
-    _warmUpWhenAvailable = !_modelAvailable;
+    _warmUpWhenAvailable = ![self hasVerifiedModelFile];
     [self ensureEngine];
     if (_engine) _engine->warmUp();
 }
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
     if (_terminating) return;
-    if (!_modelAvailable) {
-        if (_modelFailed) { [self updateStatus]; return; }
+    if (![self hasVerifiedModelFile]) {
+        if ([self modelFailed]) { [self updateStatus]; return; }
         _pendingText = [text copy];
         _pendingDirection = direction;
         _activeRequestId = 0;
@@ -317,6 +448,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self updateStatus];
         return;
     }
+    [self markOnboardingComplete];
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     [self ensureEngine];
@@ -325,27 +457,17 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
     [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-    [_translationPanel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
+    [self showTranslationStatus:@"" kind:BawanStatusInformation];
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
     using Kind = bawan::EngineEvent::Kind;
     if (event.requestId == 0) {
         if (event.kind == Kind::Idle) return;
-        if (event.kind == Kind::Loading) {
-            _modelFailed = NO;
-            _modelStatus = @"Loading the model…";
-        } else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) {
-            _modelFailed = NO;
-            _modelStatus = @"Ready to translate · On-device processing";
-        } else if (event.kind == Kind::Error) {
-            _modelFailed = YES;
-            _modelStatus = StringFromUTF8(event.text);
-        }
+        if (event.kind == Kind::Loading) _model.engineLoading();
+        else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) _model.engineIdle();
+        else if (event.kind == Kind::Error) _model.engineFailed(StringFromUTF8(event.text));
         [self updateStatus];
-        [_translationPanel setAvailable:_modelAvailable busy:_busy
-            status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _modelStatus
-            kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;
     }
     if (event.requestId != _activeRequestId) return;
@@ -357,19 +479,19 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:event.truncated ?
+            [self showTranslationStatus:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
                                       kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+            [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:_modelAvailable busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
+            [self showTranslationStatus:StringFromUTF8(event.text) kind:BawanStatusError];
             break;
         default: break;
     }
@@ -379,17 +501,35 @@ static NSString *StringFromUTF8(const std::string &text) {
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     if (_engine) _engine->cancel();
-    if (_modelAvailable && !_modelFailed) _modelStatus = @"Ready to translate · On-device processing";
+    _model.stopLoading();
     if (!_busy) { [self updateStatus]; return; }
     _activeRequestId = 0;
     _busy = NO;
     [self updateStatus];
-    [_translationPanel setAvailable:_modelAvailable busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+    [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
 }
 
 - (void)openTranslation:(id)sender {
+    if ([self needsOnboarding]) {
+        if (_model.canEnterTranslator()) {
+            [self finishOnboarding];
+            [self warmUpEngine];
+        } else {
+            [self showOnboarding];
+        }
+        return;
+    }
     [_translationPanel showForManualInput];
     [self warmUpEngine];
+}
+
+- (void)handleSelectionText:(NSString *)text {
+    [_translationPanel showForSelection:text];
+    if (_model.setupNotStarted()) {
+        [self showOnboarding];
+        return;
+    }
+    [self translateText:text direction:bawan::Direction::Automatic];
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
@@ -408,10 +548,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self cancelTranslation];
     ++_engineGeneration;
     _engine.reset();
-    _modelURL = nil;
-    _modelAvailable = NO;
-    _modelFailed = NO;
-    _modelStatus = @"Checking the model…";
+    _model.beginPreparing();
     [self updateStatus];
     [_modelStore revalidate];
 }
@@ -436,6 +573,8 @@ static NSString *StringFromUTF8(const std::string &text) {
         __weak AppDelegate *weakSelf = self;
         _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        _settingsViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        _settingsViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];
@@ -445,11 +584,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
+    [self pushModelStateToPage:_settingsViewController];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
     if (_settingsViewController.view.window.visible) [self refreshSettings];
     else [_shortcut refresh];
+    [_onboardingViewController refresh];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {

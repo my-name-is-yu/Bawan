@@ -97,7 +97,7 @@ To clean build artifacts, quit Bawan and delete `build/`. The downloaded model i
 
 ## ⌨️ Setup & Usage
 
-1. **Model download:** Before the first model setup, Bawan shows a summary of the model license with links to the official terms and commercial registration. After you continue, Bawan downloads the official PLaMo model (~573 MB) and verifies its file size and SHA256 checksum. Progress appears in the window and menu bar. If setup fails, choose **Retry Model Setup** from the menu.
+1. **First-run setup:** The initial guide keeps model preparation separate from optional shortcuts. Choose **Review license & download** to read the model terms before downloading the official PLaMo model (~573 MB). Download and SHA256-verification progress stay in the guide; failures expose **Retry model setup**. Once the model is ready, choose **Start translating**. You can leave shortcut permissions for later. Returning users open the translator normally; model status and retry are also available in Settings.
 2. **Permissions:** Open **Settings…** from the menu bar (or the gear icon) and grant the permissions shown for your shortcuts:
    - **Input Monitoring** is required for the default `⌘C` ×2 selection translation.
    - **Accessibility** is required for opening the translator (`⌥T` ×2) or using a custom shortcut for selection translation.
@@ -123,7 +123,7 @@ In Settings, `Esc` cancels shortcut recording first; otherwise it returns to the
 | Translate selected text | `⌘C` (2 presses) | Input Monitoring |
 | Open translator | `⌥T` (2 presses) | Accessibility |
 
-In **Settings…**, click **Shortcut (click)** to record a new key combination and choose **1** or **2** presses:
+In **Settings…**, each shortcut has its own card. **Use shortcut** controls your preference; the status below shows whether the shortcut is actually ready or needs permission. Click the key field to record a new combination, then choose **Once** or **Twice**:
 
 - Shortcuts must combine at least one modifier (`⌘`, `⌥`, or `⌃`) with a regular key.
 - Reserved app shortcuts (`⌘Return`, `⌘⇧C`, `⌘Q`, `⌘,`) and combinations already used by the other active action cannot be assigned.
