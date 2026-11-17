@@ -8,6 +8,7 @@
 #include <chrono>
 #include <climits>
 #include <condition_variable>
+#include <cstdio>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -25,6 +26,43 @@ constexpr std::size_t kBatchSize = 128;
 constexpr std::size_t kContextGranularity = 256;
 constexpr const char * kUnsupportedModel = "This PLaMo model is not supported.";
 constexpr const char * kUnexpectedError = "An unexpected translation error occurred.";
+
+const char * eventName(EngineEvent::Kind kind) noexcept {
+    switch (kind) {
+        case EngineEvent::Kind::Loading: return "Loading";
+        case EngineEvent::Kind::Ready: return "Ready";
+        case EngineEvent::Kind::Idle: return "Idle";
+        case EngineEvent::Kind::Text: return "Text";
+        case EngineEvent::Kind::Complete: return "Complete";
+        case EngineEvent::Kind::Cancelled: return "Cancelled";
+        case EngineEvent::Kind::Error: return "Error";
+    }
+    return "Unknown";
+}
+
+void logCallbackFailure(EngineEvent::Kind kind, std::uint64_t id, const char * message) noexcept {
+    // Use a fixed buffer and C stdio so diagnostics cannot throw or reenter
+    // the callback. Bound and escape details to prevent forged log entries.
+    constexpr std::size_t limit = 256;
+    constexpr char hex[] = "0123456789ABCDEF";
+    char detail[limit * 4 + 1];
+    std::size_t consumed = 0;
+    std::size_t size = 0;
+    for (; consumed < limit && message[consumed]; ++consumed) {
+        const auto byte = static_cast<unsigned char>(message[consumed]);
+        if (byte >= 0x20 && byte <= 0x7E && byte != '\\') {
+            detail[size++] = static_cast<char>(byte);
+        } else {
+            detail[size++] = '\\';
+            detail[size++] = 'x';
+            detail[size++] = hex[byte >> 4];
+            detail[size++] = hex[byte & 0x0F];
+        }
+    }
+    detail[size] = '\0';
+    std::fprintf(stderr, "[Bawan] TranslationEngine callback threw (event=%s, requestId=%llu): %s%s\n",
+                 eventName(kind), static_cast<unsigned long long>(id), detail, message[consumed] ? "..." : "");
+}
 
 std::size_t contextSize(std::size_t promptTokens) {
     const auto output = std::min(kMaximumOutput, std::max<std::size_t>(512, promptTokens * 2 + 256));
@@ -135,6 +173,12 @@ public:
 
     void shutdown() {
         submit(WorkerInstructions::Stop{});
+        // Stop cancels model loading at its next progress callback, prompt
+        // decoding between 128-token batches, and generation between tokens.
+        // Backend init, model I/O/mapping, tokenization, context allocation,
+        // each inference call, cleanup and an executing callback must return
+        // before join can finish; there is no fixed wall-clock bound. Joining
+        // keeps this Impl and worker-owned resources alive until cleanup ends.
         if (worker_.joinable()) { worker_.join(); }
     }
 
@@ -144,6 +188,8 @@ private:
         std::string text;
         Direction direction;
     };
+
+    enum class FailureStage { Load, Request };
 
     class WorkerInstructions {
     public:
@@ -257,7 +303,8 @@ private:
               Direction direction = Direction::Automatic) noexcept {
         if (instructions_.stopped()) { return; }
         try { callback_(EngineEvent{kind, id, std::move(text), truncated, direction}); }
-        catch (...) {  }
+        catch (const std::exception & error) { logCallbackFailure(kind, id, error.what()); }
+        catch (...) { logCallbackFailure(kind, id, "non-standard exception"); }
     }
 
     void unload() {
@@ -304,7 +351,6 @@ private:
         bos_ = llama_vocab_bos(vocab);
         const auto stopTags = tokenize(vocab, "<|plamo:tag|>", true);
         if (bos_ == LLAMA_TOKEN_NULL || stopTags.size() != 1) {
-            model_.reset();
             throw std::runtime_error(kUnsupportedModel);
         }
         stopTag_ = stopTags.front();
@@ -421,8 +467,9 @@ private:
         return {EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction};
     }
 
-    void fail(const std::optional<Request> & request, std::uint64_t cancellation, const char * message) {
-        if (!model_) {
+    void fail(FailureStage stage, const std::optional<Request> & request,
+              std::uint64_t cancellation, const char * message) {
+        if (stage == FailureStage::Load) {
             unload();
             emit(instructions_.loadCancelled(cancellation) ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
                  0, message);
@@ -466,11 +513,13 @@ private:
             const bool release = translation && translation->afterwards ==
                 WorkerInstructions::Translation::Afterwards::Release;
             const auto cancellation = work.cancellation;
+            auto failureStage = FailureStage::Load;
             try {
                 if (request && instructions_.cancelled(request->id)) {
                     emit(EngineEvent::Kind::Cancelled, request->id);
                 } else if (load(cancellation)) {
                     if (request) {
+                        failureStage = FailureStage::Request;
                         auto result = translate(*request);
                         emit(result.kind, result.requestId, std::move(result.text), result.truncated, result.direction);
                     }
@@ -478,9 +527,9 @@ private:
                     emit(EngineEvent::Kind::Cancelled, request->id);
                 }
             } catch (const std::exception & error) {
-                fail(request, cancellation, error.what());
+                fail(failureStage, request, cancellation, error.what());
             } catch (...) {
-                fail(request, cancellation, kUnexpectedError);
+                fail(failureStage, request, cancellation, kUnexpectedError);
             }
             if (release) { unload(); }
             else if (model_) { idleDeadline = Clock::now() + idleTimeout_; }
