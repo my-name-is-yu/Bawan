@@ -46,6 +46,26 @@ static BOOL Flag(AppDelegate *delegate, NSString *key) {
     return [[delegate valueForKey:key] boolValue];
 }
 
+class ScopedEngineCallbackSuppression final {
+public:
+    explicit ScopedEngineCallbackSuppression(AppDelegate *delegate) : delegate_(delegate) {
+        [delegate_ ensureEngine];
+        generation_ = [[delegate_ valueForKey:@"engineGeneration"] unsignedLongLongValue];
+        [delegate_ setValue:@(generation_ + 1) forKey:@"engineGeneration"];
+    }
+
+    ~ScopedEngineCallbackSuppression() {
+        [delegate_ setValue:@(generation_) forKey:@"engineGeneration"];
+    }
+
+    ScopedEngineCallbackSuppression(const ScopedEngineCallbackSuppression &) = delete;
+    ScopedEngineCallbackSuppression &operator=(const ScopedEngineCallbackSuppression &) = delete;
+
+private:
+    AppDelegate *__strong delegate_;
+    uint64_t generation_;
+};
+
 static NSView *FindView(NSView *root, NSString *identifier) {
     if ([root.identifier isEqualToString:identifier]) return root;
     for (NSView *child in root.subviews) {
@@ -128,12 +148,7 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     Require([translate.title isEqualToString:@"Translate  ⌘↵"] && !copy.enabled && !swap.enabled,
         @"Model availability after an edit must leave the revised source ready for an explicit translation");
 
-    // The fixture model is missing, so the real engine's load failure would race the
-    // scripted events below. Create the engine and detach its callbacks until this
-    // check finishes; the next check waits for that engine's real failure.
-    [delegate ensureEngine];
-    const uint64_t engineGeneration = [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue];
-    [delegate setValue:@(engineGeneration + 1) forKey:@"engineGeneration"];
+    ScopedEngineCallbackSuppression callbacks(delegate);
     [translate performClick:nil];
     uint64_t oldRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
     Require(oldRequest != 0 && Flag(delegate, @"busy"), @"The edit fixture must start a real active request");
@@ -178,7 +193,6 @@ static void CheckEditedRequests(AppDelegate *delegate, TranslationPanel *panel) 
     [delegate handleEngineEvent:revisedComplete];
     Require([output.string isEqualToString:@"Revised output"] && copy.enabled && swap.enabled && !Flag(delegate, @"busy"),
         @"The revised source's own completion must still enable Copy and Swap");
-    [delegate setValue:@(engineGeneration) forKey:@"engineGeneration"];
 }
 
 static void CheckColdRequestAndRetry(AppDelegate *delegate) {
