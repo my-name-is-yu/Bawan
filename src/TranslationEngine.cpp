@@ -1,5 +1,6 @@
 #include "TranslationEngine.h"
 #include "TranslationPrompt.h"
+#include "Utf8.h"
 
 #include "llama.h"
 
@@ -35,48 +36,6 @@ using Model = std::unique_ptr<llama_model, decltype(&llama_model_free)>;
 using Context = std::unique_ptr<llama_context, decltype(&llama_free)>;
 using Batch = std::unique_ptr<llama_batch_ext, decltype(&llama_batch_ext_free)>;
 using Sampler = std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)>;
-
-// Return the end of the valid UTF-8 prefix. A token can end partway through a
-// character, so incomplete trailing bytes wait for the next generated token.
-std::size_t utf8Prefix(const std::string & text, bool * japanese = nullptr,
-                       std::size_t offset = 0) {
-    while (offset < text.size()) {
-        const auto first = static_cast<unsigned char>(text[offset]);
-        std::size_t width;
-        std::uint32_t codepoint;
-        if (first < 0x80) { width = 1; codepoint = first; }
-        else if (first >= 0xC2 && first <= 0xDF) { width = 2; codepoint = first & 0x1F; }
-        else if (first >= 0xE0 && first <= 0xEF) { width = 3; codepoint = first & 0x0F; }
-        else if (first >= 0xF0 && first <= 0xF4) { width = 4; codepoint = first & 0x07; }
-        else { throw std::runtime_error("The text is not valid UTF-8."); }
-        if (offset + width > text.size()) { return offset; }
-        for (std::size_t byte = 1; byte < width; ++byte) {
-            const auto next = static_cast<unsigned char>(text[offset + byte]);
-            if ((next & 0xC0) != 0x80) {
-                throw std::runtime_error("The text is not valid UTF-8.");
-            }
-            codepoint = (codepoint << 6) | (next & 0x3F);
-        }
-        if ((width == 2 && codepoint < 0x80) ||
-            (width == 3 && codepoint < 0x800) ||
-            (width == 4 && codepoint < 0x10000) ||
-            (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF) {
-            throw std::runtime_error("The text is not valid UTF-8.");
-        }
-        if (japanese && ((codepoint >= 0x3040 && codepoint <= 0x30FF) ||
-                         (codepoint >= 0x31F0 && codepoint <= 0x31FF) ||
-                         (codepoint >= 0xFF66 && codepoint <= 0xFF9F) ||
-                         (codepoint >= 0x3400 && codepoint <= 0x4DBF) ||
-                         (codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||
-                         (codepoint >= 0xF900 && codepoint <= 0xFAFF) ||
-                         (codepoint >= 0x20000 && codepoint <= 0x323AF) ||
-                         (codepoint >= 0x3005 && codepoint <= 0x3007))) {
-            *japanese = true;
-        }
-        offset += width;
-    }
-    return offset;
-}
 
 std::vector<llama_token> tokenize(const llama_vocab * vocab,
                                   const std::string & text, bool special,
@@ -262,7 +221,7 @@ private:
 
     std::vector<llama_token> prompt(Request & request) {
         bool japanese = false;
-        if (utf8Prefix(request.text, &japanese) != request.text.size()) {
+        if (detail::utf8Prefix(request.text, &japanese) != request.text.size()) {
             throw std::runtime_error("The text is not valid UTF-8.");
         }
         if (request.text.find_first_not_of(" \t\r\n") == std::string::npos) {
@@ -354,7 +313,7 @@ private:
                 return {EngineEvent::Kind::Complete, request.id, std::move(output), false, request.direction};
             }
             output += tokenPiece(vocab, token);
-            validBytes = utf8Prefix(output, nullptr, validBytes);
+            validBytes = detail::utf8Prefix(output, nullptr, validBytes);
             const auto now = std::chrono::steady_clock::now();
             if (validBytes != emittedBytes && (emittedBytes == 0 ||
                 now - lastEmission >= std::chrono::milliseconds(33))) {
