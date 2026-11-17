@@ -341,9 +341,6 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         NSView *view = page.view;
         view.frame = _panel.contentView.bounds;
         view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-        view.wantsLayer = YES;
-        view.layer.cornerRadius = 16;
-        view.layer.masksToBounds = YES;
         _panel.contentView = view;
         _panel.title = title;
     }

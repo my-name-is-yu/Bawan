@@ -21,6 +21,9 @@
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 - (void)handleSelectionText:(NSString *)text;
+- (void)modelFileDidProgress:(double)progress message:(NSString *)message;
+- (void)modelFileDidBecomeReady:(NSURL *)fileURL;
+- (void)modelFileDidFail:(NSString *)message;
 - (void)startInitialSetup;
 - (void)showOnboarding;
 - (void)beginModelSetup;
@@ -134,10 +137,7 @@ static void WaitFor(Predicate predicate, NSString *message) {
 }
 
 static void SetAvailableModel(AppDelegate *delegate) {
-    [delegate setValue:[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"] forKey:@"modelURL"];
-    [delegate setValue:@(BawanModelSetupReady) forKey:@"modelPhase"];
-    [delegate setValue:@"Ready to translate · On-device processing" forKey:@"modelStatus"];
-    [delegate updateStatus];
+    [delegate modelFileDidBecomeReady:[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"]];
 }
 
 static void RequireModelFailure(AppDelegate *delegate) {
@@ -362,7 +362,6 @@ static void CheckFirstRunIntegration(void) {
     [delegate setValue:monitor forKey:@"shortcut"];
     [delegate setValue:store forKey:@"modelStore"];
     [delegate setValue:panel forKey:@"translationPanel"];
-    [delegate setValue:@"Prepare the translation model to get started." forKey:@"modelStatus"];
     [delegate buildMenus];
     __weak SetupSmokeDelegate *weakDelegate = delegate;
     panel.onClose = ^{ [weakDelegate cancelTranslation]; };
@@ -420,21 +419,20 @@ static void CheckFirstRunIntegration(void) {
             @"Escape before model readiness must close guidance without recording completion");
 
         [delegate startInitialSetup];
-        NSButton *modelSetup = (NSButton *)FindView(window.contentView, @"onboarding-model-setup");
-        NSButton *start = (NSButton *)FindView(window.contentView, @"onboarding-start");
-        Require(modelSetup && start && !modelSetup.hiddenOrHasHiddenAncestor && start.hiddenOrHasHiddenAncestor,
-            @"The model step must offer Download and keep the shortcut step's continue action hidden");
+        NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+        Require(primary && !primary.hiddenOrHasHiddenAncestor && [primary.title hasPrefix:@"Download Model"],
+            @"The model step's footer action must offer Download");
         delegate.allowLicense = NO;
-        [modelSetup performClick:nil];
+        [primary performClick:nil];
         Require(delegate.licenseViews == 1 && store.preparations == 0 &&
             ![defaults boolForKey:@"modelLicenseNoticeShown20261109"] &&
             ![defaults boolForKey:@"firstLaunchShown"],
             @"Declining model setup must leave the license notice and first-run state pending without I/O");
         delegate.allowLicense = YES;
-        [modelSetup performClick:nil];
+        [primary performClick:nil];
         Require(delegate.licenseViews == 2 && store.preparations == 1 && store.revalidations == 0 &&
             [defaults boolForKey:@"modelLicenseNoticeShown20261109"] &&
-            !start.hiddenOrHasHiddenAncestor && start.enabled && modelSetup.hiddenOrHasHiddenAncestor &&
+            [primary.title hasPrefix:@"Set Up Later"] && primary.enabled &&
             ![defaults boolForKey:@"firstLaunchShown"],
             @"Accepting the model notice must begin preparation and move on to the shortcut step, first use still incomplete");
         [window cancelOperation:nil];
@@ -443,21 +441,18 @@ static void CheckFirstRunIntegration(void) {
         Require(store.preparations == 2 && delegate.licenseViews == 2,
             @"Reopening accepted but unfinished setup must resume preparation without showing the notice again");
 
-        [delegate setValue:@(BawanModelSetupFailed) forKey:@"modelPhase"];
-        [delegate setValue:@"The model could not be verified. Try again." forKey:@"modelStatus"];
-        [delegate updateStatus];
-        Require(start.hiddenOrHasHiddenAncestor && modelSetup.enabled && !modelSetup.hiddenOrHasHiddenAncestor &&
-            [modelSetup.title localizedCaseInsensitiveContainsString:@"retry"],
+        [delegate modelFileDidFail:@"The model could not be verified. Try again."];
+        Require(primary.enabled && [primary.title localizedCaseInsensitiveContainsString:@"retry"],
             @"A preparation failure must return to the model step with Retry");
-        [modelSetup performClick:nil];
+        [primary performClick:nil];
         Require(store.preparations == 3 && store.revalidations == 2 && delegate.licenseViews == 2 &&
-            !Flag(delegate, @"modelFailed") && !start.hiddenOrHasHiddenAncestor,
+            !Flag(delegate, @"modelFailed") && [primary.title hasPrefix:@"Set Up Later"],
             @"Retry must prepare again and return to the shortcut step without asking for the accepted license");
         SetAvailableModel(delegate);
-        Require(start.enabled && monitor.permissionRequests == 0 &&
+        Require(primary.enabled && monitor.permissionRequests == 0 &&
             ![defaults boolForKey:@"firstLaunchShown"],
             @"Model readiness must enable Start without requesting either optional OS permission");
-        [start performClick:nil];
+        [primary performClick:nil];
         Require([defaults boolForKey:@"firstLaunchShown"] &&
             [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
             [source.string isEqualToString:edited] && [output.string isEqualToString:@"A saved translation"] &&
@@ -485,9 +480,10 @@ static void CheckFirstRunIntegration(void) {
             [window.contentView.identifier isEqualToString:@"bawan-panel"] && monitor.permissionRequests == 0,
             @"Escape from ready guidance must finish first use without optional shortcut permissions");
         [defaults setBool:NO forKey:@"firstLaunchShown"];
-        [delegate setValue:@(BawanModelSetupPreparing) forKey:@"modelPhase"];
+        [delegate beginModelSetup];
+        [delegate modelFileDidProgress:0.4 message:@"Downloading the model… 40%"];
         [delegate showOnboarding];
-        NSButton *later = (NSButton *)FindView(window.contentView, @"onboarding-start");
+        NSButton *later = (NSButton *)FindView(window.contentView, @"onboarding-primary");
         Require([later.title hasPrefix:@"Set Up Later"], @"An unset shortcut must offer Set Up Later");
         [later performClick:nil];
         Require([defaults boolForKey:@"firstLaunchShown"] &&
@@ -581,7 +577,6 @@ int main() {
         [delegate setValue:defaults forKey:@"defaults"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:panel forKey:@"translationPanel"];
-        [delegate setValue:@"Checking the model…" forKey:@"modelStatus"];
         __weak AppDelegate *weakDelegate = delegate;
         panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
             [weakDelegate translateText:text direction:direction];

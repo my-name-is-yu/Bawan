@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "ModelStore.h"
+#import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
@@ -27,23 +28,17 @@
     std::unique_ptr<bawan::TranslationEngine> _engine;
     uint64_t _activeRequestId;
     uint64_t _engineGeneration;
-    NSURL *_modelURL;
     NSString *_pendingText;
     bawan::Direction _pendingDirection;
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
-    // The model file is usable exactly when _modelURL is set; the phase also
-    // records engine load failures for a model file that is present.
-    BawanModelSetupPhase _modelPhase;
-    double _modelProgress;
-    NSString *_modelStatus;
+    BawanModelState _model;
 }
 @end
 
 static NSString *const BawanOnboardingCompletedKey = @"firstLaunchShown";
 static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown20261109";
-static NSString *const BawanModelReadyStatus = @"Ready to translate · On-device processing";
 
 @implementation AppDelegate
 
@@ -51,13 +46,14 @@ static NSString *const BawanModelReadyStatus = @"Ready to translate · On-device
     self = [super init];
     if (self) {
         _defaults = NSUserDefaults.standardUserDefaults;
-        _modelPhase = BawanModelSetupNeedsDownload;
     }
     return self;
 }
 
-- (BOOL)modelAvailable { return _modelURL != nil; }
-- (BOOL)modelFailed { return _modelPhase == BawanModelSetupFailed; }
+- (BOOL)modelAvailable { return _model.available(); }
+- (BOOL)modelFailed { return _model.failed(); }
+- (NSURL *)modelURL { return _model.url(); }
+- (NSString *)modelStatus { return _model.message(); }
 
 static NSString *StringFromUTF8(const std::string &text) {
     return [[NSString alloc] initWithBytes:text.data() length:text.size()
@@ -67,7 +63,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
     [self buildMenus];
-    _modelStatus = @"Prepare the translation model to get started.";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
     _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
@@ -85,38 +80,15 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStore = [[ModelStore alloc] init];
     _modelStore.onProgress = ^(double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        owner->_modelProgress = progress;
-        owner->_modelStatus = message;
-        [owner updateStatus];
+        if (owner && !owner->_terminating) [owner modelFileDidProgress:progress message:message];
     };
     _modelStore.onReady = ^(NSURL *fileURL) {
         AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        owner->_modelURL = fileURL;
-        owner->_modelPhase = BawanModelSetupReady;
-        owner->_modelProgress = 1;
-        owner->_modelStatus = BawanModelReadyStatus;
-        if (owner->_pendingText) {
-            NSString *text = owner->_pendingText;
-            auto direction = owner->_pendingDirection;
-            [owner translateText:text direction:direction];
-        } else if (owner->_warmUpWhenAvailable) {
-            [owner warmUpEngine];
-        }
-        [owner updateStatus];
+        if (owner && !owner->_terminating) [owner modelFileDidBecomeReady:fileURL];
     };
     _modelStore.onError = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        owner->_modelURL = nil;
-        owner->_pendingText = nil;
-        owner->_warmUpWhenAvailable = NO;
-        owner->_busy = NO;
-        owner->_activeRequestId = 0;
-        owner->_modelPhase = BawanModelSetupFailed;
-        owner->_modelStatus = message;
-        [owner updateStatus];
+        if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
@@ -150,6 +122,31 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self startInitialSetup];
 }
 
+- (void)modelFileDidProgress:(double)progress message:(NSString *)message {
+    _model.fileProgress(progress, message);
+    [self updateStatus];
+}
+
+- (void)modelFileDidBecomeReady:(NSURL *)fileURL {
+    _model.fileReady(fileURL);
+    if (_pendingText) {
+        NSString *text = _pendingText;
+        [self translateText:text direction:_pendingDirection];
+    } else if (_warmUpWhenAvailable) {
+        [self warmUpEngine];
+    }
+    [self updateStatus];
+}
+
+- (void)modelFileDidFail:(NSString *)message {
+    _model.fileFailed(message);
+    _pendingText = nil;
+    _warmUpWhenAvailable = NO;
+    _busy = NO;
+    _activeRequestId = 0;
+    [self updateStatus];
+}
+
 - (BOOL)needsOnboarding { return ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
 
 - (void)markOnboardingComplete {
@@ -179,14 +176,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     }];
 }
 
+// A first setup prepares the model; any later request revalidates it from scratch.
 - (void)prepareModel {
-    if (_modelPhase != BawanModelSetupNeedsDownload) {
+    if (!_model.needsDownload()) {
         [self retryModel:nil];
         return;
     }
-    _modelPhase = BawanModelSetupPreparing;
-    _modelProgress = 0;
-    _modelStatus = @"Checking the model…";
+    _model.beginPreparing();
     [self updateStatus];
     [_modelStore prepare];
 }
@@ -208,7 +204,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 // The shortcut step's button: leave for the translator even while the model is
 // still downloading. The translator shows preparation and translates once ready.
 - (void)finishOnboardingFromShortcuts {
-    if (_modelPhase != BawanModelSetupPreparing && _modelPhase != BawanModelSetupReady) return;
+    if (!_model.settingUpOrReady()) return;
     [self markOnboardingComplete];
     [_translationPanel showForManualInput];
     [self warmUpEngine];
@@ -216,7 +212,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 // Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
 - (void)finishOnboarding {
-    if (_modelPhase != BawanModelSetupReady) {
+    if (!_model.ready()) {
         [_translationPanel close];
         return;
     }
@@ -225,8 +221,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
-    NSString *message = _modelStatus ?: @"Prepare the translation model to get started.";
-    [page setModelPhase:_modelPhase message:message progress:_modelProgress];
+    [page setModelPhase:_model.phase() message:_model.message() progress:_model.progress()];
 }
 
 // Hidden pages are brought up to date when they are shown.
@@ -357,7 +352,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)updateStatus {
     [self refreshSetupPages];
-    _modelItem.title = _modelStatus ?: @"Preparing the model…";
+    _modelItem.title = _model.message();
     BOOL failed = [self modelFailed];
     BOOL available = [self modelAvailable];
     _retryItem.hidden = !failed;
@@ -402,12 +397,13 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)ensureEngine {
-    if (_engine || !_modelURL || _terminating) return;
+    NSURL *modelURL = _model.url();
+    if (_engine || !modelURL || _terminating) return;
     const uint64_t generation = ++_engineGeneration;
     __weak AppDelegate *weakSelf = self;
     auto mailbox = std::make_shared<bawan::EngineEventMailbox>();
     _engine = std::make_unique<bawan::TranslationEngine>(
-        std::string(_modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
+        std::string(modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
             if (!mailbox->push(std::move(event))) return;
             @autoreleasepool {
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -456,19 +452,12 @@ static NSString *StringFromUTF8(const std::string &text) {
     using Kind = bawan::EngineEvent::Kind;
     if (event.requestId == 0) {
         if (event.kind == Kind::Idle) return;
-        if (event.kind == Kind::Loading) {
-            _modelPhase = BawanModelSetupReady;
-            _modelStatus = @"Loading the model…";
-        } else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) {
-            _modelPhase = BawanModelSetupReady;
-            _modelStatus = BawanModelReadyStatus;
-        } else if (event.kind == Kind::Error) {
-            _modelPhase = BawanModelSetupFailed;
-            _modelStatus = StringFromUTF8(event.text);
-        }
+        if (event.kind == Kind::Loading) _model.engineLoading();
+        else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) _model.engineIdle();
+        else if (event.kind == Kind::Error) _model.engineFailed(StringFromUTF8(event.text));
         [self updateStatus];
         [_translationPanel setAvailable:[self modelAvailable] busy:_busy
-            status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _modelStatus
+            status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _model.message()
             kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;
     }
@@ -503,7 +492,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     if (_engine) _engine->cancel();
-    if (_modelPhase == BawanModelSetupReady) _modelStatus = BawanModelReadyStatus;
+    _model.stopLoading();
     if (!_busy) { [self updateStatus]; return; }
     _activeRequestId = 0;
     _busy = NO;
@@ -513,7 +502,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)openTranslation:(id)sender {
     if ([self needsOnboarding]) {
-        if (_modelPhase == BawanModelSetupReady) {
+        if (_model.ready()) {
             [self finishOnboarding];
             [self warmUpEngine];
         } else {
@@ -527,7 +516,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleSelectionText:(NSString *)text {
     [_translationPanel showForSelection:text];
-    if (_modelPhase == BawanModelSetupNeedsDownload) {
+    if (_model.needsDownload()) {
         [self showOnboarding];
         return;
     }
@@ -550,10 +539,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self cancelTranslation];
     ++_engineGeneration;
     _engine.reset();
-    _modelURL = nil;
-    _modelPhase = BawanModelSetupPreparing;
-    _modelProgress = 0;
-    _modelStatus = @"Checking the model…";
+    _model.beginPreparing();
     [self updateStatus];
     [_modelStore revalidate];
 }

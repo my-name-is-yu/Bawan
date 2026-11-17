@@ -1,12 +1,6 @@
 #import "BawanAppearance.h"
+#import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
-
-typedef NS_ENUM(NSInteger, BawanModelSetupPhase) {
-    BawanModelSetupNeedsDownload,
-    BawanModelSetupPreparing,
-    BawanModelSetupReady,
-    BawanModelSetupFailed
-};
 
 @protocol BawanModelSetupDisplay <NSObject>
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress;
@@ -37,6 +31,16 @@ inline BawanModelPresentation BawanPresentModel(BawanModelSetupPhase phase) {
 }
 
 static NSString *const BawanModelLicenseTitle = @"Model License";
+
+// The global shortcuts in display order, shared by onboarding and Settings.
+static constexpr bawan::ShortcutAction BawanShortcutActions[] = {
+    bawan::ShortcutAction::TranslateSelection, bawan::ShortcutAction::OpenPanel
+};
+
+// The stable slug used in control identifiers.
+inline NSString *ShortcutSlug(bawan::ShortcutAction action) {
+    return action == bawan::ShortcutAction::TranslateSelection ? @"selection" : @"panel";
+}
 
 inline NSString *ShortcutPressCountTitle(unsigned pressCount) { return pressCount == 1 ? @"Once" : @"Twice"; }
 
