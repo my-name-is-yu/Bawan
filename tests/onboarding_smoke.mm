@@ -132,6 +132,22 @@ static void Capture(NSWindow *window, NSString *name) {
     Require([png writeToFile:path atomically:YES], @"Could not save the onboarding capture");
 }
 
+static void ServiceQueuedAppEvents(NSWindow *window) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:1.0];
+    unsigned dispatched = 0;
+    while ((!NSApp.active || !window.isKeyWindow) && deadline.timeIntervalSinceNow > 0) {
+        NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+            untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
+            inMode:NSDefaultRunLoopMode dequeue:YES];
+        if (event) { [NSApp sendEvent:event]; ++dispatched; }
+        [window makeKeyWindow];
+    }
+    std::cerr << "APP EVENTS dispatched=" << dispatched
+        << " appActive=" << NSApp.active
+        << " runningAppActive=" << NSRunningApplication.currentApplication.active
+        << " key=" << window.isKeyWindow << "\n";
+}
+
 static void RunSmoke(void) {
     NSString *suite = [@"local.bawan.OnboardingSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
@@ -150,6 +166,7 @@ static void RunSmoke(void) {
     onboarding.onFinish = ^{ ++finishes; };
     @try {
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
+        ServiceQueuedAppEvents(window);
         [window makeKeyWindow];
         Settle(window);
         Require(window.canBecomeKeyWindow && window.visible && window.isKeyWindow && NSApp.keyWindow == window,

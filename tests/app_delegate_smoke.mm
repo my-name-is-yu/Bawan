@@ -547,6 +547,22 @@ static void CheckFirstRunSelection(void) {
     }
 }
 
+static void ServiceQueuedAppEvents(NSWindow *window) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:1.0];
+    unsigned dispatched = 0;
+    while ((!NSApp.active || !window.isKeyWindow) && deadline.timeIntervalSinceNow > 0) {
+        NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+            untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
+            inMode:NSDefaultRunLoopMode dequeue:YES];
+        if (event) { [NSApp sendEvent:event]; ++dispatched; }
+        [window makeKeyWindow];
+    }
+    std::cerr << "APP EVENTS dispatched=" << dispatched
+        << " appActive=" << NSApp.active
+        << " runningAppActive=" << NSRunningApplication.currentApplication.active
+        << " key=" << window.isKeyWindow << "\n";
+}
+
 static void CheckSelectionTrial(void) {
     using Kind = bawan::EngineEvent::Kind;
     enum class Case { Success, Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
@@ -591,6 +607,7 @@ static void CheckSelectionTrial(void) {
             NSTextField *trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
             Require(sample && primary && trialStatus && !sample.hiddenOrHasHiddenAncestor,
                 @"An available selection shortcut must offer its sample even if Open Translator needs permission");
+            ServiceQueuedAppEvents(window);
             [onboarding setActive:YES];
             BOOL acceptedFocus = [window makeFirstResponder:sample];
             [window makeKeyWindow];
