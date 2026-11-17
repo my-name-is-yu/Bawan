@@ -141,6 +141,8 @@ static void RunSmoke(void) {
         initWithPreferences:preferences monitor:monitor];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     NSWindow *window = panel.window;
+    // Programmatic fixture actions have no mouse hit to request panel keyboard focus.
+    ((NSPanel *)window).becomesKeyOnlyIfNeeded = NO;
     [window setContentSize:NSMakeSize(720, 500)];
     __block NSUInteger setups = 0, licenses = 0, finishes = 0, backs = 0;
     onboarding.onModelSetup = ^{ ++setups; };
@@ -150,8 +152,14 @@ static void RunSmoke(void) {
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
         [window makeKeyWindow];
         Settle(window);
-        Require(window.visible && window.isKeyWindow && NSApp.keyWindow == window,
-            @"The onboarding fixture must own a real key window before testing selected-text practice");
+        Require(window.canBecomeKeyWindow && window.visible && window.isKeyWindow && NSApp.keyWindow == window,
+            [NSString stringWithFormat:@"Onboarding fixture cannot own keyboard focus: canKey=%d visible=%d key=%d appKey=%@ active=%d running=%d policy=%ld menu=%@ responder=%@ rootNeedsKey=%d sampleAcceptsFocus=%d sampleNeedsKey=%d panelKeyOnlyIfNeeded=%d",
+                window.canBecomeKeyWindow, window.visible, window.isKeyWindow, NSApp.keyWindow,
+                NSApp.active, NSApp.running, (long)NSApp.activationPolicy, NSApp.mainMenu, window.firstResponder,
+                onboarding.view.needsPanelToBecomeKey,
+                FindView(onboarding.view, @"onboarding-trial-sample").acceptsFirstResponder,
+                FindView(onboarding.view, @"onboarding-trial-sample").needsPanelToBecomeKey,
+                ((NSPanel *)window).becomesKeyOnlyIfNeeded]);
         NSView *root = onboarding.view;
         Require([root.identifier isEqualToString:@"bawan-onboarding"], @"The first-run page needs its own view identity");
         NSView *modelStep = FindView(root, @"onboarding-step-model");
@@ -418,7 +426,10 @@ static void RunSmoke(void) {
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        if (![NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]) {
+            std::cerr << "FAIL: AppKit smoke fixture could not use accessory activation policy\n";
+            return EXIT_FAILURE;
+        }
         __block int result = EXIT_FAILURE;
         [NSRunLoop.mainRunLoop performBlock:^{
             @try {

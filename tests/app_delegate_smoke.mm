@@ -562,6 +562,8 @@ static void CheckSelectionTrial(void) {
         SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
         SelectionSetupSmokeDelegate *delegate = [[SelectionSetupSmokeDelegate alloc] init];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
+        // Programmatic fixture actions have no mouse hit to request panel keyboard focus.
+        ((NSPanel *)panel.window).becomesKeyOnlyIfNeeded = NO;
         [delegate setValue:defaults forKey:@"defaults"];
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
@@ -590,8 +592,16 @@ static void CheckSelectionTrial(void) {
             Require(sample && primary && trialStatus && !sample.hiddenOrHasHiddenAncestor,
                 @"An available selection shortcut must offer its sample even if Open Translator needs permission");
             [onboarding setActive:YES];
-            [window makeFirstResponder:sample];
+            BOOL acceptedFocus = [window makeFirstResponder:sample];
+            [window makeKeyWindow];
             sample.selectedRange = NSMakeRange(0, sample.string.length);
+            Require(acceptedFocus && window.canBecomeKeyWindow && window.visible && window.isKeyWindow &&
+                NSApp.keyWindow == window && window.firstResponder == sample,
+                [NSString stringWithFormat:@"Selection-trial fixture cannot own keyboard focus: acceptedFocus=%d canKey=%d visible=%d key=%d appKey=%@ active=%d running=%d policy=%ld menu=%@ responder=%@ sampleAcceptsFocus=%d sampleNeedsKey=%d panelKeyOnlyIfNeeded=%d",
+                    acceptedFocus, window.canBecomeKeyWindow, window.visible, window.isKeyWindow, NSApp.keyWindow,
+                    NSApp.active, NSApp.running, (long)NSApp.activationPolicy, NSApp.mainMenu, window.firstResponder,
+                    sample.acceptsFirstResponder, sample.needsPanelToBecomeKey,
+                    ((NSPanel *)window).becomesKeyOnlyIfNeeded]);
             Require([primary.title hasPrefix:@"Set Up Later"] && !onboarding.selectionTrialComplete &&
                 ![defaults boolForKey:@"firstLaunchShown"],
                 @"Selecting the practice sentence and enabling permissions must not complete the trial or onboarding");
@@ -926,7 +936,11 @@ static void CheckModelLicenseSheet(void) {
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        if (![NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]) {
+            std::cerr << "FAIL: AppKit smoke fixture could not use accessory activation policy\n";
+            return EXIT_FAILURE;
+        }
+        [NSApp finishLaunching];
         if (argc == 2 && std::string(argv[1]) == "--first-run-selection") {
             try {
                 CheckFirstRunSelection();
