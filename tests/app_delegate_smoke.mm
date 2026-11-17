@@ -2,6 +2,7 @@
 #import "TranslationPanel.h"
 #import "ModelStore.h"
 #import "OnboardingViewController.h"
+#import "BawanAppearance.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -274,6 +275,81 @@ static void CheckWarmUpFailure(AppDelegate *delegate) {
     WaitFor([&] { return Flag(delegate, @"modelFailed"); },
         @"Model prewarming did not report its failure to the application");
     RequireModelFailure(delegate);
+}
+
+static void CheckModelStatusPresentation(AppDelegate *delegate, TranslationPanel *panel) {
+    using Kind = bawan::EngineEvent::Kind;
+    [delegate retryModel:nil];
+    [panel showForSelection:@"Keep this input after cancellation"];
+    NSTextField *status = (NSTextField *)FindView(panel.window.contentView, @"status");
+    NSButton *translate = (NSButton *)FindView(panel.window.contentView, @"translate");
+    Require(status && translate, @"The status fixture must use the real translator controls");
+    auto requireStatus = [&](NSString *message, BawanColorRole role) {
+        Require([status.stringValue isEqualToString:message] && !status.hidden &&
+            [status.textColor isEqual:BawanColor(role)],
+            [NSString stringWithFormat:@"The translator must preserve its status %@; actual=%@", message, status.stringValue]);
+    };
+
+    [delegate translateText:@"Keep this input after cancellation" direction:bawan::Direction::Automatic];
+    [delegate cancelTranslation];
+    requireStatus(@"Translation cancelled", BawanSecondaryText);
+    Require(!translate.enabled, @"Cancelling a queued request must still wait for the model file");
+    SetAvailableModel(delegate);
+    requireStatus(@"Translation cancelled", BawanSecondaryText);
+    Require(translate.enabled && !Flag(delegate, @"busy"),
+        @"A verified file must enable translation even while preserving the cancellation message");
+
+    ScopedEngineCallbackSuppression callbacks(delegate);
+    bawan::EngineEvent loading{Kind::Loading, 0, {}};
+    bawan::EngineEvent ready{Kind::Ready, 0, {}};
+    bawan::EngineEvent loadError{Kind::Error, 0, "Could not load the verified model"};
+    [delegate handleEngineEvent:loading];
+    [delegate updateStatus];
+    requireStatus(@"Loading the model…", BawanSecondaryText);
+    [delegate handleEngineEvent:loadError];
+    [delegate updateStatus];
+    requireStatus(@"Could not load the verified model", BawanError);
+    [delegate handleEngineEvent:ready];
+    Require(status.hidden, @"Model readiness must clear the preceding model error");
+
+    struct Outcome {
+        Kind kind;
+        bool truncated;
+        const char *text;
+        NSString *message;
+        BawanColorRole color;
+    };
+    const Outcome outcomes[] = {
+        {Kind::Complete, true, "Partial translation",
+            @"Output limit reached. The translation is incomplete. Select less text and try again.", BawanWarning},
+        {Kind::Error, false, "Inference failed", @"Inference failed", BawanError},
+        {Kind::Cancelled, false, "", @"Translation cancelled", BawanSecondaryText}
+    };
+    for (const Outcome &outcome : outcomes) {
+        [delegate translateText:@"Try translating" direction:bawan::Direction::Automatic];
+        uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+        Require(request && status.hidden, @"A new request must clear the previous translation outcome");
+        [delegate handleEngineEvent:loading];
+        [delegate updateStatus];
+        requireStatus(@"Loading the model…", BawanSecondaryText);
+        [delegate handleEngineEvent:ready];
+        Require(status.hidden && Flag(delegate, @"busy") &&
+            [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
+            @"Model readiness must clear Loading without completing the active translation");
+        bawan::EngineEvent terminal{outcome.kind, request, outcome.text, outcome.truncated};
+        [delegate handleEngineEvent:terminal];
+        [delegate updateStatus];
+        requireStatus(outcome.message, outcome.color);
+        Require(!Flag(delegate, @"busy"), @"A translation outcome must release the busy state");
+    }
+
+    [delegate translateText:@"Cancel loading" direction:bawan::Direction::Automatic];
+    [delegate handleEngineEvent:loading];
+    [delegate cancelTranslation];
+    bawan::EngineEvent cancelled{Kind::Cancelled, 0, {}};
+    [delegate handleEngineEvent:cancelled];
+    [delegate updateStatus];
+    requireStatus(@"Translation cancelled", BawanSecondaryText);
 }
 
 static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
@@ -592,6 +668,7 @@ int main() {
                 CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
+                CheckModelStatusPresentation(delegate, panel);
                 CheckModelRevalidationOnRetry(delegate);
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();

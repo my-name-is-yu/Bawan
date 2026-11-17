@@ -26,6 +26,8 @@ typedef NS_ENUM(NSInteger, BawanStatusKind) {
 - (void)showTranslation;
 - (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;
+// Update controls without replacing the current status message.
+- (void)setAvailable:(BOOL)available busy:(BOOL)busy;
 - (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(BawanStatusKind)kind;
 - (void)setOutput:(NSString *)output direction:(bawan::Direction)direction;
 - (void)close;

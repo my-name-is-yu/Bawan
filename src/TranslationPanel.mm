@@ -389,15 +389,19 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     [_panel makeFirstResponder:_source];
 }
 
-- (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(BawanStatusKind)kind {
+- (void)setAvailable:(BOOL)available busy:(BOOL)busy {
     _available = available;
     _busy = busy;
+    [self updateButtons];
+}
+
+- (void)setAvailable:(BOOL)available busy:(BOOL)busy status:(NSString *)status kind:(BawanStatusKind)kind {
     _status.stringValue = status;
     _status.textColor = BawanColor(kind == BawanStatusError ? BawanError :
                                  kind == BawanStatusWarning ? BawanWarning : BawanSecondaryText);
     _status.hidden = status.length == 0;
     [self updateMessageSpacing];
-    [self updateButtons];
+    [self setAvailable:available busy:busy];
 }
 
 - (void)setOutput:(NSString *)output direction:(bawan::Direction)direction {

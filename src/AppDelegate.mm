@@ -33,6 +33,7 @@
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
+    BOOL _showingModelStatus;
     BawanModelState _model;
 }
 @end
@@ -102,7 +103,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];
         [owner->_translationPanel showWithoutChangingInput];
-        [owner->_translationPanel setAvailable:[owner hasVerifiedModelFile] busy:owner->_busy status:message kind:BawanStatusWarning];
+        [owner showTranslationStatus:message kind:BawanStatusWarning];
         owner->_statusItem.button.toolTip = message;
     };
     _shortcut.onOpenPanel = ^{
@@ -358,10 +359,21 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.hidden = !failed;
     _retryItem.enabled = failed;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
-    if (!_busy) [_translationPanel setAvailable:available busy:NO status:available ? @"" : _modelItem.title
-                                         kind:failed ? BawanStatusError : BawanStatusInformation];
-    else if (!available) [_translationPanel setAvailable:NO busy:YES status:_modelItem.title
-                                                  kind:failed ? BawanStatusError : BawanStatusInformation];
+    BOOL hasModelMessage = _model.phase() != BawanModelSetupReady;
+    if (hasModelMessage || _showingModelStatus) {
+        // Ready clears a preceding model message, including Loading while busy.
+        // It must not erase a translation outcome or a shortcut warning.
+        _showingModelStatus = hasModelMessage;
+        [_translationPanel setAvailable:available busy:_busy status:hasModelMessage ? _modelItem.title : @""
+                                  kind:failed ? BawanStatusError : BawanStatusInformation];
+    } else {
+        [_translationPanel setAvailable:available busy:_busy];
+    }
+}
+
+- (void)showTranslationStatus:(NSString *)message kind:(BawanStatusKind)kind {
+    _showingModelStatus = NO;
+    [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy status:message kind:kind];
 }
 
 - (void)updateShortcutItem {
@@ -445,7 +457,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
     [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-    [_translationPanel setAvailable:YES busy:YES status:@"" kind:BawanStatusInformation];
+    [self showTranslationStatus:@"" kind:BawanStatusInformation];
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
@@ -456,9 +468,6 @@ static NSString *StringFromUTF8(const std::string &text) {
         else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) _model.engineIdle();
         else if (event.kind == Kind::Error) _model.engineFailed(StringFromUTF8(event.text));
         [self updateStatus];
-        [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy
-            status:event.kind == Kind::Ready || event.kind == Kind::Cancelled ? @"" : _model.message()
-            kind:event.kind == Kind::Error ? BawanStatusError : BawanStatusInformation];
         return;
     }
     if (event.requestId != _activeRequestId) return;
@@ -470,19 +479,19 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:event.truncated ?
+            [self showTranslationStatus:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
                                       kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+            [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:StringFromUTF8(event.text) kind:BawanStatusError];
+            [self showTranslationStatus:StringFromUTF8(event.text) kind:BawanStatusError];
             break;
         default: break;
     }
@@ -497,7 +506,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = NO;
     [self updateStatus];
-    [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:NO status:@"Translation cancelled" kind:BawanStatusInformation];
+    [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
 }
 
 - (void)openTranslation:(id)sender {
