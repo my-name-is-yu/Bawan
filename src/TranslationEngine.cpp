@@ -21,6 +21,13 @@ namespace {
 constexpr std::size_t kMaximumPrompt = 4096;
 constexpr std::size_t kMaximumOutput = 4096;
 constexpr std::size_t kBatchSize = 128;
+constexpr std::size_t kContextGranularity = 256;
+
+std::size_t contextSize(std::size_t promptTokens) {
+    const auto output = std::min(kMaximumOutput, std::max<std::size_t>(512, promptTokens * 2 + 256));
+    const auto total = promptTokens + output;
+    return (total + kContextGranularity - 1) / kContextGranularity * kContextGranularity;
+}
 
 using Model = std::unique_ptr<llama_model, decltype(&llama_model_free)>;
 using Context = std::unique_ptr<llama_context, decltype(&llama_free)>;
@@ -286,7 +293,9 @@ private:
         if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
 
         auto parameters = llama_context_default_params();
-        parameters.n_ctx = kMaximumPrompt + kMaximumOutput;
+        const auto contextTokens = contextSize(tokens.size());
+        const auto outputLimit = std::min(kMaximumOutput, contextTokens - tokens.size());
+        parameters.n_ctx = static_cast<std::uint32_t>(contextTokens);
         parameters.n_batch = kBatchSize;
         parameters.n_ubatch = kBatchSize;
         parameters.n_seq_max = 1;
@@ -318,7 +327,7 @@ private:
         std::size_t emittedBytes = 0;
         std::size_t validBytes = 0;
         auto lastEmission = std::chrono::steady_clock::time_point{};
-        for (std::size_t generated = 0; generated < kMaximumOutput; ++generated) {
+        for (std::size_t generated = 0; generated < outputLimit; ++generated) {
             if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto token = llama_sampler_sample(sampler.get(), context.get(), -1);
             if (llama_vocab_is_eog(vocab, token) || token == stopTags.front() || token == stopBos) {
@@ -334,7 +343,7 @@ private:
                 emittedBytes = validBytes;
                 lastEmission = now;
             }
-            if (generated + 1 < kMaximumOutput) {
+            if (generated + 1 < outputLimit) {
                 decode(context.get(), batch.get(), &token, 1, tokens.size() + generated, true);
             }
         }
