@@ -11,10 +11,49 @@ static void require(bool condition, const char *message) {
     }
 }
 
+static void testDeferredCopyDefault(NSUserDefaults *defaults) {
+    constexpr auto selection = bawan::ShortcutAction::TranslateSelection;
+    constexpr auto panel = bawan::ShortcutAction::OpenPanel;
+    __block bawan::KeyboardLayout layout;
+    bawan::KeyboardLayout (^provider)(void) = ^{ return layout; };
+    auto *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:provider];
+    require(![preferences bindingForAction:selection].enabled,
+            "unresolved Copy is unavailable on first launch");
+
+    const bawan::ShortcutBinding customPanel{true, 5, bawan::Option, 1};
+    require([preferences setBinding:customPanel forAction:panel error:nil],
+            "the other shortcut can be saved while Copy is unresolved");
+
+    NSDictionary *stored = [defaults objectForKey:@"globalShortcuts"];
+    require(![stored[@"bindings"][@"translateSelection"][@"keyCode"] isEqual:@(bawan::unresolvedShortcutKey)],
+            "saving the panel does not persist an unresolved physical Copy binding");
+
+    layout = bawan::test::qwertyLayout();
+    const bawan::ShortcutBinding qwertyDefault{true, 8, bawan::Command, 2};
+    auto *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:provider];
+    require([reloaded bindingForAction:selection] == qwertyDefault &&
+            [reloaded bindingForAction:panel] == customPanel,
+            "relaunch recovers default Copy without changing the saved panel key");
+    require([preferences bindings][0] == qwertyDefault,
+            "the current session recovers default Copy when a usable layout returns");
+
+    auto disabled = qwertyDefault;
+    disabled.enabled = false;
+    require([reloaded setBinding:disabled forAction:selection error:nil],
+            "the user can explicitly disable the resolved Copy shortcut");
+    layout = bawan::test::dvorakLayout();
+    auto *disabledReload = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:provider];
+    require([reloaded bindingForAction:selection] == disabled &&
+            [disabledReload bindingForAction:selection] == disabled,
+            "layout changes and relaunch do not enable or remap an explicitly disabled physical key");
+}
+
 int main() {
     @autoreleasepool {
         NSString *suite = [@"local.bawan.ShortcutPreferencesTests." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+        [defaults removePersistentDomainForName:suite];
+        testDeferredCopyDefault(defaults);
         [defaults removePersistentDomainForName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults layoutProvider:^{ return bawan::test::qwertyLayout(); }];
         auto initial = bawan::defaultShortcuts(bawan::test::qwertyLayout());

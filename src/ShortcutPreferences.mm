@@ -164,7 +164,7 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
     if (!self) return nil;
     _defaults = defaults;
     _layoutProvider = [provider copy];
-    _bindings = bawan::defaultShortcuts(self.keyboardLayout);
+    _bindings = bawan::defaultShortcuts({});
     id stored = [_defaults objectForKey:PreferencesKey];
     if ([stored isKindOfClass:NSDictionary.class]) {
         unsigned version = 0;
@@ -174,7 +174,8 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
             ReadBinding(rows[@"openPanel"], _bindings[1]);
         }
     }
-    if (bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[1].enabled = false;
+    if (![self resolveDefaultSelection] &&
+        bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[1].enabled = false;
     [self save];
     __weak ShortcutPreferences *weakSelf = self;
     _layoutObserver = [NSDistributedNotificationCenter.defaultCenter
@@ -192,14 +193,28 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
 
 - (bawan::KeyboardLayout)keyboardLayout { return _layoutProvider(); }
 
-- (void)save {
-    [_defaults setObject:@{@"version": @1, @"bindings": @{
-        ActionKey(bawan::ShortcutAction::TranslateSelection): EncodeBinding(_bindings[0]),
-        ActionKey(bawan::ShortcutAction::OpenPanel): EncodeBinding(_bindings[1])}}
-        forKey:PreferencesKey];
+- (BOOL)resolveDefaultSelection {
+    if (_bindings[0].keyCode != bawan::unresolvedShortcutKey) return NO;
+    const auto selection = bawan::defaultShortcuts(self.keyboardLayout)[0];
+    if (!selection.enabled) return NO;
+    _bindings[0] = selection;
+    if (bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[0].enabled = false;
+    return YES;
 }
 
-- (bawan::ShortcutBindings)bindings { return _bindings; }
+- (void)save {
+    NSMutableDictionary *rows = [@{
+        ActionKey(bawan::ShortcutAction::OpenPanel): EncodeBinding(_bindings[1])} mutableCopy];
+    if (_bindings[0].keyCode != bawan::unresolvedShortcutKey) {
+        rows[ActionKey(bawan::ShortcutAction::TranslateSelection)] = EncodeBinding(_bindings[0]);
+    }
+    [_defaults setObject:@{@"version": @1, @"bindings": rows} forKey:PreferencesKey];
+}
+
+- (bawan::ShortcutBindings)bindings {
+    if ([self resolveDefaultSelection]) [self save];
+    return _bindings;
+}
 
 - (bawan::ShortcutBinding)bindingForAction:(bawan::ShortcutAction)action {
     const unsigned index = static_cast<unsigned>(action);
@@ -208,7 +223,7 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
         none.enabled = false;
         return none;
     }
-    return _bindings[index];
+    return self.bindings[index];
 }
 
 - (BOOL)setBinding:(bawan::ShortcutBinding)binding forAction:(bawan::ShortcutAction)action
@@ -220,7 +235,7 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
         if (error) *error = @"Unable to identify this shortcut action.";
         return NO;
     }
-    bawan::ShortcutBindings candidate = _bindings;
+    bawan::ShortcutBindings candidate = self.bindings;
     candidate[index] = binding;
     bawan::ShortcutError problem = bawan::validateShortcut(binding, self.keyboardLayout);
     if (problem == bawan::ShortcutError::None) problem = bawan::validateShortcuts(candidate);
