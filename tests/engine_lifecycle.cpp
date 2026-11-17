@@ -6,15 +6,20 @@
 #include <future>
 #include <cstdlib>
 #include <iostream>
+#include <initializer_list>
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 using namespace std::chrono_literals;
 
 namespace {
+
+using Kind = bawan::EngineEvent::Kind;
+using Observation = std::pair<Kind, std::uint64_t>;
 
 class Events {
 public:
@@ -29,6 +34,11 @@ public:
     std::size_t mark() {
         std::lock_guard<std::mutex> lock(mutex_);
         return events_.size();
+    }
+
+    std::vector<bawan::EngineEvent> snapshot() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return events_;
     }
 
     void requireEvent(bawan::EngineEvent::Kind kind, std::uint64_t id, std::size_t after) {
@@ -65,15 +75,244 @@ public:
         }
     }
 
+    void requireSequence(std::initializer_list<Observation> expected) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<Observation> actual;
+        for (const auto & event : events_) { actual.emplace_back(event.kind, event.requestId); }
+        if (actual != std::vector<Observation>(expected)) {
+            std::string message = "Unexpected callback sequence:";
+            for (const auto & event : actual) {
+                message += " (kind=" + std::to_string(static_cast<int>(event.first)) +
+                    ", requestId=" + std::to_string(event.second) + ")";
+            }
+            throw std::runtime_error(message);
+        }
+    }
+
 private:
     std::mutex mutex_;
     std::condition_variable changed_;
     std::vector<bawan::EngineEvent> events_;
 };
 
+class LoadingGate {
+public:
+    explicit LoadingGate(Events & events)
+        : events_(events), entered_(enter_.get_future()), resumed_(resume_.get_future().share()) {}
+
+    void push(bawan::EngineEvent event) {
+        const bool hold = event.kind == Kind::Loading && !held_.exchange(true);
+        events_.push(std::move(event));
+        if (hold) {
+            enter_.set_value();
+            resumed_.wait();
+        }
+    }
+
+    void wait() {
+        if (entered_.wait_for(60s) != std::future_status::ready) {
+            throw std::runtime_error("The worker did not reach Loading");
+        }
+    }
+
+    void release() { std::call_once(released_, [&] { resume_.set_value(); }); }
+
+private:
+    Events & events_;
+    std::promise<void> enter_;
+    std::future<void> entered_;
+    std::promise<void> resume_;
+    std::shared_future<void> resumed_;
+    std::atomic<bool> held_{false};
+    std::once_flag released_;
+};
+
+struct ReleaseLoadingOnExit {
+    LoadingGate & gate;
+    ~ReleaseLoadingOnExit() { gate.release(); }
+};
+
+void requireIncreasingIds(std::initializer_list<std::uint64_t> ids) {
+    std::uint64_t previous = 0;
+    for (const auto id : ids) {
+        if (id <= previous) { throw std::runtime_error("Request IDs were reused or moved backwards"); }
+        previous = id;
+    }
 }
 
-int main() {
+void releaseKeepsLatestTranslation() {
+    Events events;
+    LoadingGate gate(events);
+    bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
+        [&](bawan::EngineEvent event) { gate.push(std::move(event)); });
+    ReleaseLoadingOnExit release{gate};
+    engine.warmUp();
+    gate.wait();
+    const auto superseded = engine.translate("First");
+    engine.releaseMemory();
+    const auto latest = engine.translate("Latest");
+    engine.warmUp();
+    engine.releaseMemory();
+    gate.release();
+    events.requireEvent(Kind::Error, latest, 0);
+    events.requireQuietFor(100ms);
+    engine.shutdown();
+    requireIncreasingIds({superseded, latest});
+    // Replacing a translation must keep the useful in-flight load. Release
+    // retains the latest queued translation, even when warm-up is also queued.
+    events.requireSequence({
+        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0},
+        {Kind::Cancelled, superseded}, {Kind::Loading, 0}, {Kind::Idle, 0},
+        {Kind::Error, 0}, {Kind::Error, latest},
+    });
+}
+
+void releaseSupersedesWarmUp() {
+    Events events;
+    LoadingGate gate(events);
+    bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
+        [&](bawan::EngineEvent event) { gate.push(std::move(event)); });
+    ReleaseLoadingOnExit release{gate};
+    engine.warmUp();
+    gate.wait();
+    engine.warmUp();
+    engine.releaseMemory();
+    engine.warmUp();
+    gate.release();
+    events.requireEvent(Kind::Error, 0, 0);
+    events.requireQuietFor(100ms);
+    engine.shutdown();
+    events.requireSequence({{Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}});
+}
+
+void cancelOverlappingTranslations() {
+    Events events;
+    LoadingGate gate(events);
+    bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
+        [&](bawan::EngineEvent event) { gate.push(std::move(event)); });
+    ReleaseLoadingOnExit release{gate};
+    const auto active = engine.translate("Active");
+    gate.wait();
+    const auto superseded = engine.translate("Superseded");
+    const auto withdrawn = engine.translate("Withdrawn");
+    engine.releaseMemory();
+    engine.warmUp();
+    engine.cancel();
+    const auto recovery = engine.translate("After cancellation");
+    gate.release();
+    events.requireEvent(Kind::Error, recovery, 0);
+    events.requireQuietFor(100ms);
+    engine.shutdown();
+    requireIncreasingIds({active, superseded, withdrawn, recovery});
+    events.requireSequence({
+        {Kind::Loading, 0}, {Kind::Cancelled, 0}, {Kind::Cancelled, active},
+        {Kind::Cancelled, superseded}, {Kind::Cancelled, withdrawn},
+        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}, {Kind::Error, recovery},
+    });
+}
+
+void shutdownDiscardsOverlappingWork() {
+    Events events;
+    LoadingGate gate(events);
+    bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
+        [&](bawan::EngineEvent event) { gate.push(std::move(event)); });
+    ReleaseLoadingOnExit release{gate};
+    const auto active = engine.translate("Active");
+    gate.wait();
+    const auto superseded = engine.translate("Superseded");
+    const auto withdrawn = engine.translate("Withdrawn");
+    engine.releaseMemory();
+    engine.cancel();
+    const auto pending = engine.translate("Pending at shutdown");
+    engine.warmUp();
+    auto stopped = std::async(std::launch::async, [&] {
+        engine.shutdown();
+    });
+    // Shutdown consumes a revision. Observe that gap through public request
+    // IDs before releasing Loading, so thread scheduling cannot race the test.
+    auto previous = pending;
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    for (;;) {
+        const auto current = engine.translate("Waiting for shutdown");
+        if (current > previous + 1) { break; }
+        previous = current;
+        if (std::chrono::steady_clock::now() >= deadline) {
+            gate.release();
+            stopped.get();
+            throw std::runtime_error("Shutdown did not invalidate the held worker");
+        }
+        std::this_thread::yield();
+    }
+    const auto status = stopped.wait_for(0ms);
+    gate.release();
+    stopped.get();
+    if (status != std::future_status::timeout) {
+        throw std::runtime_error("Shutdown did not join the held worker");
+    }
+    const auto afterShutdown = engine.translate("After shutdown");
+    engine.warmUp();
+    engine.releaseMemory();
+    engine.cancel();
+    const auto later = engine.translate("Still shut down");
+    engine.shutdown();
+    events.requireQuietFor(100ms);
+    requireIncreasingIds({active, superseded, withdrawn, pending, afterShutdown, later});
+    events.requireSequence({{Kind::Loading, 0}});
+}
+
+void pendingTranslationCompletesBeforeRelease(const std::string & modelPath, bool releaseBeforeLatest) {
+    Events events;
+    LoadingGate gate(events);
+    bawan::TranslationEngine engine(modelPath,
+        [&](bawan::EngineEvent event) { gate.push(std::move(event)); }, 60s);
+    ReleaseLoadingOnExit release{gate};
+    engine.warmUp();
+    gate.wait();
+    const auto superseded = engine.translate("The first request is replaced.");
+    if (releaseBeforeLatest) { engine.releaseMemory(); }
+    const auto latest = engine.translate("Hello.", bawan::Direction::EnglishToJapanese);
+    if (!releaseBeforeLatest) { engine.releaseMemory(); }
+    engine.warmUp();
+    gate.release();
+    events.requireEvent(Kind::Complete, latest, 0);
+    const auto completedAt = std::chrono::steady_clock::now();
+    events.requireEvent(Kind::Idle, 0, 0);
+    if (std::chrono::steady_clock::now() - completedAt > 5s) {
+        throw std::runtime_error("The queued release waited for the 60-second idle timeout");
+    }
+    engine.shutdown();
+
+    std::vector<Observation> terminals;
+    std::size_t loads = 0;
+    bool completed = false;
+    bool unloaded = false;
+    for (const auto & event : events.snapshot()) {
+        if (event.kind == Kind::Loading) { ++loads; }
+        if (event.requestId != 0 &&
+            (event.kind == Kind::Complete || event.kind == Kind::Cancelled || event.kind == Kind::Error)) {
+            terminals.emplace_back(event.kind, event.requestId);
+        }
+        if (event.kind == Kind::Text || event.kind == Kind::Complete) {
+            if (event.requestId != latest || event.direction != bawan::Direction::EnglishToJapanese ||
+                event.text.empty()) {
+                throw std::runtime_error("The retained translation lost its request identity, output or direction");
+            }
+        }
+        if (event.kind == Kind::Complete && event.requestId == latest) { completed = true; }
+        if (event.kind == Kind::Idle) {
+            if (!completed) { throw std::runtime_error("Release unloaded before the pending translation completed"); }
+            unloaded = true;
+        }
+    }
+    if (loads != 1 || !unloaded ||
+        terminals != std::vector<Observation>{{Kind::Cancelled, superseded}, {Kind::Complete, latest}}) {
+        throw std::runtime_error("Release did not reuse the active load and finish each request exactly once");
+    }
+}
+
+}
+
+int main(int argc, char ** argv) {
     try {
         using Kind = bawan::EngineEvent::Kind;
         Events events;
@@ -140,7 +379,15 @@ int main() {
         replacedEvents.requireEvent(Kind::Cancelled, withdrawn, after);
         replacedEvents.requireQuietFor(200ms);
         replaced.shutdown();
-        std::cout << "PASS: lazy construction, cold errors, prewarm errors/cancellation, retries, unused shutdown and replaced-request cancellation\n";
+        releaseKeepsLatestTranslation();
+        releaseSupersedesWarmUp();
+        cancelOverlappingTranslations();
+        shutdownDiscardsOverlappingWork();
+        if (argc > 1) {
+            pendingTranslationCompletesBeforeRelease(argv[1], true);
+            pendingTranslationCompletesBeforeRelease(argv[1], false);
+        }
+        std::cout << "PASS: lazy construction, cold errors, prewarm errors/cancellation, retries, latest-wins, overlapping release/cancel/shutdown and exactly-once terminals\n";
         return EXIT_SUCCESS;
     } catch (const std::exception &error) {
         std::cerr << "FAIL: " << error.what() << '\n';

@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bawan {
@@ -122,59 +123,18 @@ public:
 
     ~Impl() { shutdown(); }
 
-    void warmUp() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (stopping_) { return; }
-            pendingWarmUp_ = true;
-        }
-        changed_.notify_one();
-    }
+    void warmUp() { submit(WorkerInstructions::WarmUp{}); }
 
     std::uint64_t translate(std::string text, Direction direction) {
-        std::uint64_t id;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            id = ++revision_;
-            if (stopping_) { return id; }
-            dropPendingRequestLocked();
-            pendingRequest_ = Request{id, std::move(text), direction};
-        }
-        changed_.notify_one();
-        return id;
+        return submit(Request{0, std::move(text), direction});
     }
 
-    void cancel() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            ++revision_;
-            ++cancellation_;
-            dropPendingRequestLocked();
-            pendingWarmUp_ = false;
-        }
-        changed_.notify_one();
-    }
+    void cancel() { submit(WorkerInstructions::Cancel{}); }
 
-    void releaseMemory() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (stopping_) { return; }
-            pendingRelease_ = true;
-            pendingWarmUp_ = false;
-        }
-        changed_.notify_one();
-    }
+    void releaseMemory() { submit(WorkerInstructions::Release{}); }
 
     void shutdown() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stopping_ = true;
-            ++revision_;
-            ++cancellation_;
-            pendingRequest_.reset();
-            pendingWarmUp_ = false;
-        }
-        changed_.notify_one();
+        submit(WorkerInstructions::Stop{});
         if (worker_.joinable()) { worker_.join(); }
     }
 
@@ -185,24 +145,117 @@ private:
         Direction direction;
     };
 
+    class WorkerInstructions {
+    public:
+        struct Wait {};
+        struct WarmUp {};
+        struct Release {};
+        struct Cancel {};
+        struct Stop {};
+        struct Translation {
+            enum class Afterwards { Wait, Release };
+            Request request;
+            Afterwards afterwards;
+        };
+        using Command = std::variant<Request, WarmUp, Release, Cancel, Stop>;
+        using Next = std::variant<Wait, WarmUp, Translation, Release, Stop>;
+        struct Work {
+            Next next;
+            std::vector<std::uint64_t> dropped;
+            std::uint64_t cancellation = 0;
+        };
+
+        // Called with mutex_ held. Priority and combination rules live here:
+        // Stop is final and suppresses callbacks. Cancel drops queued work and
+        // aborts the active load/translation, preserving any release obligation.
+        // Translation is latest-wins; it preserves a release, then unloads.
+        // Release replaces warm-up, never translation. Warm-up only fills Wait.
+        // Replacing a queued translation owes exactly one Cancelled callback.
+        std::uint64_t update(Command command) {
+            auto * request = std::get_if<Request>(&command);
+            const auto id = request ? ++revision_ : 0;
+            const bool stop = std::holds_alternative<Stop>(command);
+            const bool cancel = std::holds_alternative<Cancel>(command);
+            if (stop || cancel) {
+                ++revision_;
+                ++cancellation_;
+            }
+            if (stopped()) { return id; }
+            if (stop) {
+                stopped_ = true;
+                next_ = Stop{};
+                dropped_.clear();
+                return id;
+            }
+            auto * translation = std::get_if<Translation>(&next_);
+            const bool release = std::holds_alternative<Release>(next_) ||
+                (translation && translation->afterwards == Translation::Afterwards::Release);
+            if (request || cancel) {
+                if (translation) { dropped_.push_back(translation->request.id); }
+                if (request) {
+                    request->id = id;
+                    next_ = Translation{std::move(*request), release ?
+                        Translation::Afterwards::Release : Translation::Afterwards::Wait};
+                } else if (release) {
+                    next_ = Release{};
+                } else {
+                    next_ = Wait{};
+                }
+            } else if (std::holds_alternative<Release>(command)) {
+                if (translation) { translation->afterwards = Translation::Afterwards::Release; }
+                else { next_ = Release{}; }
+            } else if (std::holds_alternative<Wait>(next_)) {
+                next_ = WarmUp{};
+            }
+            return id;
+        }
+
+        bool hasWork() const {
+            return !std::holds_alternative<Wait>(next_) || !dropped_.empty();
+        }
+
+        Work take() {
+            Work work{std::move(next_), {}, cancellation_.load()};
+            work.dropped.swap(dropped_);
+            next_ = Wait{};
+            return work;
+        }
+
+        bool stopped() const { return stopped_.load(); }
+        bool cancelled(std::uint64_t id) const { return stopped() || revision_.load() != id; }
+        bool loadCancelled(std::uint64_t epoch) const {
+            return stopped() || cancellation_.load() != epoch;
+        }
+
+    private:
+        Next next_{Wait{}};
+        std::vector<std::uint64_t> dropped_;
+        // A replacement translation can reuse an in-flight load; only Cancel
+        // and Stop advance its cancellation epoch.
+        std::atomic<bool> stopped_{false};
+        std::atomic<std::uint64_t> revision_{0};
+        std::atomic<std::uint64_t> cancellation_{0};
+    };
+
     struct LoadProgress {
         Impl * owner;
         std::uint64_t cancellation;
     };
 
-    void dropPendingRequestLocked() {
-        if (pendingRequest_) { droppedRequests_.push_back(pendingRequest_->id); }
-        pendingRequest_.reset();
-    }
-
-    bool cancelled(std::uint64_t id) const {
-        return stopping_ || revision_.load() != id;
+    std::uint64_t submit(WorkerInstructions::Command command) {
+        std::uint64_t id;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            id = instructions_.update(std::move(command));
+        }
+        changed_.notify_one();
+        return id;
     }
 
     void emit(EngineEvent::Kind kind, std::uint64_t id = 0,
               std::string text = {}, bool truncated = false,
               Direction direction = Direction::Automatic) noexcept {
-        if (stopping_) { return; }
+        if (instructions_.stopped()) { return; }
         try { callback_(EngineEvent{kind, id, std::move(text), truncated, direction}); }
         catch (...) {  }
     }
@@ -218,15 +271,15 @@ private:
 
     bool load(std::uint64_t cancellation) {
         if (model_) { return true; }
-        if (stopping_ || cancellation_.load() != cancellation) { return false; }
+        if (instructions_.loadCancelled(cancellation)) { return false; }
         emit(EngineEvent::Kind::Loading, 0, "Loading the model…");
-        if (stopping_ || cancellation_.load() != cancellation) {
+        if (instructions_.loadCancelled(cancellation)) {
             emit(EngineEvent::Kind::Cancelled);
             return false;
         }
         llama_backend_init();
         backendInitialized_ = true;
-        if (stopping_ || cancellation_.load() != cancellation) {
+        if (instructions_.loadCancelled(cancellation)) {
             unload();
             emit(EngineEvent::Kind::Cancelled);
             return false;
@@ -237,12 +290,11 @@ private:
         LoadProgress progress{this, cancellation};
         modelParameters.progress_callback = [](float, void * opaque) {
             const auto * state = static_cast<LoadProgress *>(opaque);
-            return !state->owner->stopping_ &&
-                state->owner->cancellation_.load() == state->cancellation;
+            return !state->owner->instructions_.loadCancelled(state->cancellation);
         };
         modelParameters.progress_callback_user_data = &progress;
         model_.reset(llama_model_load_from_file(modelPath_.c_str(), modelParameters));
-        if (stopping_ || cancellation_.load() != cancellation) {
+        if (instructions_.loadCancelled(cancellation)) {
             unload();
             emit(EngineEvent::Kind::Cancelled);
             return false;
@@ -278,12 +330,12 @@ private:
             (toEnglish ? "en" : "ja") + "<|plamo:msg|>", true);
         const auto overhead = result.size() + prefix.size() + suffix.size();
         if (overhead > kMaximumPrompt) { throw std::runtime_error(kUnsupportedModel); }
-        if (cancelled(request.id)) return {};
+        if (instructions_.cancelled(request.id)) return {};
         // Parse only the application's PFML3 delimiters as special tokens.
         // Keep the existing token limit, not a byte heuristic that could reject
         // valid input. llama_tokenize's sizing pass itself is not interruptible.
         const auto source = tokenize(vocab, request.text, false, kMaximumPrompt - overhead);
-        if (cancelled(request.id)) return {};
+        if (instructions_.cancelled(request.id)) return {};
         result.reserve(overhead + source.size());
         result.insert(result.end(), prefix.begin(), prefix.end());
         result.insert(result.end(), source.begin(), source.end());
@@ -312,7 +364,7 @@ private:
     EngineEvent translate(Request & request) {
         if (!model_) { throw std::runtime_error("The model is not ready."); }
         const auto tokens = prompt(request);
-        if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+        if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
 
         auto parameters = llama_context_default_params();
         const auto contextTokens = contextSize(tokens.size());
@@ -337,7 +389,7 @@ private:
         llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
         const auto * vocab = llama_model_get_vocab(model_.get());
         for (std::size_t position = 0; position < tokens.size(); position += kBatchSize) {
-            if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto count = std::min(kBatchSize, tokens.size() - position);
             decode(context.get(), batch.get(), tokens.data() + position, count, position, position + count == tokens.size());
         }
@@ -347,7 +399,7 @@ private:
         std::size_t validBytes = 0;
         auto lastEmission = std::chrono::steady_clock::time_point{};
         for (std::size_t generated = 0; generated < outputLimit; ++generated) {
-            if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto token = llama_sampler_sample(sampler.get(), context.get(), -1);
             if (llama_vocab_is_eog(vocab, token) || token == stopTag_ || token == bos_) {
                 if (validBytes != output.size()) { throw std::runtime_error("Unable to read the end of the translation."); }
@@ -372,11 +424,11 @@ private:
     void fail(const std::optional<Request> & request, std::uint64_t cancellation, const char * message) {
         if (!model_) {
             unload();
-            emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
+            emit(instructions_.loadCancelled(cancellation) ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
                  0, message);
         }
         if (request) {
-            if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
+            if (instructions_.cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
             else { emit(EngineEvent::Kind::Error, request->id, message); }
         }
     }
@@ -385,17 +437,10 @@ private:
         using Clock = std::chrono::steady_clock;
         auto idleDeadline = Clock::time_point::max();
         for (;;) {
-            std::optional<Request> request;
-            std::vector<std::uint64_t> dropped;
-            std::uint64_t cancellation = 0;
-            bool release = false;
-            bool warmUp = false;
+            WorkerInstructions::Work work;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                const auto hasWork = [this] {
-                    return stopping_ || pendingWarmUp_ || pendingRequest_ || pendingRelease_ ||
-                        !droppedRequests_.empty();
-                };
+                const auto hasWork = [this] { return instructions_.hasWork(); };
                 if (model_) {
                     if (!changed_.wait_until(lock, idleDeadline, hasWork)) {
                         lock.unlock();
@@ -405,24 +450,24 @@ private:
                 } else {
                     changed_.wait(lock, hasWork);
                 }
-                if (stopping_) { break; }
-                dropped.swap(droppedRequests_);
-                release = pendingRelease_;
-                pendingRelease_ = false;
-                request = std::move(pendingRequest_);
-                pendingRequest_.reset();
-                warmUp = pendingWarmUp_;
-                pendingWarmUp_ = false;
-                cancellation = cancellation_.load();
+                if (instructions_.stopped()) { break; }
+                work = instructions_.take();
             }
-            for (const auto id : dropped) { emit(EngineEvent::Kind::Cancelled, id); }
-            if (!request && release) {
+            for (const auto id : work.dropped) { emit(EngineEvent::Kind::Cancelled, id); }
+            if (std::holds_alternative<WorkerInstructions::Release>(work.next)) {
                 unload();
                 continue;
             }
-            if (!request && (model_ || !warmUp)) { continue; }
+            auto * translation = std::get_if<WorkerInstructions::Translation>(&work.next);
+            if (!translation && (model_ ||
+                !std::holds_alternative<WorkerInstructions::WarmUp>(work.next))) { continue; }
+            std::optional<Request> request;
+            if (translation) { request = std::move(translation->request); }
+            const bool release = translation && translation->afterwards ==
+                WorkerInstructions::Translation::Afterwards::Release;
+            const auto cancellation = work.cancellation;
             try {
-                if (request && cancelled(request->id)) {
+                if (request && instructions_.cancelled(request->id)) {
                     emit(EngineEvent::Kind::Cancelled, request->id);
                 } else if (load(cancellation)) {
                     if (request) {
@@ -448,13 +493,7 @@ private:
     const std::chrono::milliseconds idleTimeout_;
     std::mutex mutex_;
     std::condition_variable changed_;
-    std::atomic<bool> stopping_{false};
-    std::atomic<std::uint64_t> revision_{0};
-    std::atomic<std::uint64_t> cancellation_{0};
-    bool pendingWarmUp_ = false;
-    bool pendingRelease_ = false;
-    std::optional<Request> pendingRequest_;
-    std::vector<std::uint64_t> droppedRequests_;
+    WorkerInstructions instructions_;
     Model model_{nullptr, llama_model_free};
     llama_token bos_ = LLAMA_TOKEN_NULL;
     llama_token stopTag_ = LLAMA_TOKEN_NULL;
