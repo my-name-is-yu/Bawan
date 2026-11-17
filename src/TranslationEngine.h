@@ -41,6 +41,8 @@ public:
     void warmUp();
     std::uint64_t translate(std::string text, Direction direction = Direction::Automatic);
     void cancel();
+    // Unload the model now, or as soon as the active translation finishes.
+    void releaseMemory();
     void shutdown();
 
 private:

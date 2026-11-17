@@ -20,6 +20,7 @@
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
     ShortcutMonitor *_shortcut;
+    dispatch_source_t _memoryPressure;
     std::unique_ptr<bawan::TranslationEngine> _engine;
     uint64_t _activeRequestId;
     uint64_t _engineGeneration;
@@ -54,6 +55,11 @@ static NSString *StringFromUTF8(const std::string &text) {
     _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
     _translationPanel.onClose = ^{ [weakSelf cancelTranslation]; };
     _translationPanel.onSettings = ^{ [weakSelf openSettings:nil]; };
+
+    _memoryPressure = dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
+        DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL, dispatch_get_main_queue());
+    dispatch_source_set_event_handler(_memoryPressure, ^{ [weakSelf releaseEngineMemory]; });
+    dispatch_resume(_memoryPressure);
 
     _modelStore = [[ModelStore alloc] init];
     _modelStore.onProgress = ^(double progress, NSString *message) {
@@ -453,11 +459,19 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
 
+- (void)releaseEngineMemory {
+    if (!_terminating && _engine) _engine->releaseMemory();
+}
+
 - (void)applicationWillTerminate:(NSNotification *)notification {
     _terminating = YES;
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [_shortcut stop];
     [_modelStore cancel];
+    if (_memoryPressure) {
+        dispatch_source_cancel(_memoryPressure);
+        _memoryPressure = nil;
+    }
     if (_engine) {
         _engine->shutdown();
         _engine.reset();
