@@ -87,14 +87,6 @@
 @end
 
 namespace {
-NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
-    NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
-    label.textColor = color;
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    return label;
-}
-
 NSStackView *Stack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation orientation, CGFloat spacing) {
     NSStackView *stack = [NSStackView stackViewWithViews:views];
     stack.orientation = orientation;
@@ -201,7 +193,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     mascot.translatesAutoresizingMaskIntoConstraints = NO;
     [mascot setAccessibilityElement:NO];
     [masthead addSubview:mascot];
-    NSTextField *subtitle = Label(@"Settings", 12, NSFontWeightRegular,
+    NSTextField *subtitle = BawanLabel(@"Settings", 12, NSFontWeightRegular,
                                   BawanColor(BawanHeaderText));
     subtitle.identifier = @"settings-subtitle";
     subtitle.selectable = NO;
@@ -236,10 +228,10 @@ NSString *RowID(NSUInteger index, NSString *control) {
     NSView *shortcutTitle = [[NSView alloc] init];
     shortcutTitle.translatesAutoresizingMaskIntoConstraints = NO;
     NSImageView *keyboard = Icon(@"keyboard");
-    NSTextField *shortcutName = Label(@"Global shortcuts", 14, NSFontWeightSemibold, BawanColor(BawanText));
-    NSTextField *keyHeading = Label(@"Shortcut (click)", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
+    NSTextField *shortcutName = BawanLabel(@"Global shortcuts", 14, NSFontWeightSemibold, BawanColor(BawanText));
+    NSTextField *keyHeading = BawanLabel(@"Shortcut (click)", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
     keyHeading.identifier = @"shortcut-key-heading";
-    NSTextField *pressesHeading = Label(@"Presses", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
+    NSTextField *pressesHeading = BawanLabel(@"Presses", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
     pressesHeading.identifier = @"shortcut-presses-heading";
     NSButton *help = [NSButton buttonWithImage:BawanSymbol(@"questionmark.circle", nil, 17)
         target:self action:@selector(showShortcutHelp:)];
@@ -270,7 +262,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     ]];
     for (NSUInteger i = 0; i < 2; ++i) {
         bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(i);
-        NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, BawanColor(BawanText));
+        NSTextField *name = BawanLabel(ShortcutActionTitle(action), 13, NSFontWeightMedium, BawanColor(BawanText));
         name.maximumNumberOfLines = 1;
         [name.widthAnchor constraintEqualToConstant:152].active = YES;
         NSSwitch *enabled = [[NSSwitch alloc] init];
@@ -320,7 +312,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [restore.widthAnchor constraintEqualToConstant:28].active = YES;
         [restore setAccessibilityLabel:[@"Restore defaults for " stringByAppendingString:ShortcutActionTitle(action)]];
         NSStackView *controls = Stack(@[name, enabled, record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 6);
-        NSTextField *status = Label(@"", 12, NSFontWeightMedium, BawanColor(BawanSecondaryText));
+        NSTextField *status = BawanLabel(@"", 12, NSFontWeightMedium, BawanColor(BawanSecondaryText));
         status.identifier = RowID(i, @"status");
         [status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
                                        forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -352,15 +344,15 @@ NSString *RowID(NSUInteger index, NSString *control) {
         [_statuses addObject:status];
         [_permissionButtons addObject:permission];
     }
-    _permissionHint = Label(@"Allow Bawan in System Settings. Typing and pasting work without permissions.",
+    _permissionHint = BawanLabel(@"Allow Bawan in System Settings. Typing and pasting work without permissions.",
         12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _permissionHint.identifier = @"shortcut-permission-help";
     _permissionHint.hidden = YES;
-    _reservation = Label(@"Custom shortcuts reserve their keys in other apps.",
+    _reservation = BawanLabel(@"Custom shortcuts reserve their keys in other apps.",
         12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _reservation.identifier = @"shortcut-reservation";
     _reservation.hidden = YES;
-    _shortcutHint = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _shortcutHint = BawanLabel(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-feedback";
     _shortcutHint.hidden = YES;
     for (NSTextField *label in @[_permissionHint, _reservation, _shortcutHint]) {
@@ -377,9 +369,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
     [_loginSwitch setAccessibilityLabel:@"Launch Bawan at login"];
     NSView *loginSpacer = [[NSView alloc] init];
     NSStackView *loginTitle = Stack(@[Icon(@"power"),
-        Label(@"Launch at login", 14, NSFontWeightSemibold, BawanColor(BawanText)), loginSpacer, _loginSwitch],
+        BawanLabel(@"Launch at login", 14, NSFontWeightSemibold, BawanColor(BawanText)), loginSpacer, _loginSwitch],
         NSUserInterfaceLayoutOrientationHorizontal, 10);
-    NSTextField *loginDescription = Label(@"Open Bawan automatically when you sign in.",
+    NSTextField *loginDescription = BawanLabel(@"Open Bawan automatically when you sign in.",
         13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     NSButton *loginSettings = [NSButton buttonWithTitle:@"Login Items…" target:self action:@selector(openLoginSettings:)];
     loginSettings.identifier = @"login-items";
@@ -388,7 +380,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     loginSettings.contentTintColor = BawanAccentColor();
     loginSettings.alignment = NSTextAlignmentLeft;
     [loginSettings setAccessibilityLabel:@"Open Login Items settings"];
-    _loginHint = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _loginHint = BawanLabel(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _loginHint.identifier = @"login-hint";
     _loginHint.hidden = YES;
     NSStackView *loginContent = Stack(@[loginTitle, loginDescription, loginSettings, _loginHint],
@@ -400,7 +392,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     }
     NSImageView *privacyIcon = Icon(@"lock.shield");
     privacyIcon.contentTintColor = BawanColor(BawanSecondaryText);
-    NSTextField *privacy = Label(@"Translation runs locally on your Mac.",
+    NSTextField *privacy = BawanLabel(@"Translation runs locally on your Mac.",
         12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     privacy.identifier = @"local-processing";
     NSStackView *footer = Stack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
