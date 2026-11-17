@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <vector>
 
 @interface BawanShortcutButton : NSButton
 @end
@@ -53,17 +54,22 @@ namespace {
 NSString *RowID(bawan::ShortcutAction action, NSString *control) {
     return [NSString stringWithFormat:@"shortcut-%@-%@", ShortcutSlug(action), control];
 }
+
+struct SettingsShortcutRow {
+    bawan::ShortcutAction action;
+    NSButton *enabled;
+    NSButton *record;
+    NSPopUpButton *pressCount;
+    NSButton *restore;
+    NSTextField *status;
+    NSButton *permission;
+};
 }
 
 @interface SettingsViewController () {
     ShortcutPreferences *_preferences;
     ShortcutMonitor *_monitor;
-    NSMutableArray<NSButton *> *_enabledButtons;
-    NSMutableArray<NSButton *> *_recordButtons;
-    NSMutableArray<NSPopUpButton *> *_pressCounts;
-    NSMutableArray<NSButton *> *_restoreButtons;
-    NSMutableArray<NSTextField *> *_statuses;
-    NSMutableArray<NSButton *> *_permissionButtons;
+    std::vector<SettingsShortcutRow> _shortcutRows;
     NSTextField *_reservation;
     NSTextField *_shortcutHint;
     NSTextField *_loginHint;
@@ -73,6 +79,7 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
     NSScrollView *_scroll;
     NSTextField *_modelStatus;
     NSTextField *_modelHint;
+    BawanModelSetupPhase _modelPhase;
     NSProgressIndicator *_modelProgress;
     NSButton *_modelSetup;
     NSImageView *_modelIcon;
@@ -102,12 +109,6 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
     _preferences = preferences;
     _monitor = monitor;
     _recordingAction = NSNotFound;
-    _enabledButtons = [NSMutableArray array];
-    _recordButtons = [NSMutableArray array];
-    _pressCounts = [NSMutableArray array];
-    _restoreButtons = [NSMutableArray array];
-    _statuses = [NSMutableArray array];
-    _permissionButtons = [NSMutableArray array];
     BawanSurfaceView *root = BawanMakeWindowSurface(@"bawan-settings", NSMakeRect(0, 0, 720, 500));
     self.view = root;
 
@@ -152,12 +153,12 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
         NSUserInterfaceLayoutOrientationHorizontal, 8);
     NSMutableArray<NSView *> *shortcutRows = [NSMutableArray array];
     for (bawan::ShortcutAction action : BawanShortcutActions) {
-        const auto i = static_cast<NSUInteger>(action);
+        const auto actionTag = static_cast<NSInteger>(action);
         BawanCheckbox *enabled = [[BawanCheckbox alloc] initWithFrame:NSZeroRect];
         enabled.title = ShortcutActionTitle(action);
         enabled.target = self;
         enabled.action = @selector(toggleEnabled:);
-        enabled.tag = i;
+        enabled.tag = actionTag;
         enabled.identifier = RowID(action, @"enabled");
         [enabled setAccessibilityLabel:[@"Use shortcut for " stringByAppendingString:ShortcutActionTitle(action)]];
         NSButton *record = [[BawanShortcutButton alloc] initWithFrame:NSZeroRect];
@@ -170,7 +171,7 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
         record.font = BawanLabelFont(BawanInputFontSize);
         record.contentTintColor = BawanColor(BawanText);
         record.translatesAutoresizingMaskIntoConstraints = NO;
-        record.tag = i;
+        record.tag = actionTag;
         record.identifier = RowID(action, @"key");
         record.toolTip = @"Click, then press a new key combination once. Set Once or Twice separately. Esc cancels.";
         [record.widthAnchor constraintEqualToConstant:BawanSetupKeyWidth].active = YES;
@@ -185,7 +186,7 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
         count.translatesAutoresizingMaskIntoConstraints = NO;
         count.target = self;
         count.action = @selector(changePressCount:);
-        count.tag = i;
+        count.tag = actionTag;
         count.identifier = RowID(action, @"count");
         count.toolTip = @"For Twice, release the key between presses and press again within 400 ms.";
         [count.widthAnchor constraintEqualToConstant:BawanSetupCountWidth].active = YES;
@@ -194,7 +195,7 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
         NSButton *restore = [NSButton buttonWithImage:BawanSymbol(@"arrow.counterclockwise", nil, 15)
             target:self action:@selector(restoreShortcut:)];
         restore.translatesAutoresizingMaskIntoConstraints = NO;
-        restore.tag = i;
+        restore.tag = actionTag;
         restore.identifier = RowID(action, @"reset");
         restore.bordered = NO;
         restore.contentTintColor = BawanAccentColor();
@@ -206,16 +207,11 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
         status.identifier = RowID(action, @"status");
         BawanActionButton *permission = BawanSetupButton(RowID(action, @"permission"), @"Set Up…",
             BawanSetupActionWidth, self, @selector(requestPermission:));
-        permission.tag = i;
+        permission.tag = actionTag;
         NSView *row = BawanSetupRow(RowID(action, @"row"), enabled, status, @[record, count, restore, permission]);
-        if (i > 0) [shortcutRows addObject:BawanSetupRule()];
+        if (shortcutRows.count) [shortcutRows addObject:BawanSetupRule()];
         [shortcutRows addObject:row];
-        [_enabledButtons addObject:enabled];
-        [_recordButtons addObject:record];
-        [_pressCounts addObject:count];
-        [_restoreButtons addObject:restore];
-        [_statuses addObject:status];
-        [_permissionButtons addObject:permission];
+        _shortcutRows.push_back({action, enabled, record, count, restore, status, permission});
     }
     NSStackView *shortcutGroup = BawanSetupStack(shortcutRows, NSUserInterfaceLayoutOrientationVertical, 0);
     shortcutGroup.identifier = @"shortcut-group";
@@ -337,22 +333,22 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
     BOOL recording = _eventMonitor != nil;
     BOOL reservesCustomKeys = NO;
     const auto defaults = bawan::defaultShortcuts();
-    for (bawan::ShortcutAction action : BawanShortcutActions) {
-        const auto i = static_cast<NSUInteger>(action);
-        bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
-        BOOL recordingRow = recording && _recordingAction == static_cast<NSInteger>(i);
-        _enabledButtons[i].state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
-        _enabledButtons[i].enabled = !recording;
-        _recordButtons[i].title = recordingRow && !_finishingRecording ? @"Press keys…" : ShortcutKeyLabel(binding);
-        _recordButtons[i].enabled = !_finishingRecording && (!recording || recordingRow);
-        [_pressCounts[i] selectItemAtIndex:binding.pressCount - 1];
-        _pressCounts[i].enabled = !recording;
-        _restoreButtons[i].enabled = !recording;
-        ShortcutAvailability availability = [_monitor availabilityForAction:action];
-        BOOL custom = binding.keyCode != defaults[i].keyCode || binding.modifiers != defaults[i].modifiers ||
-                      binding.pressCount != defaults[i].pressCount;
+    for (const SettingsShortcutRow &row : _shortcutRows) {
+        bawan::ShortcutBinding binding = [_preferences bindingForAction:row.action];
+        const auto &defaultBinding = defaults[static_cast<NSUInteger>(row.action)];
+        BOOL recordingRow = recording && _recordingAction == static_cast<NSInteger>(row.action);
+        row.enabled.state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+        row.enabled.enabled = !recording;
+        row.record.title = recordingRow && !_finishingRecording ? @"Press keys…" : ShortcutKeyLabel(binding);
+        row.record.enabled = !_finishingRecording && (!recording || recordingRow);
+        [row.pressCount selectItemAtIndex:binding.pressCount - 1];
+        row.pressCount.enabled = !recording;
+        row.restore.enabled = !recording;
+        ShortcutAvailability availability = [_monitor availabilityForAction:row.action];
+        BOOL custom = binding.keyCode != defaultBinding.keyCode || binding.modifiers != defaultBinding.modifiers ||
+                      binding.pressCount != defaultBinding.pressCount;
         reservesCustomKeys |= binding.enabled && custom &&
-            (action != bawan::ShortcutAction::TranslateSelection || !bawan::isPassiveCopy(binding));
+            (row.action != bawan::ShortcutAction::TranslateSelection || !bawan::isPassiveCopy(binding));
         BawanShortcutPresentation presentation = BawanPresentShortcut(availability);
         NSString *status = presentation.status;
         BawanColorRole statusRole = presentation.color;
@@ -361,11 +357,11 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
                 (binding.enabled ? @"Paused while recording" : @"Off");
             statusRole = BawanSecondaryText;
         }
-        _statuses[i].stringValue = status;
-        _statuses[i].textColor = BawanColor(statusRole);
-        BawanApplyShortcutAction(_permissionButtons[i], presentation, ShortcutActionTitle(action));
-        _permissionButtons[i].hidden = !presentation.needsAction;
-        _permissionButtons[i].enabled = !recording;
+        row.status.stringValue = status;
+        row.status.textColor = BawanColor(statusRole);
+        BawanApplyShortcutAction(row.permission, presentation, ShortcutActionTitle(row.action));
+        row.permission.hidden = !presentation.needsAction;
+        row.permission.enabled = !recording;
     }
     _reservation.hidden = !reservesCustomKeys;
     [self updateDocumentLayout];
@@ -546,6 +542,8 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
 }
 
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {
+    BOOL changed = _modelPhase != phase || ![_modelHint.stringValue isEqualToString:message];
+    _modelPhase = phase;
     const BawanModelPresentation presentation = BawanPresentModel(phase);
     _modelIcon.image = BawanSymbol(presentation.symbol, nil, 15);
     _modelIcon.contentTintColor = BawanColor(presentation.symbolColor);
@@ -561,7 +559,9 @@ NSString *RowID(bawan::ShortcutAction action, NSString *control) {
     _modelHint.hidden = message.length == 0 || phase == BawanModelSetupReady;
     _modelHint.textColor = BawanColor(phase == BawanModelSetupFailed ? BawanError : BawanSecondaryText);
     [self updateDocumentLayout];
-    if (phase == BawanModelSetupFailed && message.length) [self revealMessage:_modelHint];
+    // Refreshing an unchanged snapshot must preserve the user's reading position
+    // and must not repeat the accessibility announcement.
+    if (changed && phase == BawanModelSetupFailed && message.length) [self revealMessage:_modelHint];
 }
 
 - (void)updateModelProgressAnimation {

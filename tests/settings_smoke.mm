@@ -88,6 +88,57 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
 }
 
+static void CheckModelFailureRefresh(SettingsViewController *settings, NSWindow *window) {
+    NSRect originalFrame = window.frame;
+    [window setContentSize:NSMakeSize(640, 420)];
+    NSScrollView *scroll = (NSScrollView *)FindView(settings.view, @"settings-scroll");
+    NSTextField *message = (NSTextField *)FindView(settings.view, @"settings-model-message");
+    NSString *firstError = @"The model could not be verified. Please try again.";
+    NSString *nextError = @"The model could not be downloaded. Check your connection and try again.";
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    Settle(window);
+
+    auto scrollToShortcuts = [&] {
+        [scroll.contentView scrollToPoint:NSZeroPoint];
+        [scroll reflectScrolledClipView:scroll.contentView];
+        Settle(window);
+        return scroll.documentVisibleRect.origin;
+    };
+    auto requireRevealedError = [&] {
+        Settle(window);
+        NSRect messageInDocument = [message convertRect:message.bounds toView:scroll.documentView];
+        Require(scroll.documentVisibleRect.origin.y > 1 &&
+            NSContainsRect(NSInsetRect(scroll.documentVisibleRect, -0.5, -0.5), messageInDocument),
+            @"A new model failure must reveal its message below the shortcut controls");
+    };
+
+    scrollToShortcuts();
+    [settings setModelPhase:BawanModelSetupFailed message:firstError progress:0];
+    requireRevealedError();
+    NSPoint readingPosition = scrollToShortcuts();
+    NSRect messageInDocument = [message convertRect:message.bounds toView:scroll.documentView];
+    Require(!NSContainsRect(scroll.documentVisibleRect, messageInDocument),
+        @"The model refresh fixture must first scroll away from the failure");
+    // Returning from System Settings pushes the current model snapshot again.
+    [settings setModelPhase:BawanModelSetupFailed message:firstError progress:0];
+    Settle(window);
+    Require(NSEqualPoints(scroll.documentVisibleRect.origin, readingPosition),
+        @"Refreshing the same model failure must preserve the user's position at the shortcuts");
+
+    [settings setModelPhase:BawanModelSetupFailed message:nextError progress:0];
+    requireRevealedError();
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    Settle(window);
+    Require(message.hidden, @"Recovery must clear the previously revealed model failure");
+    scrollToShortcuts();
+    [settings setModelPhase:BawanModelSetupFailed message:nextError progress:0];
+    requireRevealedError();
+
+    [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
+    [window setFrame:originalFrame display:NO];
+    scrollToShortcuts();
+}
+
 static void CheckFrameDragging(NSWindow *window) {
     NSRect originalFrame = window.frame;
     NSAppearance *originalAppearance = window.appearance;
@@ -656,6 +707,7 @@ static void RunSmoke(void) {
     [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
     Require(modelMessage.hidden && modelProgress.hidden && modelSetup.hidden,
         @"A recovered model must clear stale progress and error actions");
+    CheckModelFailureRefresh(settings, window);
     bawan::ShortcutBinding panelBinding = [preferences bindingForAction:bawan::ShortcutAction::OpenPanel];
     auto disabledPanel = panelBinding;
     disabledPanel.enabled = false;
