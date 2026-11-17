@@ -1,6 +1,4 @@
 #!/bin/sh
-# Local stand-in for CI, which is intentionally disabled: build every native
-# test with warnings as errors in Bawan's own sources, then run CTest.
 #   ./scripts/check.sh             warnings-as-errors build + CTest
 #   ./scripts/check.sh --sanitize  same, with ASan and UBSan
 # Extra arguments are passed to the CMake configure step. Set

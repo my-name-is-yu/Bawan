@@ -63,7 +63,7 @@ if(BAWAN_WARNINGS_AS_ERRORS)
     add_compile_options(-Werror)
 endif()
 if(BAWAN_ENABLE_SANITIZERS)
-    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
