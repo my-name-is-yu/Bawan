@@ -27,7 +27,7 @@
 - (void)finishOnboarding;
 - (void)openTranslation:(id)sender;
 - (void)openSettings:(id)sender;
-- (BOOL)showModelLicense:(id)sender;
+- (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 @end
 
 @interface SetupSmokeDelegate : AppDelegate
@@ -37,9 +37,9 @@
 @end
 
 @implementation SetupSmokeDelegate
-- (BOOL)showModelLicense:(id)sender {
+- (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion {
     ++_licenseViews;
-    return _allowLicense;
+    completion(_allowLicense);
 }
 - (void)warmUpEngine { ++_warmUps; }
 @end
@@ -135,8 +135,7 @@ static void WaitFor(Predicate predicate, NSString *message) {
 
 static void SetAvailableModel(AppDelegate *delegate) {
     [delegate setValue:[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"] forKey:@"modelURL"];
-    [delegate setValue:@YES forKey:@"modelAvailable"];
-    [delegate setValue:@NO forKey:@"modelFailed"];
+    [delegate setValue:@(BawanModelSetupReady) forKey:@"modelPhase"];
     [delegate setValue:@"Ready to translate · On-device processing" forKey:@"modelStatus"];
     [delegate updateStatus];
 }
@@ -440,7 +439,7 @@ static void CheckFirstRunIntegration(void) {
         Require(store.preparations == 2 && delegate.licenseViews == 2,
             @"Reopening accepted but unfinished setup must resume preparation without showing the notice again");
 
-        [delegate setValue:@YES forKey:@"modelFailed"];
+        [delegate setValue:@(BawanModelSetupFailed) forKey:@"modelPhase"];
         [delegate setValue:@"The model could not be verified. Try again." forKey:@"modelStatus"];
         [delegate updateStatus];
         Require(!start.enabled && modelSetup.enabled && !modelSetup.hiddenOrHasHiddenAncestor &&
@@ -510,6 +509,50 @@ static void CheckFirstRunIntegration(void) {
     }
 }
 
+static void CheckModelLicenseSheet(void) {
+    NSString *suite = [@"local.bawan.LicenseSheetSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults removePersistentDomainForName:suite];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+    SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+    // A plain AppDelegate keeps the real license presentation.
+    AppDelegate *delegate = [[AppDelegate alloc] init];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:preferences forKey:@"shortcutPreferences"];
+    [delegate setValue:monitor forKey:@"shortcut"];
+    [delegate setValue:store forKey:@"modelStore"];
+    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate buildMenus];
+    @try {
+        [delegate showOnboarding];
+        NSWindow *window = panel.window;
+        Require(window.visible, @"The license sheet fixture needs the visible onboarding panel");
+        [delegate beginModelSetup];
+        Require(window.attachedSheet != nil && store.preparations == 0 &&
+            ![defaults boolForKey:@"modelLicenseNoticeShown20261109"],
+            @"The model license must attach to the panel as a sheet without blocking or preparing the model");
+        [delegate openSettings:nil];
+        Require(window.attachedSheet == nil && store.preparations == 0 &&
+            ![defaults boolForKey:@"modelLicenseNoticeShown20261109"],
+            @"Leaving the page must dismiss the license sheet as declined");
+
+        [delegate showOnboarding];
+        [delegate beginModelSetup];
+        Require(window.attachedSheet != nil, @"Setup must show the license sheet again after it was dismissed");
+        [window endSheet:window.attachedSheet returnCode:NSAlertFirstButtonReturn];
+        Require(window.attachedSheet == nil && store.preparations == 1 &&
+            [defaults boolForKey:@"modelLicenseNoticeShown20261109"],
+            @"Continuing from the license sheet must record consent and begin preparation");
+    } @finally {
+        if (panel.window.attachedSheet) [panel.window endSheet:panel.window.attachedSheet returnCode:NSModalResponseCancel];
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
 int main() {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -541,7 +584,8 @@ int main() {
                 CheckWarmUpFailure(delegate);
                 CheckModelRevalidationOnRetry(delegate);
                 CheckFirstRunIntegration();
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation and first-run navigation\n";
+                CheckModelLicenseSheet();
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation and the license sheet\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;

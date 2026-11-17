@@ -26,7 +26,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     BOOL _started;
     BOOL _asleep;
     BOOL _suspended;
-    BOOL _settingsActive;
+    BOOL _configurationActive;
     NSInteger _firstChangeCount;
     pid_t _firstApplication;
     NSInteger _pendingChangeCount;
@@ -162,10 +162,10 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     [self refresh];
 }
 
-- (BOOL)settingsActive { return _settingsActive; }
-- (void)setSettingsActive:(BOOL)active {
-    if (_settingsActive == active) return;
-    _settingsActive = active;
+- (BOOL)configurationActive { return _configurationActive; }
+- (void)setConfigurationActive:(BOOL)active {
+    if (_configurationActive == active) return;
+    _configurationActive = active;
     [self cancelPending];
 }
 
@@ -311,8 +311,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     NSWindow *keyWindow = NSApp.keyWindow;
     const bool nativeCommand = keyWindow.isKeyWindow && keyWindow.visible &&
         bawan::isNativeWindowShortcut(key, modifiers);
-    if (_suspended || _settingsActive || nativeCommand) {
-        if (_settingsActive || nativeCommand) {
+    if (_suspended || _configurationActive || nativeCommand) {
+        if (_configurationActive || nativeCommand) {
             [self cancelPending];
             [self configureGestures];
         }
@@ -367,7 +367,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
             __weak ShortcutMonitor *weakSelf = self;
             dispatch_async(dispatch_get_main_queue(), ^{
                 ShortcutMonitor *self = weakSelf;
-                if (!self || !self->_started || self->_suspended || self->_settingsActive ||
+                if (!self || !self->_started || self->_suspended || self->_configurationActive ||
                     generation != self->_generation ||
                     NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != application) return;
                 if (self.onOpenPanel) self.onOpenPanel();
@@ -394,7 +394,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 }
 
 - (void)sendCopyForGeneration:(NSUInteger)generation application:(pid_t)application {
-    if (!_started || _suspended || _settingsActive || generation != _generation ||
+    if (!_started || _suspended || _configurationActive || generation != _generation ||
         NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != application) return;
     CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
     CGEventRef down = CGEventCreateKeyboardEvent(source, 8, true);
@@ -431,7 +431,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 }
 
 - (void)checkCopyForGeneration:(NSUInteger)generation deadline:(NSTimeInterval)deadline {
-    if (!_started || _suspended || _settingsActive || generation != _generation) return;
+    if (!_started || _suspended || _configurationActive || generation != _generation) return;
     if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != _pendingApplication) return;
     NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150400
@@ -445,7 +445,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 #endif
     if (pasteboard.changeCount != _pendingChangeCount) {
         NSString *text = [pasteboard stringForType:NSPasteboardTypeString];
-        if (generation != _generation || !_started || _suspended || _settingsActive ||
+        if (generation != _generation || !_started || _suspended || _configurationActive ||
             NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != _pendingApplication) return;
         ++_generation;
         if ([text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {

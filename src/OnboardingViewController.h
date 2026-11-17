@@ -4,7 +4,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface OnboardingViewController : NSViewController <BawanPanelPage>
+@interface OnboardingViewController : NSViewController <BawanPanelPage, BawanModelSetupDisplay>
 @property(nonatomic, copy, nullable) void (^onBack)(void);
 @property(nonatomic, copy, nullable) void (^onModelSetup)(void);
 @property(nonatomic, copy, nullable) void (^onModelLicense)(void);

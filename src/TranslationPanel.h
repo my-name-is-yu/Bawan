@@ -15,12 +15,14 @@ typedef NS_ENUM(NSInteger, BawanStatusKind) {
 @property(nonatomic, copy, nullable) void (^onCancel)(void);
 @property(nonatomic, copy, nullable) void (^onClose)(void);
 @property(nonatomic, copy, nullable) void (^onSettings)(void);
+@property(nonatomic, readonly) NSWindow *window;
 
 - (void)showForSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
 - (void)showSettings:(SettingsViewController *)settings;
-- (void)showOnboarding:(OnboardingViewController *)onboarding;
+// The host decides what leaving onboarding means (finish or close).
+- (void)showOnboarding:(OnboardingViewController *)onboarding onBack:(void (^)(void))onBack;
 - (void)showTranslation;
 - (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;

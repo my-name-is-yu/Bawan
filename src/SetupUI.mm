@@ -130,14 +130,6 @@
 }
 @end
 
-NSTextField *BawanSetupLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
-    NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = [NSFont systemFontOfSize:size weight:weight];
-    label.textColor = color;
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    return label;
-}
-
 NSStackView *BawanSetupStack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation orientation, CGFloat spacing) {
     NSStackView *stack = [NSStackView stackViewWithViews:views];
     stack.orientation = orientation;

@@ -108,12 +108,21 @@ static inline NSFont *BawanSerifFont(CGFloat size, BOOL bold) {
 static inline NSFont *BawanBodyFont(CGFloat size) { return BawanSerifFont(size, NO); }
 static inline NSFont *BawanLabelFont(CGFloat size) { return BawanSerifFont(size, YES); }
 
-static inline NSTextField *BawanLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
+static inline NSTextField *BawanLabelWithFont(NSString *text, NSFont *font, NSColor *color) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
+    label.font = font;
     label.textColor = color;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
+}
+
+static inline NSTextField *BawanLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
+    return BawanLabelWithFont(text, weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size), color);
+}
+
+// Setup pages pair serif headings with system-font body text.
+static inline NSTextField *BawanSystemLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
+    return BawanLabelWithFont(text, [NSFont systemFontOfSize:size weight:weight], color);
 }
 
 inline NSImage *BawanLoadImage(NSString *name) {

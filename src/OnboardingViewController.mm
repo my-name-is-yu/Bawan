@@ -11,13 +11,11 @@ NSString *ShortcutID(NSUInteger index, NSString *part) {
 }
 
 NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColorRole role) {
-    return BawanSetupLabel(text, size, weight, BawanColor(role));
+    return BawanSystemLabel(text, size, weight, BawanColor(role));
 }
 
 NSTextField *Heading(NSString *text, CGFloat size) {
-    NSTextField *label = Label(text, size, NSFontWeightSemibold, BawanText);
-    label.font = BawanLabelFont(size);
-    return label;
+    return BawanLabelWithFont(text, BawanLabelFont(size), BawanColor(BawanText));
 }
 }
 
@@ -329,16 +327,14 @@ NSTextField *Heading(NSString *text, CGFloat size) {
         _shortcutStatuses[index].textColor = BawanColor(presentation.color);
         NSButton *setup = _shortcutSetup[index];
         setup.hidden = availability == ShortcutAvailabilityAvailable;
-        setup.title = availability == ShortcutAvailabilityOff ? @"Enable…" :
-            availability == ShortcutAvailabilityFailed ? @"Retry" : @"Set up…";
-        [setup setAccessibilityLabel:[setup.title stringByAppendingFormat:@" for %@", ShortcutActionTitle(action)]];
+        BawanApplyShortcutAction(setup, presentation, ShortcutActionTitle(action));
     }
     [self.view layoutSubtreeIfNeeded];
 }
 
 - (void)setActive:(BOOL)active {
     _active = active;
-    _monitor.settingsActive = active;
+    _monitor.configurationActive = active;
     if (active) {
         [_monitor refresh];
         [self refresh];

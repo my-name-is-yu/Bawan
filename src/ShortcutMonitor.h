@@ -18,7 +18,7 @@ typedef NS_ENUM(NSInteger, ShortcutAvailability) {
 @property(nonatomic, copy, nullable) void (^onOpenPanel)(void);
 @property(nonatomic, copy, nullable) void (^onAvailabilityChanged)(void);
 @property(nonatomic) BOOL suspended;
-@property(nonatomic) BOOL settingsActive;
+@property(nonatomic) BOOL configurationActive;
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences;
 - (void)start;
 - (void)stop;

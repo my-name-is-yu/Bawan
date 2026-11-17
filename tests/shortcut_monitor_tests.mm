@@ -92,14 +92,14 @@ int main() {
 
         // Settings bypasses even non-native custom bindings, before either press is swallowed.
         bind({17, bawan::Option, kCGEventFlagMaskAlternate}, 2);
-        monitor.settingsActive = YES;
+        monitor.configurationActive = YES;
         for (unsigned press = 0; press < 2; ++press) {
             require(!route(monitor, kCGEventKeyDown, 17, kCGEventFlagMaskAlternate), "Settings receives custom downs");
             require(!route(monitor, kCGEventKeyUp, 17, kCGEventFlagMaskAlternate), "Settings receives custom releases");
         }
         settle();
         require(opens == 0, "Settings does not dispatch a global action");
-        monitor.settingsActive = NO;
+        monitor.configurationActive = NO;
         for (unsigned press = 0; press < 2; ++press) {
             require(route(monitor, kCGEventKeyDown, 17, kCGEventFlagMaskAlternate), "translator retains Option-T shortcut");
             require(route(monitor, kCGEventKeyUp, 17, kCGEventFlagMaskAlternate), "Option-T release stays paired");
@@ -107,12 +107,12 @@ int main() {
         settle();
         require(opens == 1, "Option-T twice still opens/focuses the visible translator");
         require(route(monitor, kCGEventKeyDown, 17, kCGEventFlagMaskAlternate), "capture a key before Settings opens");
-        monitor.settingsActive = YES;
+        monitor.configurationActive = YES;
         require(route(monitor, kCGEventKeyDown, 17, kCGEventFlagMaskAlternate, true, true), "Settings drains an already captured repeat");
         require(route(monitor, kCGEventKeyUp, 17, 0), "Settings drains an already captured release");
         require(!route(monitor, kCGEventKeyDown, 17, kCGEventFlagMaskAlternate), "Settings receives the next fresh press");
         require(!route(monitor, kCGEventKeyUp, 17, 0), "Settings receives the next fresh release");
-        monitor.settingsActive = NO;
+        monitor.configurationActive = NO;
 
         // A captured down must drain through a focus change, then native editing can resume.
         bind({9, bawan::Command, kCGEventFlagMaskCommand}, 2);

@@ -353,10 +353,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     _panel.onEscape = ^{
         TranslationPanel *owner = weakSelf;
         if (!owner) return;
-        if ([owner isShowingPage]) {
-            if (owner->_page.onBack) owner->_page.onBack();
-            else [owner showTranslation];
-        }
+        if ([owner isShowingPage]) { if (owner->_page.onBack) owner->_page.onBack(); }
         else [owner close];
     };
 
@@ -545,21 +542,19 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     return _page && _panel.contentView == _page.view;
 }
 
+- (NSWindow *)window { return _panel; }
+
 - (void)showSettings:(SettingsViewController *)settings {
     __weak TranslationPanel *weakSelf = self;
-    settings.onBack = ^{ [weakSelf showTranslation]; };
-    [self showPage:settings title:@"Bawan Settings"];
+    [self showPage:settings title:@"Bawan Settings" onBack:^{ [weakSelf showTranslation]; }];
 }
 
-- (void)showOnboarding:(OnboardingViewController *)onboarding {
-    if (!onboarding.onBack) {
-        __weak TranslationPanel *weakSelf = self;
-        onboarding.onBack = ^{ [weakSelf showTranslation]; };
-    }
-    [self showPage:onboarding title:@"Bawan Setup"];
+- (void)showOnboarding:(OnboardingViewController *)onboarding onBack:(void (^)(void))onBack {
+    [self showPage:onboarding title:@"Bawan Setup" onBack:onBack];
 }
 
-- (void)showPage:(NSViewController<BawanPanelPage> *)page title:(NSString *)title {
+- (void)showPage:(NSViewController<BawanPanelPage> *)page title:(NSString *)title onBack:(void (^)(void))onBack {
+    page.onBack = onBack;
     BOOL showingPage = [self isShowingPage];
     BOOL entering = !showingPage || _page != page;
     if (entering) {

@@ -20,7 +20,6 @@ NS_ASSUME_NONNULL_BEGIN
 @interface BawanSetupKeycap : NSTextField
 @end
 
-NSTextField *BawanSetupLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color);
 NSStackView *BawanSetupStack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation orientation, CGFloat spacing);
 NSButton *BawanSetupLink(NSString *title, id target, SEL action);
 NSView *BawanSetupRule(void);

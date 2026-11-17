@@ -15,7 +15,7 @@
 @interface SmokeShortcutMonitor : ShortcutMonitor {
     ShortcutPreferences *_testPreferences;
     BOOL _testSuspended;
-    BOOL _testSettingsActive;
+    BOOL _testConfigurationActive;
 }
 @property(nonatomic) ShortcutAvailability selectionAvailability;
 @property(nonatomic) ShortcutAvailability panelAvailability;
@@ -44,8 +44,8 @@
 }
 - (BOOL)suspended { return _testSuspended; }
 - (void)setSuspended:(BOOL)value { _testSuspended = value; }
-- (BOOL)settingsActive { return _testSettingsActive; }
-- (void)setSettingsActive:(BOOL)value { _testSettingsActive = value; }
+- (BOOL)configurationActive { return _testConfigurationActive; }
+- (void)setConfigurationActive:(BOOL)value { _testConfigurationActive = value; }
 - (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {
     if (![_testPreferences bindingForAction:action].enabled) return ShortcutAvailabilityOff;
     return action == bawan::ShortcutAction::TranslateSelection ? _selectionAvailability : _panelAvailability;
@@ -848,14 +848,14 @@ static void RunSmoke(void) {
     // focus lifecycle explicitly so orderOut is not an implicit prerequisite.
     id<NSWindowDelegate> delegate = window.delegate;
     [delegate windowDidBecomeKey:[NSNotification notificationWithName:NSWindowDidBecomeKeyNotification object:window]];
-    Require(monitor.settingsActive, @"The become-key callback must mark settings active before focus-loss testing");
+    Require(monitor.configurationActive, @"The become-key callback must mark settings active before focus-loss testing");
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     Require(monitor.suspended, @"An invalid key keeps the recorder active");
     [window orderOut:nil];
     Settle(window);
     [delegate windowDidResignKey:[NSNotification notificationWithName:NSWindowDidResignKeyNotification object:window]];
-    Require(monitor.suspended && !monitor.settingsActive,
+    Require(monitor.suspended && !monitor.configurationActive,
         @"Focus loss must cancel recording but keep a swallowed held key suspended");
     [settings setRecordedKey:0 down:NO];
     NSDate *releaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
@@ -863,8 +863,8 @@ static void RunSmoke(void) {
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     }
     Require(!monitor.suspended, [NSString stringWithFormat:
-        @"Physical release after focus loss must restore global monitoring (keyWindow=%@, settingsActive=%@, recorderEnabled=%@, feedback=%@)",
-        @(window.keyWindow), @(monitor.settingsActive), @(selectionKey.enabled), feedback.stringValue]);
+        @"Physical release after focus loss must restore global monitoring (keyWindow=%@, configurationActive=%@, recorderEnabled=%@, feedback=%@)",
+        @(window.keyWindow), @(monitor.configurationActive), @(selectionKey.enabled), feedback.stringValue]);
     [gear performClick:nil];
     [(NSButton *)FindView(root, @"shortcut-selection-reset") performClick:nil];
     bawan::ShortcutBinding restored = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
@@ -875,7 +875,7 @@ static void RunSmoke(void) {
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     [back performClick:nil];
-    Require(window.contentView == translationRoot && !monitor.settingsActive && monitor.suspended && window.visible,
+    Require(window.contentView == translationRoot && !monitor.configurationActive && monitor.suspended && window.visible,
         @"Back during recording must leave Settings while retaining the held-key release guard");
     [settings setRecordedKey:0 down:NO];
     NSDate *backReleaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
@@ -897,7 +897,7 @@ static void RunSmoke(void) {
     [gear performClick:nil];
     [panel showForSelection:@"A newly selected passage"];
     Require(window.contentView == translationRoot && [source.string isEqualToString:@"A newly selected passage"] &&
-        !source.undoManager.canUndo && !monitor.settingsActive,
+        !source.undoManager.canUndo && !monitor.configurationActive,
         @"A new selection from Settings must return to translation and clear the previous passage's undo history");
     [gear performClick:nil];
     [selectionKey interpretKeyEvents:@[KeyEvent(window, @"\x1b", 0, 53)]];
@@ -908,7 +908,7 @@ static void RunSmoke(void) {
     [selectionKey performClick:nil];
     SendKey(settings, window, 0, 0, YES, @"a");
     [[window standardWindowButton:NSWindowCloseButton] performClick:nil];
-    Require(!window.visible && closes == 1 && !monitor.settingsActive && monitor.suspended,
+    Require(!window.visible && closes == 1 && !monitor.configurationActive && monitor.suspended,
         @"The shared red close button must close once and retain held-key cleanup while recording");
     [settings setRecordedKey:0 down:NO];
     NSDate *closeReleaseDeadline = [NSDate dateWithTimeIntervalSinceNow:1];
@@ -919,7 +919,7 @@ static void RunSmoke(void) {
     [panel showForManualInput];
     [gear performClick:nil];
     Require([window performKeyEquivalent:KeyEvent(window, @"w", NSEventModifierFlagCommand, 13)] &&
-        !window.visible && closes == 2 && !monitor.settingsActive,
+        !window.visible && closes == 2 && !monitor.configurationActive,
         @"Command-W outside recording must close the same shared window exactly once");
     [defaults removePersistentDomainForName:suite];
     std::cout << "settings_smoke_complete=true\nshortcut_rows=2\nrecorder_release_and_cancel=true\ncaptures=settings-smoke\n";
