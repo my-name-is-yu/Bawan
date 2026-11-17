@@ -149,11 +149,6 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
              @"modifiers": @(binding.modifiers), @"pressCount": @(binding.pressCount)};
 }
 
-static bool EqualBindings(bawan::ShortcutBinding lhs, bawan::ShortcutBinding rhs) {
-    return lhs.enabled == rhs.enabled && lhs.keyCode == rhs.keyCode &&
-        lhs.modifiers == rhs.modifiers && lhs.pressCount == rhs.pressCount;
-}
-
 @interface ShortcutPreferences () {
     NSUserDefaults *_defaults;
     bawan::ShortcutBindings _bindings;
@@ -195,7 +190,13 @@ static bool EqualBindings(bawan::ShortcutBinding lhs, bawan::ShortcutBinding rhs
 - (bawan::ShortcutBindings)bindings { return _bindings; }
 
 - (bawan::ShortcutBinding)bindingForAction:(bawan::ShortcutAction)action {
-    return _bindings.at(static_cast<unsigned>(action));
+    const unsigned index = static_cast<unsigned>(action);
+    if (index >= _bindings.size()) {
+        bawan::ShortcutBinding none;
+        none.enabled = false;
+        return none;
+    }
+    return _bindings[index];
 }
 
 - (BOOL)setBinding:(bawan::ShortcutBinding)binding forAction:(bawan::ShortcutAction)action
@@ -235,7 +236,7 @@ static bool EqualBindings(bawan::ShortcutBinding lhs, bawan::ShortcutBinding rhs
         }
         return NO;
     }
-    if (EqualBindings(_bindings[index], binding)) return YES;
+    if (_bindings[index] == binding) return YES;
     _bindings = candidate;
     [self save];
     [NSNotificationCenter.defaultCenter postNotificationName:BawanShortcutsDidChangeNotification object:self];

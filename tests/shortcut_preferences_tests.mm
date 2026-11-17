@@ -10,11 +10,6 @@ static void require(bool condition, const char *message) {
     }
 }
 
-static bool equal(bawan::ShortcutBinding lhs, bawan::ShortcutBinding rhs) {
-    return lhs.enabled == rhs.enabled && lhs.keyCode == rhs.keyCode &&
-        lhs.modifiers == rhs.modifiers && lhs.pressCount == rhs.pressCount;
-}
-
 int main() {
     @autoreleasepool {
         NSString *suite = [@"local.bawan.ShortcutPreferencesTests." stringByAppendingString:NSUUID.UUID.UUIDString];
@@ -22,8 +17,10 @@ int main() {
         [defaults removePersistentDomainForName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
         auto initial = bawan::defaultShortcuts();
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection], initial[0]), "selection default");
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::OpenPanel], initial[1]), "panel default");
+        require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "selection default");
+        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "panel default");
+        require(![preferences bindingForAction:static_cast<bawan::ShortcutAction>(initial.size())].enabled,
+                "an unknown action reads as a disabled binding instead of throwing");
 
         __block unsigned notifications = 0;
         id observer = [NSNotificationCenter.defaultCenter addObserverForName:BawanShortcutsDidChangeNotification
@@ -35,24 +32,24 @@ int main() {
         require([ShortcutKeyLabel(custom) hasPrefix:@"⌥"], "key label includes modifiers");
         require([ShortcutBindingLabel(custom) containsString:@"×1"], "binding label includes press count");
         ShortcutPreferences *reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        require(equal([reloaded bindingForAction:bawan::ShortcutAction::OpenPanel], custom), "custom key survives reload");
+        require([reloaded bindingForAction:bawan::ShortcutAction::OpenPanel] == custom, "custom key survives reload");
         custom.enabled = false;
         require([preferences setBinding:custom forAction:bawan::ShortcutAction::OpenPanel error:&error], "row can be disabled");
         reloaded = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        require(equal([reloaded bindingForAction:bawan::ShortcutAction::OpenPanel], custom), "disabled row retains key and press count");
+        require([reloaded bindingForAction:bawan::ShortcutAction::OpenPanel] == custom, "disabled row retains key and press count");
         require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:&error], "row restores default");
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::OpenPanel], initial[1]), "restore includes enabled state");
+        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "restore includes enabled state");
 
         unsigned beforeRejection = notifications;
         bawan::ShortcutBinding duplicate = initial[0];
         duplicate.pressCount = 1;
         require(![preferences setBinding:duplicate forAction:bawan::ShortcutAction::OpenPanel error:&error], "single/double duplicate rejected");
         require([error containsString:ShortcutActionTitle(bawan::ShortcutAction::TranslateSelection)], "duplicate identifies other action");
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::OpenPanel], initial[1]), "rejected change preserves value");
+        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "rejected change preserves value");
         require(notifications == beforeRejection, "rejected change does not notify");
         bawan::ShortcutBinding reserved{true, 8, static_cast<std::uint8_t>(bawan::Command | bawan::Shift), 1};
         require(![preferences setBinding:reserved forAction:bawan::ShortcutAction::OpenPanel error:&error], "fixed copy shortcut rejected");
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::OpenPanel], initial[1]), "reserved rejection preserves old binding");
+        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "reserved rejection preserves old binding");
 
         duplicate.enabled = false;
         require([preferences setBinding:duplicate forAction:bawan::ShortcutAction::OpenPanel error:&error], "disabled duplicate may be retained");
@@ -65,16 +62,16 @@ int main() {
         [defaults removePersistentDomainForName:suite];
         [defaults setBool:NO forKey:@"shortcutEnabled"];
         preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection], initial[0]), "obsolete setting must not override selection default");
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::OpenPanel], initial[1]), "obsolete setting must not override panel default");
+        require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "obsolete setting must not override selection default");
+        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "obsolete setting must not override panel default");
 
         [defaults setObject:@{@"version": @1, @"bindings": @{
             @"translateSelection": @{@"enabled": @YES, @"keyCode": @"C", @"modifiers": @1, @"pressCount": @2},
             @"openPanel": @{@"enabled": @YES, @"keyCode": @17, @"modifiers": @2, @"pressCount": @1.5}}}
             forKey:@"globalShortcuts"];
         preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection], initial[0]), "corrupt row falls back to current default");
-        require(equal([preferences bindingForAction:bawan::ShortcutAction::OpenPanel], initial[1]), "fractional count falls back to default");
+        require([preferences bindingForAction:bawan::ShortcutAction::TranslateSelection] == initial[0], "corrupt row falls back to current default");
+        require([preferences bindingForAction:bawan::ShortcutAction::OpenPanel] == initial[1], "fractional count falls back to default");
 
         NSDictionary *sameRow = @{@"enabled": @YES, @"keyCode": @8, @"modifiers": @1, @"pressCount": @2};
         [defaults setObject:@{@"version": @1, @"bindings": @{@"translateSelection": sameRow, @"openPanel": sameRow}}
