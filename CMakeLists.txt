@@ -87,7 +87,7 @@ if(BAWAN_BUILD_APP)
     add_executable(Bawan MACOSX_BUNDLE
         src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm src/BawanAppearance.mm
         src/BawanMascotView.mm
-        src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
+        src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm src/ModelStore.mm
         ${BAWAN_SETUP_SOURCES}
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES})
@@ -133,7 +133,12 @@ if(BAWAN_BUILD_TESTS)
             "-framework AppKit" "-framework Foundation" "-framework Carbon")
         target_compile_options(shortcut_preferences_tests PRIVATE -fobjc-arc -Wall -Wextra)
         add_test(NAME shortcut_preferences COMMAND shortcut_preferences_tests)
-        add_executable(shortcut_monitor_tests tests/shortcut_monitor_tests.mm src/ShortcutPreferences.mm src/ShortcutMonitor.mm)
+        add_executable(selection_reader_tests tests/selection_reader_tests.mm src/SelectionReader.mm)
+        target_include_directories(selection_reader_tests PRIVATE src)
+        target_link_libraries(selection_reader_tests PRIVATE "-framework AppKit" "-framework CoreGraphics")
+        target_compile_options(selection_reader_tests PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME selection_reader COMMAND selection_reader_tests)
+        add_executable(shortcut_monitor_tests tests/shortcut_monitor_tests.mm src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm)
         target_link_libraries(shortcut_monitor_tests PRIVATE bawan_gesture "-framework AppKit"
             "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon")
         target_compile_options(shortcut_monitor_tests PRIVATE -fobjc-arc -Wall -Wextra)
@@ -159,7 +164,7 @@ if(BAWAN_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
         add_executable(settings_smoke tests/settings_smoke.mm src/SettingsViewController.mm src/TranslationPanel.mm src/BawanChrome.mm src/BawanAppearance.mm
             src/BawanMascotView.mm
-            src/ShortcutPreferences.mm src/ShortcutMonitor.mm ${BAWAN_SETUP_SOURCES})
+            src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm ${BAWAN_SETUP_SOURCES})
         target_include_directories(settings_smoke PRIVATE src)
         target_compile_definitions(settings_smoke PRIVATE
             BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
@@ -171,7 +176,7 @@ if(BAWAN_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
         add_executable(onboarding_smoke tests/onboarding_smoke.mm
             src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm src/BawanAppearance.mm
-            src/BawanMascotView.mm src/ShortcutMonitor.mm src/ShortcutPreferences.mm
+            src/BawanMascotView.mm src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm
             ${BAWAN_SETUP_SOURCES})
         target_include_directories(onboarding_smoke PRIVATE src)
         target_compile_definitions(onboarding_smoke PRIVATE
@@ -186,7 +191,7 @@ if(BAWAN_BUILD_TESTS)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
             src/AppDelegate.mm src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm
             src/BawanAppearance.mm src/BawanMascotView.mm
-            src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm ${BAWAN_SETUP_SOURCES})
+            src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm src/ModelStore.mm ${BAWAN_SETUP_SOURCES})
         target_include_directories(app_delegate_smoke PRIVATE src)
         target_compile_definitions(app_delegate_smoke PRIVATE
             BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")

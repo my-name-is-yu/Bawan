@@ -1,4 +1,5 @@
 #import "ShortcutMonitor.h"
+#import "SelectionReader.h"
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <cstdlib>
@@ -47,11 +48,12 @@ int main() {
         NSString *suite = [@"local.bawan.ShortcutMonitorTests." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
-        RoutingMonitor *monitor = [[RoutingMonitor alloc] initWithPreferences:preferences];
+        SelectionReader *selectionReader = [SelectionReader new];
+        RoutingMonitor *monitor = [[RoutingMonitor alloc] initWithPreferences:preferences selectionReader:selectionReader];
         __block unsigned opens = 0, copies = 0, problems = 0;
         monitor.onOpenPanel = ^{ ++opens; };
-        monitor.onText = ^(NSString *__unused text) { ++copies; };
-        monitor.onProblem = ^(NSString *__unused message) { ++problems; };
+        selectionReader.onText = ^(NSString *__unused text) { ++copies; };
+        selectionReader.onProblem = ^(NSString *__unused message) { ++problems; };
         [monitor start];
         NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(100, 100, 300, 200)
             styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskNonactivatingPanel

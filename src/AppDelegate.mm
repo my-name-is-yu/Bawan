@@ -2,6 +2,7 @@
 #import "ModelStore.h"
 #import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
+#import "SelectionReader.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
 #import "OnboardingViewController.h"
@@ -92,13 +93,14 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
-    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
-    _shortcut.onText = ^(NSString *text) {
+    SelectionReader *selectionReader = [SelectionReader new];
+    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences selectionReader:selectionReader];
+    selectionReader.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner handleSelectionText:text];
     };
-    _shortcut.onProblem = ^(NSString *message) {
+    selectionReader.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner updateShortcutItem];

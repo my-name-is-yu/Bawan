@@ -15,6 +15,7 @@ Production code and test registrations are unchanged.
 | `engine_lifecycle.cpp` | Retain | `f134100`, `65fbca4`: no work before first use, missing-model errors, independent prewarm failure, retry, cancelled prewarm leaves Loading, unused shutdown stays quiet. | Existing public callbacks/quiet checks remain. A translation failure and a prewarm failure have different owners, so neither is redundant. |
 | `shortcut_preferences_tests.mm` | Retain | Persistence, restore, rejection without value/notification changes, corrupt data recovery, duplicate repair and keyboard adapter flags. `028460a`: ignore another app's legacy preferences. | Existing save/reload/error/notification and Fn/Caps Lock boundary checks remain. Public defaults comparisons verify application/restoration of defaults. |
 | `shortcut_monitor_tests.mm` | Add native command routing regression | Custom global bindings must preserve native editing/Close while Bawan owns keyboard input; Settings must pass new events through. | Production monitor event routing with real CGEvents and a visible key nonactivating panel, single/double custom bindings, held-key draining, Option-T inside the translator, and custom/passive bindings outside it. Hosted AppKit can reactivate the app, so inactive-app input is not dynamically established. No installed event tap or physical-key delivery is claimed. |
+| `selection_reader_tests.mm` | Retain selection acquisition behavior independently of event routing | Passive Cmd-C twice uses the first press's pasteboard baseline; active copy waits for release. Cancelled, replaced and reentrant sessions must not send copy events or deliver stale results. | Injected clipboard, copy, clock, foreground application and scheduled callbacks cover success, retry/timeout, access denial, empty/non-text input, copy failure, application changes, cancellation, replacement, reentrancy and recovery without event taps or system clipboard access. |
 | `panel_smoke.mm` | Retain regressions; rewrite geometry expectations | `766a002`, `351138d`, `d7bafc5`: wrapping, final-line following and preserving reading position. `1905a01`: reverse direction. `41142ca`: normal window ordering. Accepted geometry is in `design-qa.md`. | Existing real controls, key events, clipboard, callbacks, scrolling and window-order checks remain. Source edits clear completed output, disable stale Copy/Swap, reset direction and preserve Undo/Redo. `CheckBounds` independently expects an 80pt header and 72pt mascot. |
 | `settings_smoke.mm` | Merge refresh assertions into navigation; rewrite geometry | `048a938`, `8e42eff`: recording, release protection and permissions. `4c37cc4`: preserve Undo/Redo across navigation. `d7bafc5`: preserve position/reveal full errors. | Reopen Settings after an external permission change, refresh the fake monitor's cached availability, then assert visible ready labels/help state. Existing recording, failures, focus, Undo/Redo, scrolling, login actions and color-role checks remain. Independent geometry also pins 28pt controls/13pt type. |
 | `mascot_smoke.mm` | Retain; mark motion checks for later rewrite | `41142ca` and `design-qa.md`: finite playback, interruption/reset, Reduce Motion, fixed hit area and bounded shared bitmap. | Existing coverage remains. Motion-name/private-layer assertions alone do not establish visible movement; replacing them requires real AppKit presentation/rendering checks. They were not deleted without that replacement. |
@@ -59,6 +60,16 @@ On an Apple Silicon Mac, build the native suite instead:
 ./scripts/build.sh -DBAWAN_BUILD_TESTS=ON -DBAWAN_BUILD_SMOKE=ON
 cmake --build build --parallel 3
 ctest --test-dir build --output-on-failure
+```
+
+The selection acquisition tests also run independently of llama.cpp, event-tap
+permissions, physical key delivery, visible windows and the system clipboard:
+
+```sh
+clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
+  tests/selection_reader_tests.mm src/SelectionReader.mm \
+  -framework AppKit -framework CoreGraphics -o /tmp/bawan-selection-reader-tests
+/tmp/bawan-selection-reader-tests
 ```
 
 For the usual pre-push check, `./scripts/check.sh` configures `build-check/`

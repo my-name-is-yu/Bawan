@@ -1,4 +1,5 @@
 #import "ShortcutMonitor.h"
+#import "SelectionReader.h"
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -6,13 +7,13 @@
 #include <array>
 
 namespace {
-constexpr int64_t copyEventTag = 0x426177616e437079;
 constexpr unsigned selectionIndex = static_cast<unsigned>(bawan::ShortcutAction::TranslateSelection);
 constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::OpenPanel);
 }
 
 @interface ShortcutMonitor () {
     ShortcutPreferences *_preferences;
+    SelectionReader *_selectionReader;
     bawan::ShortcutBindings _bindings;
     std::array<bawan::ShortcutGesture, 2> _gestures;
     std::array<ShortcutAvailability, 2> _availability;
@@ -27,15 +28,9 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     BOOL _asleep;
     BOOL _suspended;
     BOOL _configurationActive;
-    NSInteger _firstChangeCount;
-    pid_t _firstApplication;
-    NSInteger _pendingChangeCount;
-    pid_t _pendingApplication;
     BOOL _awaitingCopyRelease;
     std::uint16_t _copyReleaseKey;
-    pid_t _copyReleaseApplication;
-    NSUInteger _generation;
-    NSUInteger _copyReleaseGeneration;
+    NSUInteger _actionGeneration;
     NSMutableArray<id> *_workspaceObservers;
     id _preferencesObserver;
 }
@@ -45,9 +40,6 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
 - (void)applyPreferences;
 - (BOOL)installTapActive:(BOOL)active;
 - (void)removeTapActive:(BOOL)active;
-- (void)beginReadingCopyFromApplication:(pid_t)application changeCount:(NSInteger)changeCount;
-- (void)sendCopyForGeneration:(NSUInteger)generation application:(pid_t)application;
-- (void)checkCopyForGeneration:(NSUInteger)generation deadline:(NSTimeInterval)deadline;
 @end
 
 static CGEventRef observePassive(CGEventTapProxy, CGEventType type, CGEventRef event, void *context) {
@@ -67,9 +59,14 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 @implementation ShortcutMonitor
 
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences {
+    return [self initWithPreferences:preferences selectionReader:[SelectionReader new]];
+}
+
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader {
     self = [super init];
     if (!self) return nil;
     _preferences = preferences;
+    _selectionReader = selectionReader;
     _bindings = preferences.bindings;
     _availability.fill(ShortcutAvailabilityOff);
     [self configureGestures];
@@ -84,7 +81,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 }
 
 - (void)cancelPending {
-    ++_generation;
+    ++_actionGeneration;
+    [_selectionReader cancel];
     _awaitingCopyRelease = NO;
     for (auto &gesture : _gestures) gesture.cancel();
 }
@@ -298,7 +296,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         return NO;
     }
     if (!_started || _asleep || !event) return NO;
-    if (CGEventGetIntegerValueField(event, kCGEventSourceUserData) == copyEventTag) return NO;
+    if (CGEventGetIntegerValueField(event, kCGEventSourceUserData) == bawan::selectionCopyEventTag) return NO;
     if (type != kCGEventKeyDown && type != kCGEventKeyUp && type != kCGEventFlagsChanged) return NO;
 
     const auto key = static_cast<std::uint16_t>(CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode));
@@ -345,30 +343,30 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
             _swallowedRevision[key] = _gestureRevision;
         }
         if (result.firstPress) {
-            ++_generation;
+            ++_actionGeneration;
+            [_selectionReader cancel];
             _awaitingCopyRelease = NO;
-            if (passive) {
-                _firstChangeCount = NSPasteboard.generalPasteboard.changeCount;
-                _firstApplication = application;
-            }
+            if (passive) [_selectionReader beginCopyFromApplication:application passive:YES];
         }
         if (!result.triggered) continue;
         if (i == selectionIndex) {
             if (passive) {
-                [self beginReadingCopyFromApplication:_firstApplication changeCount:_firstChangeCount];
+                [_selectionReader readSelection];
             } else {
-                _copyReleaseGeneration = ++_generation;
+                ++_actionGeneration;
+                [_selectionReader beginCopyFromApplication:application passive:NO];
                 _awaitingCopyRelease = YES;
                 _copyReleaseKey = key;
-                _copyReleaseApplication = application;
             }
         } else if (i == panelIndex) {
-            const NSUInteger generation = ++_generation;
+            const NSUInteger generation = ++_actionGeneration;
+            [_selectionReader cancel];
+            _awaitingCopyRelease = NO;
             __weak ShortcutMonitor *weakSelf = self;
             dispatch_async(dispatch_get_main_queue(), ^{
                 ShortcutMonitor *self = weakSelf;
                 if (!self || !self->_started || self->_suspended || self->_configurationActive ||
-                    generation != self->_generation ||
+                    generation != self->_actionGeneration ||
                     NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != application) return;
                 if (self.onOpenPanel) self.onOpenPanel();
             });
@@ -381,89 +379,13 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     }
     if (active && _awaitingCopyRelease && type == kCGEventKeyUp && key == _copyReleaseKey) {
         _awaitingCopyRelease = NO;
-        const NSUInteger generation = _copyReleaseGeneration;
-        const pid_t source = _copyReleaseApplication;
-        __weak ShortcutMonitor *weakSelf = self;
-        dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf sendCopyForGeneration:generation application:source]; });
+        [_selectionReader readSelection];
     }
     if (active && type == kCGEventKeyUp && consumed) {
         __weak ShortcutMonitor *weakSelf = self;
         dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf refresh]; });
     }
     return active && consumed;
-}
-
-- (void)sendCopyForGeneration:(NSUInteger)generation application:(pid_t)application {
-    if (!_started || _suspended || _configurationActive || generation != _generation ||
-        NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != application) return;
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
-    CGEventRef down = CGEventCreateKeyboardEvent(source, 8, true);
-    CGEventRef up = CGEventCreateKeyboardEvent(source, 8, false);
-    if (source) CFRelease(source);
-    if (!down || !up) {
-        if (down) CFRelease(down);
-        if (up) CFRelease(up);
-        if (self.onProblem) self.onProblem(@"Unable to copy the selected text. Type or paste the source text instead.");
-        return;
-    }
-    CGEventSetFlags(down, kCGEventFlagMaskCommand);
-    CGEventSetFlags(up, kCGEventFlagMaskCommand);
-    CGEventSetIntegerValueField(down, kCGEventSourceUserData, copyEventTag);
-    CGEventSetIntegerValueField(up, kCGEventSourceUserData, copyEventTag);
-    const NSInteger changeCount = NSPasteboard.generalPasteboard.changeCount;
-    CGEventPost(kCGSessionEventTap, down);
-    CGEventPost(kCGSessionEventTap, up);
-    CFRelease(down);
-    CFRelease(up);
-    [self beginReadingCopyFromApplication:application changeCount:changeCount];
-}
-
-- (void)beginReadingCopyFromApplication:(pid_t)application changeCount:(NSInteger)changeCount {
-    _pendingChangeCount = changeCount;
-    _pendingApplication = application;
-    const NSUInteger generation = ++_generation;
-    const NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 0.8;
-    // Give the foreground app time to process the actual or synthesized copy.
-    __weak ShortcutMonitor *weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-        [weakSelf checkCopyForGeneration:generation deadline:deadline];
-    });
-}
-
-- (void)checkCopyForGeneration:(NSUInteger)generation deadline:(NSTimeInterval)deadline {
-    if (!_started || _suspended || _configurationActive || generation != _generation) return;
-    if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != _pendingApplication) return;
-    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150400
-    if (@available(macOS 15.4, *)) {
-        if (pasteboard.accessBehavior == NSPasteboardAccessBehaviorAlwaysDeny) {
-            ++_generation;
-            if (self.onProblem) self.onProblem(@"Clipboard access was denied. Allow Bawan to read the clipboard in System Settings, or type or paste text.");
-            return;
-        }
-    }
-#endif
-    if (pasteboard.changeCount != _pendingChangeCount) {
-        NSString *text = [pasteboard stringForType:NSPasteboardTypeString];
-        if (generation != _generation || !_started || _suspended || _configurationActive ||
-            NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != _pendingApplication) return;
-        ++_generation;
-        if ([text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {
-            if (self.onText) self.onText(text);
-        } else if (self.onProblem) {
-            self.onProblem(@"Unable to read copied text. Select text and try translating again, or type or paste text.");
-        }
-        return;
-    }
-    if (NSProcessInfo.processInfo.systemUptime >= deadline) {
-        ++_generation;
-        if (self.onProblem) self.onProblem(@"No updated copy was detected. Select text and try translating again, or type or paste text.");
-        return;
-    }
-    __weak ShortcutMonitor *weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-        [weakSelf checkCopyForGeneration:generation deadline:deadline];
-    });
 }
 
 - (void)dealloc {
