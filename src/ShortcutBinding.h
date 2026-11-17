@@ -41,7 +41,6 @@ public:
         bool firstPress = false;
         bool triggered = false;
         bool consumed = false;
-        bool released = false;
     };
     void configure(ShortcutBinding binding, bool suppress);
     Result handle(const ShortcutEvent& event);
