@@ -152,6 +152,16 @@ public:
         changed_.notify_one();
     }
 
+    void releaseMemory() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stopping_) { return; }
+            pendingRelease_ = true;
+            pendingWarmUp_ = false;
+        }
+        changed_.notify_one();
+    }
+
     void shutdown() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -356,9 +366,12 @@ private:
         for (;;) {
             std::optional<Request> request;
             std::uint64_t cancellation = 0;
+            bool release = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                const auto hasWork = [this] { return stopping_ || pendingWarmUp_ || pendingRequest_; };
+                const auto hasWork = [this] {
+                    return stopping_ || pendingWarmUp_ || pendingRequest_ || pendingRelease_;
+                };
                 if (model_) {
                     if (!changed_.wait_until(lock, idleDeadline, hasWork)) {
                         lock.unlock();
@@ -369,10 +382,16 @@ private:
                     changed_.wait(lock, hasWork);
                 }
                 if (stopping_) { break; }
+                release = pendingRelease_;
+                pendingRelease_ = false;
                 request = std::move(pendingRequest_);
                 pendingRequest_.reset();
                 pendingWarmUp_ = false;
                 cancellation = cancellation_.load();
+            }
+            if (!request && release) {
+                unload();
+                continue;
             }
             if (!request && model_) { continue; }
             try {
@@ -407,7 +426,8 @@ private:
                     else { emit(EngineEvent::Kind::Error, request->id, "An unexpected translation error occurred."); }
                 }
             }
-            if (model_) { idleDeadline = Clock::now() + idleTimeout_; }
+            if (release) { unload(); }
+            else if (model_) { idleDeadline = Clock::now() + idleTimeout_; }
         }
         unload();
     }
@@ -421,6 +441,7 @@ private:
     std::atomic<std::uint64_t> revision_{0};
     std::atomic<std::uint64_t> cancellation_{0};
     bool pendingWarmUp_ = false;
+    bool pendingRelease_ = false;
     std::optional<Request> pendingRequest_;
     Model model_{nullptr, llama_model_free};
     bool backendInitialized_ = false;
@@ -434,6 +455,7 @@ TranslationEngine::~TranslationEngine() = default;
 void TranslationEngine::warmUp() { impl_->warmUp(); }
 std::uint64_t TranslationEngine::translate(std::string text, Direction direction) { return impl_->translate(std::move(text), direction); }
 void TranslationEngine::cancel() { impl_->cancel(); }
+void TranslationEngine::releaseMemory() { impl_->releaseMemory(); }
 void TranslationEngine::shutdown() { impl_->shutdown(); }
 
 }

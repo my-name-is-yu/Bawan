@@ -288,7 +288,44 @@ int main(int argc, char ** argv) {
         }
         interruptedEvents.requireNoOutput(interruptedId);
         interrupted.shutdown();
-        std::cout << "PASS: lazy loading, warm-up, idle unloading/reloading, translation, short input, direction, input boundaries, error recovery, sliding window, streaming and cancellation\n";
+
+        Events pressureEvents;
+        bawan::TranslationEngine pressured(argv[1], [&](bawan::EngineEvent event) {
+            pressureEvents.push(std::move(event));
+        }, 60s);
+        const auto pressureStart = pressureEvents.mark();
+        const auto pressuredId = pressured.translate(
+            "The application keeps one model in memory and waits for the next translation request. "
+            "It releases that model when the system needs memory back.", bawan::Direction::EnglishToJapanese);
+        if (pressureEvents.wait(pressuredId, true).kind != Kind::Text) {
+            throw std::runtime_error("Translation before memory release did not stream");
+        }
+        auto releasedAt = std::chrono::steady_clock::now();
+        pressured.releaseMemory();
+        completed(pressureEvents, pressuredId, bawan::Direction::EnglishToJapanese);
+        pressureEvents.requireNoIdleBeforeCompletion(pressuredId, pressureStart);
+        pressureEvents.waitKind(Kind::Idle, pressureStart);
+        if (std::chrono::steady_clock::now() - releasedAt > 30s) {
+            throw std::runtime_error("Memory release waited for the idle timeout");
+        }
+        const auto afterRelease = pressureEvents.mark();
+        pressured.releaseMemory();
+        pressureEvents.requireQuietFor(200ms);
+        if (completed(pressureEvents, pressured.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
+            throw std::runtime_error("Translation changed after releasing memory");
+        }
+        if (pressureEvents.count(Kind::Loading, afterRelease) != 1) {
+            throw std::runtime_error("The model was not reloaded once after releasing memory");
+        }
+        const auto warmRelease = pressureEvents.mark();
+        releasedAt = std::chrono::steady_clock::now();
+        pressured.releaseMemory();
+        pressureEvents.waitKind(Kind::Idle, warmRelease);
+        if (std::chrono::steady_clock::now() - releasedAt > 5s) {
+            throw std::runtime_error("An idle resident model was not released promptly");
+        }
+        pressured.shutdown();
+        std::cout << "PASS: lazy loading, warm-up, idle unloading/reloading, memory release, translation, short input, direction, input boundaries, error recovery, sliding window, streaming and cancellation\n";
         return EXIT_SUCCESS;
     } catch (const std::exception & error) {
         std::cerr << "FAIL: " << error.what() << '\n';
