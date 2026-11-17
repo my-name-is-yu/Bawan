@@ -15,6 +15,8 @@ endif()
 option(BAWAN_BUILD_APP "Build the macOS menu bar application" ${APPLE})
 option(BAWAN_BUILD_TESTS "Build Bawan's behavior tests and macOS panel smoke test" OFF)
 option(BAWAN_BUILD_SMOKE "Build the real-model inference smoke test" OFF)
+option(BAWAN_WARNINGS_AS_ERRORS "Fail the build on warnings in Bawan's own sources" OFF)
+option(BAWAN_ENABLE_SANITIZERS "Build Bawan's own code and tests with ASan and UBSan" OFF)
 
 # Enable native languages before configuring Metal's .m sources in llama.cpp.
 # Enabling OBJCXX after add_subdirectory leaves its compile rule unavailable
@@ -55,6 +57,15 @@ FetchContent_Declare(llama
     URL_HASH SHA256=d786a73bc7262f75832e159d94455e0c8d3501bafa59cc2728573a1596dca056
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(llama)
+
+# Directory-scoped so they reach only the Bawan targets declared below, not llama.cpp.
+if(BAWAN_WARNINGS_AS_ERRORS)
+    add_compile_options(-Werror)
+endif()
+if(BAWAN_ENABLE_SANITIZERS)
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 find_package(Threads REQUIRED)
 add_library(bawan_engine STATIC src/TranslationEngine.cpp)

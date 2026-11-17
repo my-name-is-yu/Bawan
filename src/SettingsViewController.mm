@@ -635,7 +635,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     // listener while one of the recorder's swallowed keys remains down.
     if (!_releaseTimer) {
         __weak SettingsViewController *weakSelf = self;
-        _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *timer) {
+        _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(__unused NSTimer *timer) {
             [weakSelf finishRecordingIfReleased];
         }];
         [NSRunLoop.mainRunLoop addTimer:_releaseTimer forMode:NSRunLoopCommonModes];

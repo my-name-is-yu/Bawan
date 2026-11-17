@@ -61,6 +61,17 @@ cmake --build build --parallel 3
 ctest --test-dir build --output-on-failure
 ```
 
+For the usual pre-push check, `./scripts/check.sh` configures `build-check/`
+with every native test, fails on warnings in Bawan's own sources (not
+llama.cpp), and runs CTest. `./scripts/check.sh --sanitize` repeats it under
+AddressSanitizer and UndefinedBehaviorSanitizer in `build-check-sanitize/`.
+To run it before every push, add a hook:
+
+```sh
+printf '#!/bin/sh\nexec ./scripts/check.sh\n' > .git/hooks/pre-push
+chmod +x .git/hooks/pre-push
+```
+
 Run the model-backed command separately there as well. The native CTests cover
 preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four
 portable checks. CI was intentionally removed in `babb935`; native validation

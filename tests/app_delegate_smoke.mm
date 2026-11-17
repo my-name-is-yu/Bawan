@@ -325,7 +325,8 @@ int main() {
             }
         } @finally {
             [panel close];
-            [delegate applicationWillTerminate:nil];
+            [delegate applicationWillTerminate:
+                [NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
         }
         return result;
     }
