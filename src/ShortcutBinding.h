@@ -11,6 +11,11 @@ struct ShortcutBinding {
     std::uint8_t modifiers = Command;
     std::uint8_t pressCount = 2;
 };
+inline bool operator==(const ShortcutBinding& lhs, const ShortcutBinding& rhs) {
+    return lhs.enabled == rhs.enabled && lhs.keyCode == rhs.keyCode &&
+        lhs.modifiers == rhs.modifiers && lhs.pressCount == rhs.pressCount;
+}
+inline bool operator!=(const ShortcutBinding& lhs, const ShortcutBinding& rhs) { return !(lhs == rhs); }
 using ShortcutBindings = std::array<ShortcutBinding, 2>;
 enum class ShortcutError { None, InvalidKey, MissingModifier, InvalidPressCount, Reserved, Duplicate };
 ShortcutBindings defaultShortcuts();
