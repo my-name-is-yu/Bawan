@@ -23,6 +23,7 @@
 - (void)warmUpEngine;
 - (void)ensureEngine;
 - (void)cancelTranslation;
+- (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection;
 - (void)retryModel:(id)sender;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 - (void)handleSelectionText:(NSString *)text;
@@ -81,9 +82,9 @@
 @end
 
 @implementation TrialRefreshSmokeDelegate
-- (void)cancelTranslation {
+- (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection {
     ++_cancellations;
-    [super cancelTranslation];
+    [super cancelTranslationKeepingPendingSelection:keepSelection];
 }
 @end
 
@@ -488,8 +489,9 @@ static NSEvent *SetupKey(NSWindow *window, NSString *characters, NSEventModifier
 }
 
 static void CheckFirstRunSelection(void) {
-    enum class Change { None, NewSelection, Edit, Cancel, Close };
-    for (Change change : {Change::None, Change::NewSelection, Change::Edit, Change::Cancel, Change::Close}) {
+    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, Edit, Cancel, Close };
+    for (Change change : {Change::None, Change::ReadyBeforeFinish, Change::ReadyBeforeReplacement,
+            Change::NewSelection, Change::Edit, Change::Cancel, Change::Close}) {
         NSString *suite = [@"local.bawan.FirstSelectionSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
@@ -530,11 +532,43 @@ static void CheckFirstRunSelection(void) {
             [primary performClick:nil];
             Require(store.preparations == 1 && [defaults boolForKey:@"modelLicenseNoticeShown20261109"],
                 @"Accepting model setup must start preparation for the queued selection");
+            const bool readyBeforeFinish = change == Change::ReadyBeforeFinish ||
+                change == Change::ReadyBeforeReplacement;
+            if (readyBeforeFinish) {
+                for (int readiness = 0; readiness < 2; ++readiness) {
+                    SetAvailableModel(delegate);
+                    Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                        [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                        [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                        @"Model readiness must preserve the selection and leave unfinished onboarding open without inference");
+                }
+            }
+            if (change == Change::ReadyBeforeFinish) {
+                [delegate openSettings:nil];
+                Require([window.contentView.identifier isEqualToString:@"bawan-settings"],
+                    @"Settings must open while a selection is waiting for first-run guidance");
+                [window cancelOperation:nil];
+                Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                    [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                    @"Back from Settings must return to unfinished guidance without consuming the selection");
+            }
+            if (change == Change::ReadyBeforeReplacement) {
+                expectedSource = @"A newer selection after the model is ready";
+                [delegate handleSelectionText:expectedSource];
+                Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                    [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                    @"A newer selection must replace the pending text without bypassing unfinished onboarding");
+            }
             [primary performClick:nil];
             Require([defaults boolForKey:@"firstLaunchShown"] &&
                 [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
-                [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
-                @"Finishing guidance during preparation must return to the translator without starting inference");
+                ([[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] != 0) == readyBeforeFinish,
+                @"Finishing guidance must start inference only if the model is already ready");
             NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
             NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
             NSButton *translate = (NSButton *)FindView(window.contentView, @"translate");
@@ -546,21 +580,23 @@ static void CheckFirstRunSelection(void) {
             } else if (change == Change::Cancel) {
                 [translate performClick:nil];
             }
-            const BOOL shouldTranslate = change == Change::None || change == Change::NewSelection;
-            if (shouldTranslate) {
-                Require([[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource],
-                    @"Only the latest surviving selection may be submitted when the model becomes ready");
-            } else {
-                Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil,
-                    @"Editing, cancelling or closing must discard the first-run selection before readiness");
+            const BOOL shouldTranslate = change == Change::None || readyBeforeFinish || change == Change::NewSelection;
+            if (!readyBeforeFinish) {
+                if (shouldTranslate) {
+                    Require([[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource],
+                        @"Only the latest surviving selection may be submitted when the model becomes ready");
+                } else {
+                    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil,
+                        @"Editing, cancelling or closing must discard the first-run selection before readiness");
+                }
+                SetAvailableModel(delegate);
             }
-            SetAvailableModel(delegate);
             ScopedEngineCallbackSuppression callbacks(delegate);
             const uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
             Require((request != 0) == shouldTranslate && Flag(delegate, @"busy") == shouldTranslate &&
                 [delegate valueForKey:@"pendingText"] == nil && [source.string isEqualToString:expectedSource] &&
                 output.string.length == 0,
-                @"Model readiness must automatically submit only the surviving selection and consume the queue");
+                @"Finishing setup and model readiness must submit only the surviving selection and consume the queue");
             SetAvailableModel(delegate);
             Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
                 @"Repeated readiness must not submit the first-run selection a second time");
@@ -602,11 +638,14 @@ static void ServiceQueuedAppEvents(NSWindow *window) {
 static void CheckSelectionTrial(void) {
     using Kind = bawan::EngineEvent::Kind;
     enum class Case { Success, Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
-                      Queued, QueuedInvalidated, Skip, CallbackNone, CallbackPanelBinding,
+                      Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
+                      CallbackNone, CallbackPanelBinding,
                       CallbackSelectionBinding, CallbackPermission };
     for (Case scenario : {Case::Success, Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
             Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
-            Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
+            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
+        const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
+            scenario == Case::SkipActiveWithSelection;
         const BOOL checkRefreshes = scenario == Case::CallbackPanelBinding || scenario == Case::CallbackSelectionBinding ||
             scenario == Case::CallbackNone || scenario == Case::CallbackPermission;
         NSString *suite = [@"local.bawan.SelectionTrialSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
@@ -647,8 +686,10 @@ static void CheckSelectionTrial(void) {
             [panel showForSelection:@"Previous source"];
             NSTextView *source = (NSTextView *)FindView(panel.window.contentView, @"source");
             NSTextView *output = (NSTextView *)FindView(panel.window.contentView, @"output");
+            if (skipWithSelection) [delegate handleSelectionText:@"A selection from another app"];
             [delegate startInitialSetup];
-            const BOOL queued = scenario == Case::Queued || scenario == Case::QueuedInvalidated || checkRefreshes;
+            const BOOL queued = scenario == Case::Queued || scenario == Case::QueuedInvalidated ||
+                skipWithSelection || checkRefreshes;
             if (!queued) {
                 SetAvailableModel(delegate);
                 callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
@@ -684,8 +725,48 @@ static void CheckSelectionTrial(void) {
             [delegate handleSelectionText:sample.string];
             Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
                 @"A duplicate sample callback must not replace or replay a pending trial");
+            if (skipWithSelection) {
+                uint64_t trialRequest = 0;
+                if (scenario == Case::SkipActiveWithSelection) {
+                    SetAvailableModel(delegate);
+                    callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
+                    trialRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                    Require(trialRequest != 0 && ![defaults boolForKey:@"firstLaunchShown"] &&
+                        [window.contentView.identifier isEqualToString:@"bawan-onboarding"],
+                        @"Readiness must start the practice request without finishing guidance");
+                }
+                [primary performClick:nil];
+                if (scenario == Case::SkipQueuedWithSelection) {
+                    Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
+                        @"Skipping before readiness must not start inference");
+                    SetAvailableModel(delegate);
+                    callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
+                }
+                const uint64_t ordinaryRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                Require([defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
+                    [source.string isEqualToString:@"A selection from another app"] &&
+                    ordinaryRequest != 0 && ordinaryRequest != trialRequest,
+                    @"Skipping a practice trial must submit the original external selection once the model is ready");
+                if (trialRequest) {
+                    bawan::EngineEvent stale{Kind::Complete, trialRequest, "Late practice output", false,
+                        bawan::Direction::EnglishToJapanese};
+                    [delegate handleEngineEvent:stale];
+                    Require(output.string.length == 0 && !onboarding.selectionTrialComplete,
+                        @"A skipped trial must not overwrite the ordinary translation with a late result");
+                }
+                SetAvailableModel(delegate);
+                Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == ordinaryRequest,
+                    @"Duplicate readiness must not submit the ordinary selection again");
+                bawan::EngineEvent complete{Kind::Complete, ordinaryRequest, "External selection translated", false,
+                    bawan::Direction::EnglishToJapanese};
+                [delegate handleEngineEvent:complete];
+                Require([output.string isEqualToString:@"External selection translated"],
+                    @"The original external selection's result must appear in the translator");
+                continue;
+            }
             if (queued) {
-                Require(request == 0 && [[delegate valueForKey:@"pendingText"] isEqualToString:sample.string],
+                Require(request == 0 && [[delegate valueForKey:@"pendingTrialText"] isEqualToString:sample.string],
                     @"A trial during preparation must retain its selected sample until the model is ready");
                 if (checkRefreshes) {
                     const NSUInteger attempt = [[delegate valueForKey:@"selectionTrialAttempt"] unsignedIntegerValue];
@@ -722,10 +803,10 @@ static void CheckSelectionTrial(void) {
                         [primary.title hasPrefix:@"Set Up Later"],
                         @"Only a change to the selection shortcut may invalidate its queued trial; no state callback may finish onboarding");
                     if (keepTrial) {
-                        Require([[delegate valueForKey:@"pendingText"] isEqualToString:sample.string],
+                        Require([[delegate valueForKey:@"pendingTrialText"] isEqualToString:sample.string],
                             @"Unchanged selection state must preserve the queued practice sentence");
                     } else {
-                        Require([delegate valueForKey:@"pendingText"] == nil &&
+                        Require([delegate valueForKey:@"pendingTrialText"] == nil &&
                             ![onboarding finishSelectionTrial:attempt output:@"Late state callback output"
                                 direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
                             @"Cancelling an invalid trial must clear its queue and reject the old result");
@@ -739,7 +820,7 @@ static void CheckSelectionTrial(void) {
                                 @"A changed selection binding must update the practice instructions in that refresh");
                         }
                         SetAvailableModel(delegate);
-                        Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
+                        Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingTrialText"] == nil &&
                             [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0 &&
                             [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
                             @"Later model readiness must not submit a trial invalidated by a shortcut state callback");
@@ -752,7 +833,7 @@ static void CheckSelectionTrial(void) {
                 }
                 SetAvailableModel(delegate);
                 if (scenario == Case::QueuedInvalidated) {
-                    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
+                    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingTrialText"] == nil &&
                         [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0 &&
                         !onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
                         @"A page departure must discard a queued trial before model readiness can submit it");
@@ -760,7 +841,7 @@ static void CheckSelectionTrial(void) {
                 }
                 callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
                 request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
-                Require(request != 0 && [delegate valueForKey:@"pendingText"] == nil,
+                Require(request != 0 && [delegate valueForKey:@"pendingTrialText"] == nil,
                     @"Model readiness must submit the surviving trial without leaving onboarding");
             }
             Require(request != 0, @"The practice fixture must start a real engine request");

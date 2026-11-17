@@ -75,8 +75,9 @@ chmod +x .git/hooks/pre-push
 To isolate the first-run selected-text regression, run
 `./build-check/app_delegate_smoke --first-run-selection`. It exercises the real
 delegate and translator controls with isolated preferences, simulated model
-readiness and controlled engine completion. The default `app_delegate_smoke`
-also includes this scenario.
+readiness and controlled engine completion. It checks both readiness before
+leaving onboarding and leaving onboarding before readiness. The default
+`app_delegate_smoke` also includes this scenario.
 
 Run the model-backed command separately there as well. The native CTests cover
 preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four
@@ -155,6 +156,10 @@ Current-trial validity queries must not refresh presentation. The onboarding smo
 checks zero refreshes from those queries, one explicit refresh followed by a query
 without another refresh, and stale completion rejection after live binding,
 permission or enabled-state changes before any presentation refresh.
+
+The selection trial smoke also queues an external selection, starts practice, and
+skips both before and after the model becomes ready. The external source must
+translate exactly once; a late practice result must not replace that translation.
 
 The AppDelegate trial smoke also delivers one legacy availability callback during
 a queued trial: unchanged state or a panel binding change preserves it, while a
