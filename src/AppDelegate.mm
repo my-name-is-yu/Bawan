@@ -407,7 +407,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelFailed = NO;
     _modelStatus = @"Checking the model…";
     [self updateStatus];
-    [_modelStore prepare];
+    [_modelStore revalidate];
 }
 
 - (void)openLoginSettings:(id)sender { [SMAppService openSystemSettingsLoginItems]; }

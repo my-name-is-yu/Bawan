@@ -6,7 +6,9 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <sys/stat.h>
+#include <sys/xattr.h>
 #include <dispatch/dispatch.h>
 
 // Immutable upstream metadata, verified against the official Hugging Face API:
@@ -22,9 +24,25 @@ static const char ModelSHA256[] =
 
 enum class Verification { Valid, Invalid, Failed, Cancelled };
 
+static const char VerifiedAttribute[] = "local.bawan.verified-sha256";
+
+static std::string VerificationStamp(const struct stat &info, const char *expectedSHA256) {
+    char stamp[160];
+    std::snprintf(stamp, sizeof(stamp), "1 %s %lld %llu %ld.%09ld", expectedSHA256,
+        static_cast<long long>(info.st_size), static_cast<unsigned long long>(info.st_ino),
+        static_cast<long>(info.st_mtimespec.tv_sec), static_cast<long>(info.st_mtimespec.tv_nsec));
+    return stamp;
+}
+
+static bool HasVerificationStamp(int descriptor, const std::string &stamp) {
+    char saved[160];
+    const ssize_t length = fgetxattr(descriptor, VerifiedAttribute, saved, sizeof(saved), 0, 0);
+    return length == static_cast<ssize_t>(stamp.size()) && std::memcmp(saved, stamp.data(), stamp.size()) == 0;
+}
+
 static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generation,
                                 uint64_t expectedGeneration, int64_t expectedSize,
-                                const char *expectedSHA256, NSString **reason) {
+                                const char *expectedSHA256, bool trustStamp, NSString **reason) {
     std::unique_ptr<FILE, decltype(&std::fclose)> file(
         std::fopen(url.fileSystemRepresentation, "rb"), &std::fclose);
     if (!file) {
@@ -39,6 +57,10 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     if (!S_ISREG(info.st_mode) || info.st_size != expectedSize) {
         *reason = @"The model file size is incorrect.";
         return Verification::Invalid;
+    }
+    const std::string stamp = VerificationStamp(info, expectedSHA256);
+    if (trustStamp && HasVerificationStamp(fileno(file.get()), stamp)) {
+        return generation.load() == expectedGeneration ? Verification::Valid : Verification::Cancelled;
     }
 
     CC_SHA256_CTX hash;
@@ -71,7 +93,12 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     hex[sizeof(hex) - 1] = '\0';
     if (total != static_cast<size_t>(expectedSize) || std::strcmp(hex, expectedSHA256) != 0) {
         *reason = @"The model file failed SHA256 verification.";
+        fremovexattr(fileno(file.get()), VerifiedAttribute, 0);
         return Verification::Invalid;
+    }
+    struct stat after {};
+    if (fstat(fileno(file.get()), &after) == 0 && VerificationStamp(after, expectedSHA256) == stamp) {
+        fsetxattr(fileno(file.get()), VerifiedAttribute, stamp.data(), stamp.size(), 0, 0);
     }
     return generation.load() == expectedGeneration ? Verification::Valid : Verification::Cancelled;
 }
@@ -122,6 +149,14 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
 }
 
 - (void)prepare {
+    [self prepareTrustingVerifiedModel:YES];
+}
+
+- (void)revalidate {
+    [self prepareTrustingVerifiedModel:NO];
+}
+
+- (void)prepareTrustingVerifiedModel:(BOOL)trustStamp {
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
     [self cancel];
     const uint64_t generation = _generation.load();
@@ -147,7 +182,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     }
     if ([files fileExistsAtPath:_modelURL.path]) {
         [self reportProgress:0 message:@"Checking the saved model…" generation:generation];
-        [self verifyURL:_modelURL downloaded:NO generation:generation];
+        [self verifyURL:_modelURL downloaded:NO trustStamp:trustStamp generation:generation];
         return;
     }
     [self reportProgress:0 message:@"Downloading the model…" generation:generation];
@@ -171,13 +206,14 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     if (_generation.load() == generation && self.onError) self.onError(message);
 }
 
-- (void)verifyURL:(NSURL *)url downloaded:(BOOL)downloaded generation:(uint64_t)generation {
+- (void)verifyURL:(NSURL *)url downloaded:(BOOL)downloaded trustStamp:(BOOL)trustStamp
+        generation:(uint64_t)generation {
     NSURL *destination = _modelURL;
     dispatch_async(_verificationQueue, ^{
         @autoreleasepool {
             NSString *reason = nil;
             const Verification result = VerifyModel(url, self->_generation, generation,
-                self->_expectedSize, self->_expectedSHA256.UTF8String, &reason);
+                self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp, &reason);
             dispatch_async(dispatch_get_main_queue(), ^{
                 NSFileManager *files = self->_files;
                 if (self->_generation.load() != generation || result == Verification::Cancelled) {
@@ -252,7 +288,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         return;
     }
     [self reportProgress:1 message:@"Download complete. Verifying SHA256…" generation:generation];
-    [self verifyURL:temporary downloaded:YES generation:generation];
+    [self verifyURL:temporary downloaded:YES trustStamp:NO generation:generation];
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task

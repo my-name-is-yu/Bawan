@@ -8,7 +8,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^onProgress)(double fraction, NSString *message);
 @property(nonatomic, copy, nullable) void (^onReady)(NSURL *fileURL);
 @property(nonatomic, copy, nullable) void (^onError)(NSString *message);
+// Trusts a saved model whose size, inode and modification time still match
+// its last successful SHA256 verification.
 - (void)prepare;
+// Always rehashes a saved model, for example when the user retries setup.
+- (void)revalidate;
 - (void)cancel;
 @end
 
