@@ -260,6 +260,11 @@ BawanActionButton *BawanSetupButton(NSString *identifier, NSString *title, CGFlo
 }
 
 NSView *BawanSetupRow(NSString *identifier, NSView *title, NSView *status, NSArray<NSView *> *controls) {
+    return BawanSetupInsetRow(identifier, title, status, controls, 0, 0);
+}
+
+NSView *BawanSetupInsetRow(NSString *identifier, NSView *title, NSView *status, NSArray<NSView *> *controls,
+                           CGFloat leadingInset, CGFloat trailingInset) {
     NSView *row = [[NSView alloc] init];
     row.identifier = identifier;
     row.translatesAutoresizingMaskIntoConstraints = NO;
@@ -279,12 +284,12 @@ NSView *BawanSetupRow(NSString *identifier, NSView *title, NSView *status, NSArr
     compact.active = YES;
     [NSLayoutConstraint activateConstraints:@[
         [row.heightAnchor constraintGreaterThanOrEqualToConstant:BawanSetupRowHeight],
-        [description.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
+        [description.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:leadingInset],
         [description.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
         [description.topAnchor constraintGreaterThanOrEqualToAnchor:row.topAnchor constant:6],
         [description.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-6],
         [description.trailingAnchor constraintLessThanOrEqualToAnchor:trailing.leadingAnchor constant:-12],
-        [trailing.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
+        [trailing.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-trailingInset],
         [trailing.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
         [trailing.topAnchor constraintGreaterThanOrEqualToAnchor:row.topAnchor constant:6],
         [trailing.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-6]

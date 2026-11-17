@@ -1,3 +1,7 @@
+# Onboarding layout — 2026-11-17
+
+Onboarding restores the earlier body layout: a hero with the 120pt mascot beside the title and a one-line model status, then the explanation and setup button, then indented shortcut rows with full-width rules above and below. Every element in it (header, footer, type scale, controls, copy and status presentation) is the shared version described below.
+
 # Setup consistency pass — 2026-11-17
 
 Onboarding and Settings now share one row pattern (title over status, controls on the trailing side, hidden actions keep their slot) and one serif type scale (`BawanSetupTitleSize` 24, section 18, row 15, body 14, caption 13). The checkbox, the launch-at-login switch and the progress bars are drawn in Bawan's palette instead of the system accent. The shortcut names come from `ShortcutActionTitle` everywhere, including the status menu. Both pages show keys and press counts in the same 128/80pt fields. Model status, icon, color and action copy come from `BawanPresentModel`, and Model License is always a beveled button. Each page's footer primary action shows and responds to ⌘↵. The Settings footer note is centered. Checked in light, dark and minimum-size captures.

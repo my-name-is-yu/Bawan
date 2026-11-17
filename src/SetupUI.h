@@ -44,5 +44,8 @@ NSView *BawanSetupRule(void);
 BawanActionButton *BawanSetupButton(NSString *identifier, NSString *title, CGFloat width, id target, SEL action);
 // The shared row: title over status on the leading side, controls on the trailing side.
 NSView *BawanSetupRow(NSString *identifier, NSView *title, NSView *status, NSArray<NSView *> *controls);
+// The same row, inset from the content edges (the onboarding list layout).
+NSView *BawanSetupInsetRow(NSString *identifier, NSView *title, NSView *status, NSArray<NSView *> *controls,
+                           CGFloat leadingInset, CGFloat trailingInset);
 
 NS_ASSUME_NONNULL_END

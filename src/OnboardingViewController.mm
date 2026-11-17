@@ -80,6 +80,16 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
     document.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.documentView = document;
 
+    // Layout: the hero pairs the mascot with the title and a one-line model status;
+    // setup and the indented shortcut list follow, separated by full-width rules.
+    NSImageView *heroMascot = [[NSImageView alloc] init];
+    heroMascot.identifier = @"onboarding-hero-mascot";
+    heroMascot.image = BawanMascotImageAtSize(120);
+    heroMascot.imageScaling = NSImageScaleProportionallyUpOrDown;
+    heroMascot.translatesAutoresizingMaskIntoConstraints = NO;
+    [heroMascot setAccessibilityElement:NO];
+    [heroMascot.widthAnchor constraintEqualToConstant:120].active = YES;
+    [heroMascot.heightAnchor constraintEqualToConstant:120].active = YES;
     _title = BawanSetupHeading(@"Prepare Your Translator", BawanSetupTitleSize);
     _title.identifier = @"onboarding-title";
     _modelIcon = [[NSImageView alloc] init];
@@ -91,14 +101,20 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
     modelName.identifier = @"onboarding-model-title";
     _modelStatus = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanSecondaryText);
     _modelStatus.identifier = @"onboarding-model-status";
-    NSStackView *modelState = BawanSetupStack(@[_modelIcon, _modelStatus], NSUserInterfaceLayoutOrientationHorizontal, 6);
-    BawanActionButton *modelSetup = BawanSetupButton(@"onboarding-model-setup", @"", BawanSetupModelActionWidth, self, @selector(setUpModel:));
-    modelSetup.primary = YES;
-    _modelSetup = modelSetup;
-    NSView *model = BawanSetupRow(@"onboarding-model-row", modelName, modelState, @[modelSetup]);
+    NSStackView *model = BawanSetupStack(@[_modelIcon, modelName, _modelStatus],
+        NSUserInterfaceLayoutOrientationHorizontal, 8);
+    NSStackView *intro = BawanSetupStack(@[_title, model], NSUserInterfaceLayoutOrientationVertical, 10);
+    [intro setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                    forOrientation:NSLayoutConstraintOrientationHorizontal];
+    NSStackView *hero = BawanSetupStack(@[heroMascot, intro], NSUserInterfaceLayoutOrientationHorizontal, 20);
+    hero.identifier = @"onboarding-hero";
 
     _modelMessage = Label(@"", BawanSetupBodySize, NSFontWeightRegular, BawanSecondaryText);
     _modelMessage.identifier = @"onboarding-model-message";
+    BawanActionButton *modelSetup = BawanSetupButton(@"onboarding-model-setup", @"", BawanSetupModelActionWidth,
+        self, @selector(setUpModel:));
+    modelSetup.primary = YES;
+    _modelSetup = modelSetup;
     _progress = [[BawanProgressBar alloc] init];
     _progress.identifier = @"onboarding-model-progress";
     _progress.style = NSProgressIndicatorStyleBar;
@@ -117,12 +133,15 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
     _error.identifier = @"onboarding-error";
     _error.hidden = YES;
 
-    NSArray<NSView *> *sections = @[_title, model, _modelMessage, _progress, BawanSetupRule(),
-        optional, firstRow, BawanSetupRule(), secondRow, _error];
-    NSStackView *content = BawanSetupStack(sections, NSUserInterfaceLayoutOrientationVertical, 8);
-    [content setCustomSpacing:24 afterView:_modelMessage];
-    [content setCustomSpacing:24 afterView:_progress];
-    [content setCustomSpacing:24 afterView:model];
+    NSView *topRule = BawanSetupRule();
+    NSView *middleRule = BawanSetupRule();
+    NSView *bottomRule = BawanSetupRule();
+    NSStackView *content = BawanSetupStack(@[hero, _modelMessage, modelSetup, _progress, topRule, optional,
+        firstRow, middleRule, secondRow, bottomRule, _error], NSUserInterfaceLayoutOrientationVertical, 10);
+    [content setCustomSpacing:16 afterView:hero];
+    // Everything but the setup button spans the content width; the button keeps its own width.
+    NSArray<NSView *> *sections = @[hero, _modelMessage, _progress, topRule, optional,
+        firstRow, middleRule, secondRow, bottomRule, _error];
     [document addSubview:content];
     for (NSView *view in sections) {
         [view.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
@@ -170,7 +189,7 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
     [_shortcutPresses addObject:presses];
     [_shortcutStatuses addObject:status];
     [_shortcutSetup addObject:setup];
-    return BawanSetupRow(ShortcutID(index, @"row"), name, status, @[key, presses, setup]);
+    return BawanSetupInsetRow(ShortcutID(index, @"row"), name, status, @[key, presses, setup], 16, 12);
 }
 
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {

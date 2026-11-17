@@ -131,6 +131,7 @@ inline NSImage *BawanLoadImage(NSString *name) {
 }
 
 NSImage *BawanMascotImage(void);
+NSImage *BawanMascotImageAtSize(CGFloat pointSize);
 
 inline NSImage *BawanPaperImage(void) {
     static NSImage *image;
