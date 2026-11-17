@@ -388,6 +388,78 @@ static void CheckInputFaces(NSWindow *window) {
     window.appearance = previous;
 }
 
+static void CheckActionButtonStyles(NSWindow *window) {
+    BawanActionButton *close = (BawanActionButton *)FindView(window.contentView, @"settings-close");
+    BawanActionButton *back = (BawanActionButton *)FindView(window.contentView, @"settings-back");
+    BawanActionButton *setup = (BawanActionButton *)FindView(window.contentView, @"shortcut-selection-permission");
+    Require(close.style == BawanActionButtonStylePlain && back.style == BawanActionButtonStylePrimary &&
+        setup.style == BawanActionButtonStyleSecondary,
+        @"Header, footer and setup actions must each select one complete button style");
+    NSAppearance *previousAppearance = window.appearance;
+    NSColor *headerTint = close.contentTintColor;
+    BawanActionButton *automatic = BawanAddActionButton(nil, @"automatic-tint", @"Automatic", nil, nullptr,
+        BawanActionButtonStyleSecondary);
+    BawanActionButtonStyle styles[] = {BawanActionButtonStylePrimary, BawanActionButtonStyleGold,
+        BawanActionButtonStyleSecondary, BawanActionButtonStylePlain};
+    for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+        window.appearance = [NSAppearance appearanceNamed:appearance];
+        for (BawanActionButtonStyle style : styles) {
+            close.needsDisplay = NO;
+            close.style = style;
+            Require(close.needsDisplay, @"Changing a button style must repaint its face");
+            RequireTint(window, close.contentTintColor, BawanColor(BawanHeaderText),
+                @"A header button's explicit tint must survive every style change");
+            for (NSUInteger state = 0; state < 3; ++state) {
+                close.enabled = state != 2;
+                [close highlight:state == 1];
+                NSBitmapImageRep *bitmap = ControlAppearanceChecks::Render(close);
+                NSColor *face = BitmapColor(bitmap, bitmap.pixelsWide / 2, 4);
+                CGFloat expectedAlpha = style == BawanActionButtonStylePlain ? (state == 1 ? 0.12 : 0) :
+                    (state == 2 ? 0.4 : 1);
+                Require(std::abs(face.alphaComponent - expectedAlpha) < 0.02,
+                    @"Styles must retain their enabled, pressed and disabled face opacity");
+                if (style != BawanActionButtonStylePlain) {
+                    [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+                        NSColor *expected = style == BawanActionButtonStylePrimary ?
+                            BawanPrimaryButtonFill(state == 1) :
+                            BawanColor(style == BawanActionButtonStyleGold ? BawanGold : BawanBackground);
+                        if (state == 1 && style != BawanActionButtonStylePrimary)
+                            expected = [expected blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
+                        RequireTint(window, face, expected,
+                            @"A style change must update the entire normal, pressed or disabled face");
+                    }];
+                }
+                NSString *path = [NSString stringWithFormat:@"settings-smoke/action-%ld-%@-%lu.png",
+                    static_cast<long>(style), appearance, static_cast<unsigned long>(state)];
+                Require([[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+                    writeToFile:path atomically:YES], @"Could not save an action-style capture");
+            }
+            close.enabled = YES;
+            [close highlight:NO];
+        }
+        close.contentTintColor = nil;
+        for (BawanActionButtonStyle style : styles) {
+            close.style = style;
+            Require(close.contentTintColor == nil,
+                @"An explicit nil tint must retain native coloring across style changes");
+            automatic.style = style;
+            NSColor *expected = style == BawanActionButtonStylePrimary ? BawanAccentForegroundColor() :
+                BawanColor(style == BawanActionButtonStyleGold ? BawanGoldText : BawanText);
+            RequireTint(window, automatic.contentTintColor, expected,
+                @"A button without an explicit tint must follow its selected style's foreground");
+        }
+        close.contentTintColor = headerTint;
+    }
+    close.style = BawanActionButtonStylePlain;
+    close.enabled = NO;
+    NSView *settingsRoot = window.contentView;
+    [close performClick:nil];
+    Require(window.contentView == settingsRoot,
+        @"A disabled header action must not leave Settings");
+    close.enabled = YES;
+    window.appearance = previousAppearance;
+}
+
 static void CheckCustomControlAppearance(NSWindow *window) {
     using namespace ControlAppearanceChecks;
     NSButton *checkbox = (NSButton *)FindView(window.contentView, @"shortcut-selection-enabled");
@@ -570,6 +642,7 @@ static void RunSmoke(void) {
     }
     Require(ownedWindows == 1, @"Settings must not create a second Bawan window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
+    CheckActionButtonStyles(window);
     Capture(window, @"entry");
     CheckFrameDragging(window);
     NSScrollView *entryScroll = (NSScrollView *)FindView(settings.view, @"settings-scroll");

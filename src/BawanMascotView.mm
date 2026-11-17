@@ -89,6 +89,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     CALayer *_rightLid;
     BOOL _inside;
     BOOL _plain;
+    CGFloat _pointSize;
     NSUInteger _nextMotion;
     NSUInteger _hoverGeneration;
 }
@@ -98,6 +99,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 - (BOOL)mouseDownCanMoveWindow { return NO; }
+- (NSSize)intrinsicContentSize { return NSMakeSize(_pointSize, _pointSize); }
 - (instancetype)initWithFrame:(NSRect)frame {
     return [self initWithFrame:frame plainSize:0];
 }
@@ -110,10 +112,12 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     self = [super initWithFrame:frame];
     if (!self) return nil;
     _plain = plainSize > 0;
-    self.image = _plain ? BawanMascotImageAtSize(plainSize) : BawanMascotImage();
+    _pointSize = _plain ? plainSize : BawanBrandMarkSize;
+    NSImage *image = _plain ? BawanMascotImageAtSize(plainSize) : BawanMascotImage();
+    [self setAccessibilityElement:NO];
     self.wantsLayer = YES;
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
-    CGImageRef bitmap = [self.image CGImageForProposedRect:nullptr context:nil hints:nil];
+    CGImageRef bitmap = [image CGImageForProposedRect:nullptr context:nil hints:nil];
     _clip = [CALayer layer];
     _clip.name = @"bawan.mascot.clip";
     _dog = [CALayer layer];

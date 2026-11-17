@@ -102,6 +102,45 @@ ctest --test-dir build-check --output-on-failure -R '^(translation_panel|setting
 These additions were inspected on Linux, where AppKit is unavailable; their
 compilation, execution and rendered PNGs still require macOS verification.
 
+## Component API regression (#43)
+
+`panel_smoke` exercises the real footer-hint helper with asymmetric 48/96pt and
+128/52pt neighbors, either neighbor missing, and both missing. At 720, 640 and
+360pt widths, short, long and unbroken messages must remain centered in the
+footer, fit inside it, and keep at least 12pt clear of each neighbor. The narrow
+fixtures save `panel-smoke/footer-hint-*.png`. The panel's mascot lookup now uses
+the `BawanMascotView` API rather than the removed image-view API.
+
+`settings_smoke` cycles the real header button through primary, gold, secondary
+and plain styles in Aqua and Dark Aqua. It checks tint priority, repainting,
+normal/pressed/disabled face colors and opacity, and disabled navigation. An
+explicit `contentTintColor`, including nil for AppKit's native tint, takes
+priority over later style changes; a button without an override uses its style's
+foreground. Captures are saved as `settings-smoke/action-*.png`.
+
+`mascot_smoke` checks the view-only API, 72pt medallion and requested plain
+intrinsic sizes, plain Auto Layout sizing, decorative accessibility and keyboard
+behavior, fixed hit-test bounds during playback, and plain click/reset behavior
+with the existing finite playback and Reduce Motion scenarios. The existing
+motion-name checks are unchanged; their replacement belongs to #45.
+
+On an Apple Silicon Mac, run the full native build and the three focused smokes:
+
+```sh
+./scripts/check.sh
+ctest --test-dir build-check --output-on-failure \
+  -R '^(translation_panel|settings_navigation|mascot_hover)$'
+```
+
+Inspect the new footer and style PNGs, and repeat `panel_smoke` / `mascot_smoke`
+with OS Reduce Motion enabled (`BAWAN_EXPECT_REDUCE_MOTION=1`). Linux cloud ran
+`PATH=/tmp/bawan-43-python/cmake/data/bin:$PATH ./scripts/check.sh -DBAWAN_BUILD_APP=OFF`
+with CMake 3.31.10 and GCC 14.2.0: Release warnings-as-errors build and all four
+portable CTests passed. AppKit is unavailable on that host, so no native compile,
+smoke execution, PNG inspection, or failing-before/passing-after result is
+claimed for these new regressions. There is no GitHub Actions workflow in this
+repository to supply those missing native results automatically.
+
 ## Verification for this review
 
 Environment: Linux x86_64, GCC 14.2, Release, pinned llama.cpp `b12307`, verified

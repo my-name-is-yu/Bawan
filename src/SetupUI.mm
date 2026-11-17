@@ -239,7 +239,7 @@ NSView *BawanSetupRule(void) {
 }
 
 BawanActionButton *BawanSetupButton(NSString *identifier, NSString *title, CGFloat width, id target, SEL action) {
-    BawanActionButton *button = BawanAddActionButton(nil, identifier, title, target, action, NO);
+    BawanActionButton *button = BawanAddActionButton(nil, identifier, title, target, action, BawanActionButtonStyleSecondary);
     button.font = BawanLabelFont(BawanSetupCaptionSize);
     [button.widthAnchor constraintEqualToConstant:width].active = YES;
     [button.heightAnchor constraintEqualToConstant:BawanSetupButtonHeight].active = YES;
