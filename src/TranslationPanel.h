@@ -4,6 +4,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class SettingsViewController;
+@class OnboardingViewController;
 
 typedef NS_ENUM(NSInteger, BawanStatusKind) {
     BawanStatusInformation, BawanStatusWarning, BawanStatusError
@@ -19,6 +20,7 @@ typedef NS_ENUM(NSInteger, BawanStatusKind) {
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
 - (void)showSettings:(SettingsViewController *)settings;
+- (void)showOnboarding:(OnboardingViewController *)onboarding;
 - (void)showTranslation;
 - (void)setShortcutInstructions:(NSString *)instructions;
 - (void)setShortcutAvailable:(BOOL)available;

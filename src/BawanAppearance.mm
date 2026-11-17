@@ -1,30 +1,33 @@
 #import "BawanAppearance.h"
 #import <ImageIO/ImageIO.h>
 
+NSImage *BawanMascotImageAtSize(CGFloat pointSize) {
+#ifdef BAWAN_TEST_RESOURCE_DIR
+    NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:@"BawanMascot.png"];
+#else
+    NSString *path = [NSBundle.mainBundle pathForResource:@"BawanMascot" ofType:@"png"];
+#endif
+    if (!path) return nil;
+    CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path],
+        (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache:@NO});
+    if (!source) return nil;
+    CGImageRef bitmap = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)@{
+        (id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,
+        (id)kCGImageSourceCreateThumbnailWithTransform:@YES,
+        (id)kCGImageSourceThumbnailMaxPixelSize:@(pointSize * 2),
+        (id)kCGImageSourceShouldCacheImmediately:@YES
+    });
+    CFRelease(source);
+    if (!bitmap) return nil;
+    NSImage *image = [[NSImage alloc] initWithCGImage:bitmap size:NSMakeSize(pointSize, pointSize)];
+    CGImageRelease(bitmap);
+    return image;
+}
+
 NSImage *BawanMascotImage(void) {
     static NSImage *image;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{
-#ifdef BAWAN_TEST_RESOURCE_DIR
-        NSString *path = [@BAWAN_TEST_RESOURCE_DIR stringByAppendingPathComponent:@"BawanMascot.png"];
-#else
-        NSString *path = [NSBundle.mainBundle pathForResource:@"BawanMascot" ofType:@"png"];
-#endif
-        if (!path) return;
-        CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path],
-            (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache:@NO});
-        if (!source) return;
-        CGImageRef bitmap = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)@{
-            (id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,
-            (id)kCGImageSourceCreateThumbnailWithTransform:@YES,
-            (id)kCGImageSourceThumbnailMaxPixelSize:@144,
-            (id)kCGImageSourceShouldCacheImmediately:@YES
-        });
-        CFRelease(source);
-        if (!bitmap) return;
-        image = [[NSImage alloc] initWithCGImage:bitmap size:NSMakeSize(72, 72)];
-        CGImageRelease(bitmap);
-    });
+    dispatch_once(&once, ^{ image = BawanMascotImageAtSize(72); });
     return image;
 }
 

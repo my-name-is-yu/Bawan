@@ -3,6 +3,7 @@
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
+#import "OnboardingViewController.h"
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "TranslationEngine.h"
@@ -16,6 +17,8 @@
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
     SettingsViewController *_settingsViewController;
+    OnboardingViewController *_onboardingViewController;
+    NSUserDefaults *_defaults;
     ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
     ModelStore *_modelStore;
@@ -32,11 +35,19 @@
     BOOL _busy;
     BOOL _terminating;
     BOOL _modelFailed;
+    BOOL _modelSetupStarted;
+    double _modelProgress;
     NSString *_modelStatus;
 }
 @end
 
 @implementation AppDelegate
+
+- (instancetype)init {
+    self = [super init];
+    if (self) _defaults = NSUserDefaults.standardUserDefaults;
+    return self;
+}
 
 static NSString *StringFromUTF8(const std::string &text) {
     return [[NSString alloc] initWithBytes:text.data() length:text.size()
@@ -46,7 +57,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
     [self buildMenus];
-    _modelStatus = @"Checking the model…";
+    _modelStatus = @"Prepare the translation model to get started.";
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
     _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
@@ -65,6 +76,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelStore.onProgress = ^(__unused double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
+        owner->_modelProgress = progress;
         owner->_modelStatus = message;
         [owner updateStatus];
     };
@@ -74,6 +86,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         owner->_modelURL = fileURL;
         owner->_modelAvailable = YES;
         owner->_modelFailed = NO;
+        owner->_modelProgress = 1;
         owner->_modelStatus = @"Ready to translate · On-device processing";
         if (owner->_pendingText) {
             NSString *text = owner->_pendingText;
@@ -102,8 +115,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _shortcut.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner->_translationPanel showForSelection:text];
-        [owner translateText:text direction:bawan::Direction::Automatic];
+        [owner handleSelectionText:text];
     };
     _shortcut.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
@@ -127,15 +139,64 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
-    if (![NSUserDefaults.standardUserDefaults boolForKey:@"modelLicenseNoticeShown20261109"]) {
-        [self showModelLicense:nil];
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    [self startInitialSetup];
+}
+
+- (void)startInitialSetup {
+    if (![_defaults boolForKey:@"firstLaunchShown"]) {
+        [self showOnboarding];
+        if ([_defaults boolForKey:@"modelLicenseNoticeShown20261109"]) [self beginModelSetup];
+    } else {
+        [self beginModelSetup];
     }
-    [_modelStore prepare];
-    if (![NSUserDefaults.standardUserDefaults boolForKey:@"firstLaunchShown"]) {
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"firstLaunchShown"];
-        [_translationPanel showForManualInput];
+}
+
+- (void)beginModelSetup {
+    if (![_defaults boolForKey:@"modelLicenseNoticeShown20261109"]) {
+        if (![self showModelLicense:nil]) return;
+        [_defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
     }
+    if (_modelSetupStarted) {
+        [self retryModel:nil];
+    } else {
+        _modelSetupStarted = YES;
+        _modelProgress = 0;
+        _modelStatus = @"Checking the model…";
+        [self updateStatus];
+        [_modelStore prepare];
+    }
+}
+
+- (void)showOnboarding {
+    if (!_onboardingViewController) {
+        _onboardingViewController = [[OnboardingViewController alloc]
+            initWithPreferences:_shortcutPreferences monitor:_shortcut];
+        __weak AppDelegate *weakSelf = self;
+        _onboardingViewController.onBack = ^{ [weakSelf finishOnboarding]; };
+        _onboardingViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
+        _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+    }
+    [self refreshSetupPages];
+    [_translationPanel showOnboarding:_onboardingViewController];
+}
+
+- (void)finishOnboarding {
+    if (!_modelAvailable || _modelFailed) {
+        [_translationPanel close];
+        return;
+    }
+    if (![_defaults boolForKey:@"firstLaunchShown"]) [_defaults setBool:YES forKey:@"firstLaunchShown"];
+    [_translationPanel showForManualInput];
+}
+
+- (void)refreshSetupPages {
+    BawanModelSetupPhase phase = _modelFailed ? BawanModelSetupFailed :
+        _modelAvailable ? BawanModelSetupReady :
+        _modelSetupStarted ? BawanModelSetupPreparing : BawanModelSetupNeedsDownload;
+    NSString *message = _modelStatus ?: @"Prepare the translation model to get started.";
+    [_onboardingViewController setModelPhase:phase message:message progress:_modelProgress];
+    [_settingsViewController setModelPhase:phase message:message progress:_modelProgress];
+    [_onboardingViewController refresh];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -144,7 +205,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     return item;
 }
 
-- (void)showModelLicense:(id)sender {
+- (BOOL)showModelLicense:(id)sender {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Built with PLaMo";
     alert.informativeText = @"Bawan uses PLaMo 3 Translate 0.8B under the PLaMo Community License, separately from Bawan’s MIT License. Using the model is subject to PFN’s terms.\n\n"
@@ -152,6 +213,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         "Commercial use includes internal business use. If you or your affiliates’ annual revenue or sales does not exceed JPY 1 billion, register with PFN before commercial use. Above that threshold, a separate commercial agreement is required.\n\n"
         "The model (~573 MB) downloads directly from PFN to your Mac. Review the official terms for your use.";
     [alert addButtonWithTitle:sender ? @"Done" : @"Continue to Model Setup"];
+    if (!sender) [alert addButtonWithTitle:@"Not Now"];
     NSStackView *links = [[NSStackView alloc] init];
     links.orientation = NSUserInterfaceLayoutOrientationVertical;
     links.alignment = NSLayoutAttributeLeading;
@@ -167,7 +229,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     links.frame = NSMakeRect(0, 0, 360, 96);
     alert.accessoryView = links;
     [NSApp activateIgnoringOtherApps:YES];
-    [alert runModal];
+    return [alert runModal] == NSAlertFirstButtonReturn;
 }
 
 - (void)openModelLicenseLink:(NSButton *)sender {
@@ -237,6 +299,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateStatus {
+    [self refreshSetupPages];
     _modelItem.title = _modelStatus ?: @"Preparing the model…";
     _retryItem.hidden = !_modelFailed;
     _retryItem.enabled = _modelFailed;
@@ -269,6 +332,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
     [_settingsViewController refresh];
+    [_onboardingViewController refresh];
 }
 
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
@@ -317,6 +381,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self updateStatus];
         return;
     }
+    [_defaults setBool:YES forKey:@"firstLaunchShown"];
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     [self ensureEngine];
@@ -388,8 +453,26 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)openTranslation:(id)sender {
+    if (![_defaults boolForKey:@"firstLaunchShown"]) {
+        if (_modelAvailable && !_modelFailed) {
+            [self finishOnboarding];
+            [self warmUpEngine];
+        } else {
+            [self showOnboarding];
+        }
+        return;
+    }
     [_translationPanel showForManualInput];
     [self warmUpEngine];
+}
+
+- (void)handleSelectionText:(NSString *)text {
+    [_translationPanel showForSelection:text];
+    if (!_modelAvailable && !_modelSetupStarted) {
+        [self showOnboarding];
+        return;
+    }
+    [self translateText:text direction:bawan::Direction::Automatic];
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
@@ -411,6 +494,8 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelURL = nil;
     _modelAvailable = NO;
     _modelFailed = NO;
+    _modelSetupStarted = YES;
+    _modelProgress = 0;
     _modelStatus = @"Checking the model…";
     [self updateStatus];
     [_modelStore revalidate];
@@ -436,6 +521,8 @@ static NSString *StringFromUTF8(const std::string &text) {
         __weak AppDelegate *weakSelf = self;
         _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        _settingsViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        _settingsViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];
@@ -445,11 +532,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
+    [self refreshSetupPages];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
     if (_settingsViewController.view.window.visible) [self refreshSettings];
     else [_shortcut refresh];
+    [_onboardingViewController refresh];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {

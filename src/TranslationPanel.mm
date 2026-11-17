@@ -1,5 +1,7 @@
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
+#import "OnboardingViewController.h"
+#import "BawanPanelPage.h"
 #import "BawanAppearance.h"
 #import "BawanMascotView.h"
 #import <QuartzCore/CALayer.h>
@@ -39,14 +41,14 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
 @property(nonatomic, copy) void (^onTranslateKey)(void);
 @property(nonatomic, copy) void (^onCopyKey)(void);
 @property(nonatomic, copy) void (^onEscape)(void);
+@property(nonatomic, weak) NSView *editingContent;
 @end
 
 @implementation BawanPanel
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return NO; }
 - (NSUndoManager *)undoManager {
-    if ([self.contentView.identifier isEqualToString:@"bawan-settings"]) return nil;
-    return [super undoManager];
+    return self.contentView == self.editingContent ? [super undoManager] : nil;
 }
 - (void)cancelOperation:(id)sender { if (self.onEscape) self.onEscape(); }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
@@ -215,7 +217,7 @@ void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL en
     BawanPanel *_panel;
     NSView *_translationContent;
     BawanMascotView *_mascot;
-    SettingsViewController *_settings;
+    NSViewController<BawanPanelPage> *_page;
     __weak NSResponder *_translationResponder;
     BawanTextView *_source;
     BawanTextView *_output;
@@ -351,7 +353,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     _panel.onEscape = ^{
         TranslationPanel *owner = weakSelf;
         if (!owner) return;
-        if ([owner isShowingSettings]) [owner showTranslation];
+        if ([owner isShowingPage]) {
+            if (owner->_page.onBack) owner->_page.onBack();
+            else [owner showTranslation];
+        }
         else [owner close];
     };
 
@@ -365,6 +370,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     content.layer.cornerRadius = 16;
     content.layer.masksToBounds = YES;
     _panel.contentView = content;
+    _panel.editingContent = content;
     _translationContent = content;
 
     BawanSurfaceView *header = SurfaceView(content, @"header", BawanHeader);
@@ -535,42 +541,60 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     [_panel orderFrontRegardless];
 }
 
-- (BOOL)isShowingSettings {
-    return _settings && _panel.contentView == _settings.view;
+- (BOOL)isShowingPage {
+    return _page && _panel.contentView == _page.view;
 }
 
 - (void)showSettings:(SettingsViewController *)settings {
-    BOOL entering = ![self isShowingSettings];
-    if (entering) {
-        _translationResponder = _panel.firstResponder;
-        [_mascot resetHoverAnimation];
-        [_translate resetPressFeedback];
-        [_copy resetPressFeedback];
-        [_panel makeFirstResponder:nil];
-        _settings = settings;
+    __weak TranslationPanel *weakSelf = self;
+    settings.onBack = ^{ [weakSelf showTranslation]; };
+    [self showPage:settings title:@"Bawan Settings"];
+}
+
+- (void)showOnboarding:(OnboardingViewController *)onboarding {
+    if (!onboarding.onBack) {
         __weak TranslationPanel *weakSelf = self;
-        settings.onBack = ^{ [weakSelf showTranslation]; };
-        NSView *view = settings.view;
+        onboarding.onBack = ^{ [weakSelf showTranslation]; };
+    }
+    [self showPage:onboarding title:@"Bawan Setup"];
+}
+
+- (void)showPage:(NSViewController<BawanPanelPage> *)page title:(NSString *)title {
+    BOOL showingPage = [self isShowingPage];
+    BOOL entering = !showingPage || _page != page;
+    if (entering) {
+        if (showingPage) {
+            if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
+            [_page setActive:NO];
+        } else {
+            _translationResponder = _panel.firstResponder;
+            [_mascot resetHoverAnimation];
+            [_translate resetPressFeedback];
+            [_copy resetPressFeedback];
+        }
+        [_panel makeFirstResponder:nil];
+        _page = page;
+        NSView *view = page.view;
         view.frame = _panel.contentView.bounds;
         view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         view.wantsLayer = YES;
         view.layer.cornerRadius = 16;
         view.layer.masksToBounds = YES;
         _panel.contentView = view;
-        _panel.title = @"Bawan Settings";
+        _panel.title = title;
     }
     if (!_panel.visible) [self positionNearPointer];
-    [settings refresh];
+    [page refresh];
     [NSApp activateIgnoringOtherApps:YES];
     [_panel makeKeyAndOrderFront:nil];
-    [settings setActive:_panel.keyWindow];
-    if (entering) [settings focusInitialControl];
+    [page setActive:_panel.keyWindow];
+    if (entering) [page focusInitialControl];
 }
 
 - (void)showTranslation {
-    if (![self isShowingSettings]) return;
+    if (![self isShowingPage]) return;
     if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
-    [_settings setActive:NO];
+    [_page setActive:NO];
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;
@@ -676,7 +700,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 }
 
 - (void)performPrimaryAction:(id)sender {
-    if ([self isShowingSettings]) return;
+    if ([self isShowingPage]) return;
     if (_busy) { if (self.onCancel) self.onCancel(); }
     else [self translate:sender];
 }
@@ -684,7 +708,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 - (void)openSettings:(id)sender { if (self.onSettings) self.onSettings(); }
 
 - (void)copyOutput:(id)sender {
-    if ([self isShowingSettings]) return;
+    if ([self isShowingPage]) return;
     if (_output.string.length == 0) return;
     [self resetCopyFeedback];
     NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
@@ -717,10 +741,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     if (self.onClose) self.onClose();
 }
 - (void)windowDidBecomeKey:(NSNotification *)notification {
-    if ([self isShowingSettings]) [_settings setActive:YES];
+    if ([self isShowingPage]) [_page setActive:YES];
 }
 - (void)windowDidResignKey:(NSNotification *)notification {
-    [_settings setActive:NO];
+    if ([self isShowingPage]) [_page setActive:NO];
 }
 - (void)close { [_panel close]; }
 @end
