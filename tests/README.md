@@ -63,10 +63,28 @@ Its default CTest cases hold the worker at the public Loading callback to
 overlap latest-wins translations, warm-up, release, cancellation and shutdown.
 They compare complete callback sequences, including exactly-once request
 terminals, cancellation recovery and silent shutdown. With a model path, two
-additional cases queue release before or after the latest pending translation.
+cases queue release before or after the latest pending translation.
 They require one reused load, the correct request ID and direction, one
 Complete after each displaced request's Cancelled, and Idle only after
 completion, promptly rather than after the 60-second idle timeout.
+
+The default cases also capture stderr from standard and nonstandard callback
+exceptions. They require the event kind, request ID and bounded, escaped error
+detail, then retry and compare the entire event sequence to detect recursive or
+duplicate delivery. Cold translation load failures must report both the global
+error (ID 0) and that request's error; warm-up failures report only the global
+error, with the original error details preserved. With a model path, a further
+case rejects invalid UTF-8 with only a request error and successfully translates
+the next request using the same loaded model.
+
+The held-Loading shutdown case proves that shutdown waits for an executing
+callback, then completes without delivering queued events after it resumes.
+This is a join/lifetime guarantee, not a wall-clock shutdown bound: cancellation
+is observed at model-load progress callbacks, between 128-token prompt batches
+and between generated tokens. Backend initialization, model I/O/mapping,
+tokenization, context allocation, an individual inference call, cleanup and
+the callback itself still have to return. The production worker remains joined
+so its engine and backend resources stay alive throughout that work.
 
 On an Apple Silicon Mac, build the native suite instead:
 
