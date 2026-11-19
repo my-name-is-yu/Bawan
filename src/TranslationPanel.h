@@ -24,6 +24,7 @@ typedef NS_ENUM(NSInteger, BawanPanelPageKind) {
 @property(nonatomic, readonly) BawanPanelPageKind currentPage;
 
 - (void)showForSelection:(NSString *)text;
+- (void)setSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
 - (void)showSettings:(SettingsViewController *)settings;

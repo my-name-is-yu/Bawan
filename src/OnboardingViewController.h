@@ -23,12 +23,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) bawan::Direction selectionTrialDirection;
 @property(nonatomic, readonly) BOOL selectionTrialComplete;
 // Only the real selection callback may begin a trial; selection or setup alone cannot finish it.
-- (BOOL)isSelectionTrialText:(NSString *)text;
-- (NSUInteger)beginSelectionTrial;
+- (BOOL)beginSelectionTrialForText:(NSString *)text;
 // Reads live binding/availability without refreshing the page.
-- (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt;
-- (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(nullable NSString *)output
-                  direction:(bawan::Direction)direction;
+- (BOOL)finishSelectionTrialWithOutput:(nullable NSString *)output direction:(bawan::Direction)direction;
 - (void)cancelSelectionTrial;
 - (void)discardSelectionTrialResult;
 @end

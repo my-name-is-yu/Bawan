@@ -56,7 +56,6 @@ struct ShortcutRow {
     bawan::ShortcutBinding _trialBinding;
     BOOL _selectionReady;
     TrialPhase _trialPhase;
-    NSUInteger _trialAttempt;
     NSString *_trialOutput;
     bawan::Direction _trialDirection;
     NSTextField *_error;
@@ -354,43 +353,39 @@ struct ShortcutRow {
 - (BOOL)selectionTrialComplete { return _trialPhase == TrialPhase::Complete && _selectionReady; }
 
 - (void)resetSelectionTrial {
-    ++_trialAttempt;
     _trialPhase = TrialPhase::Ready;
     _trialOutput = nil;
     _trialStatus.stringValue = @"";
     _trialStatus.hidden = YES;
 }
 
-- (BOOL)isSelectionTrialText:(NSString *)text {
+- (BOOL)beginSelectionTrialForText:(NSString *)text {
     if (!_active) return NO;
     [self refresh];
-    return _selectionReady && ![self showingModelStep] &&
-        _selectionSample.window.isKeyWindow && _selectionSample.window.firstResponder == _selectionSample &&
-        NSEqualRanges(_selectionSample.selectedRange, NSMakeRange(0, _selectionSample.string.length)) &&
-        [text isEqualToString:_selectionSample.string];
-}
-
-- (NSUInteger)beginSelectionTrial {
-    if (![self isSelectionTrialText:_selectionSample.string] || _trialPhase != TrialPhase::Ready) return 0;
-    ++_trialAttempt;
+    if (_trialPhase != TrialPhase::Ready || !_selectionReady || [self showingModelStep] ||
+        !_selectionSample.window.isKeyWindow || _selectionSample.window.firstResponder != _selectionSample ||
+        !NSEqualRanges(_selectionSample.selectedRange, NSMakeRange(0, _selectionSample.string.length)) ||
+        ![text isEqualToString:_selectionSample.string]) return NO;
     _trialPhase = TrialPhase::Translating;
     _trialStatus.stringValue = @"Translating… The model may need to finish preparing first.";
     _trialStatus.textColor = BawanColor(BawanSecondaryText);
     _trialStatus.hidden = NO;
     [self.view layoutSubtreeIfNeeded];
-    return _trialAttempt;
+    return YES;
 }
 
-- (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt {
+- (BOOL)canFinishSelectionTrial {
     const auto binding = [_preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-    return attempt && attempt == _trialAttempt &&
-        ![self showingModelStep] && _trialPhase == TrialPhase::Translating &&
+    return ![self showingModelStep] && _trialPhase == TrialPhase::Translating &&
         binding == _trialBinding && binding.enabled &&
         [_monitor availabilityForAction:bawan::ShortcutAction::TranslateSelection] == ShortcutAvailabilityAvailable;
 }
 
-- (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(NSString *)output direction:(bawan::Direction)direction {
-    if (![self isSelectionTrialCurrent:attempt]) return NO;
+- (BOOL)finishSelectionTrialWithOutput:(NSString *)output direction:(bawan::Direction)direction {
+    if (![self canFinishSelectionTrial]) {
+        [self cancelSelectionTrial];
+        return NO;
+    }
     BOOL complete = [output stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     _trialPhase = complete ? TrialPhase::Complete : TrialPhase::Ready;
     _trialOutput = complete ? [output copy] : nil;
