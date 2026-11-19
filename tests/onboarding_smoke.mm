@@ -233,7 +233,7 @@ static void RunSmoke(void) {
         Require(monitor.permissionRequests == 0,
             @"Creating, refreshing and activating onboarding must not request OS permissions");
 
-        [window setContentSize:NSMakeSize(640, 420)];
+        [window setContentSize:NSMakeSize(640, 500)];
         [onboarding setModelPhase:BawanModelSetupNeedsDownload message:@"" progress:0];
         Settle(window);
         Require(IsShown(modelStep) && !IsShown(shortcutStep) && IsShown(primary) && IsShown(license) &&
@@ -242,11 +242,14 @@ static void RunSmoke(void) {
             ((BawanActionButton *)primary).style == BawanActionButtonStylePrimary &&
             [modelMessage.stringValue containsString:@"license"] && [modelMessage.stringValue containsString:@"573 MB"],
             @"The model step must explain the download and offer only Download and Model License");
-        CheckBounds(window);
-        Capture(window, @"needs-download");
+        Require(NSHeight(scroll.documentView.bounds) <= NSHeight(scroll.contentView.bounds),
+            @"The model step must fit vertically when measuring the reserved scrollbar gutter");
         const CGFloat modelGutter = NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame);
         Require(preferredStyle == NSScrollerStyleLegacy ? modelGutter > 0 : modelGutter == 0,
             @"The model step must reserve a scrollbar gutter only in legacy mode");
+        [window setContentSize:NSMakeSize(640, 420)];
+        CheckBounds(window);
+        Capture(window, @"needs-download");
         BawanMascotView *hero = (BawanMascotView *)FindView(root, @"onboarding-hero-mascot");
         Require([hero isKindOfClass:BawanMascotView.class] && IsShown(hero),
             @"The model step must center the animated mascot");
