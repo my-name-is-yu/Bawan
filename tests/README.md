@@ -53,6 +53,21 @@ The model-backed smoke is a separate executable, not one of the CTests. Use the
 official model revision `1cf96ae02133958a20074bfdfab76517bb737d00`, SHA256
 `70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6`.
 
+`engine_lifecycle` also accepts that model path as an optional argument:
+
+```sh
+./build/engine_lifecycle /path/to/plamo-3-translate-0.8b-Q4_K_M.gguf
+```
+
+Its default CTest cases hold the worker at the public Loading callback to
+overlap latest-wins translations, warm-up, release, cancellation and shutdown.
+They compare complete callback sequences, including exactly-once request
+terminals, cancellation recovery and silent shutdown. With a model path, two
+additional cases queue release before or after the latest pending translation.
+They require one reused load, the correct request ID and direction, one
+Complete after each displaced request's Cancelled, and Idle only after
+completion, promptly rather than after the 60-second idle timeout.
+
 On an Apple Silicon Mac, build the native suite instead:
 
 ```sh
