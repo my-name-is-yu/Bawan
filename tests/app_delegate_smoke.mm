@@ -797,13 +797,14 @@ static void ServiceQueuedAppEvents(NSWindow *window) {
 
 static void CheckSelectionTrial(void) {
     enum class Case { Success, LaterExternalSelection, FocusChange, ColdLoadFailure,
-                      Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
+                      Truncated, Empty, Error, Cancelled, Binding, Permission, PermissionBeforeRefresh, Revisit,
                       Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
                       CallbackNone, CallbackPanelBinding,
                       CallbackSelectionBinding, CallbackPermission };
     for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
             Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
-            Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
+            Case::Binding, Case::Permission, Case::PermissionBeforeRefresh,
+            Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
             Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
         const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
             scenario == Case::SkipActiveWithSelection;
@@ -1041,6 +1042,11 @@ static void CheckSelectionTrial(void) {
                 Require(!Flag(delegate, @"busy") &&
                     [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
                     @"Losing shortcut permission must cancel without waiting for an engine event");
+            } else if (scenario == Case::PermissionBeforeRefresh) {
+                monitor.selectionAvailable = NO;
+                Require(Flag(delegate, @"busy") &&
+                    [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
+                    @"The stale-completion fixture must retain the active request until delivery");
             } else if (scenario == Case::Revisit) {
                 [panel showForManualInput];
                 Require(!Flag(delegate, @"busy") && status.hidden,
@@ -1066,6 +1072,11 @@ static void CheckSelectionTrial(void) {
             if (scenario == Case::Cancelled) outcome = Cancelled{};
             Finished terminal{request, std::move(outcome)};
             [delegate injectEngineEvent:terminal];
+            if (scenario == Case::PermissionBeforeRefresh) {
+                Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0 &&
+                    !Flag(delegate, @"busy") && !onboarding.selectionTrialComplete && !onboarding.selectionTrialOutput,
+                    @"A stale terminal event must release the active request without showing its output");
+            }
             if (!success) {
                 Require(!onboarding.selectionTrialComplete && !Flag(delegate, @"busy") &&
                     (scenario == Case::Skip || [primary.title hasPrefix:@"Set Up Later"]),

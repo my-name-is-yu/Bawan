@@ -589,7 +589,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     if (metadata.requestId != _activeRequestId) return;
     if (const NSUInteger attempt = _selectionTrialAttempt) {
-        if (![_onboardingViewController isSelectionTrialCurrent:attempt]) return;
         if (const auto *finished = std::get_if<Finished>(&event)) {
             _busy = _pendingText != nil;
             _activeRequestId = 0;
