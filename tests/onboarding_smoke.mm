@@ -271,7 +271,6 @@ static void RunSmoke(void) {
         [onboarding performPrimaryAction];
         Require(setups == 2, @"⌘Return on the model step must start the download");
 
-        // Step 2: preparation moves on to the shortcut while the model downloads.
         [onboarding setModelPhase:BawanModelSetupPreparing message:@"Checking the saved model…" progress:0];
         Settle(window);
         Require([note.stringValue isEqualToString:@"Checking the saved model…"] && !IsShown(license) && !IsShown(modelControl),
