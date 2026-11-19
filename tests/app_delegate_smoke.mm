@@ -637,11 +637,13 @@ static void ServiceQueuedAppEvents(NSWindow *window) {
 
 static void CheckSelectionTrial(void) {
     using Kind = bawan::EngineEvent::Kind;
-    enum class Case { Success, Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
+    enum class Case { Success, LaterExternalSelection, FocusChange, ColdLoadFailure,
+                      Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
                       Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
                       CallbackNone, CallbackPanelBinding,
                       CallbackSelectionBinding, CallbackPermission };
-    for (Case scenario : {Case::Success, Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
+    for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
+            Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
             Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
             Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
         const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
@@ -686,6 +688,7 @@ static void CheckSelectionTrial(void) {
             [panel showForSelection:@"Previous source"];
             NSTextView *source = (NSTextView *)FindView(panel.window.contentView, @"source");
             NSTextView *output = (NSTextView *)FindView(panel.window.contentView, @"output");
+            NSTextField *status = (NSTextField *)FindView(panel.window.contentView, @"status");
             if (skipWithSelection) [delegate handleSelectionText:@"A selection from another app"];
             [delegate startInitialSetup];
             const BOOL queued = scenario == Case::Queued || scenario == Case::QueuedInvalidated ||
@@ -828,8 +831,8 @@ static void CheckSelectionTrial(void) {
                     }
                 }
                 if (scenario == Case::QueuedInvalidated) {
-                    [onboarding setActive:NO];
-                    [onboarding setActive:YES];
+                    [panel showForManualInput];
+                    [delegate showOnboarding];
                 }
                 SetAvailableModel(delegate);
                 if (scenario == Case::QueuedInvalidated) {
@@ -857,6 +860,16 @@ static void CheckSelectionTrial(void) {
                 [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
                 ![defaults boolForKey:@"firstLaunchShown"],
                 @"A different request, partial output and model readiness must never count as a successful trial");
+            if (scenario == Case::ColdLoadFailure) {
+                bawan::EngineEvent loadError{Kind::Error, 0, "Could not load the practice model"};
+                bawan::EngineEvent requestError{Kind::Error, request, "The practice request did not run"};
+                [delegate handleEngineEvent:loadError];
+                [delegate handleEngineEvent:requestError];
+                Require(!Flag(delegate, @"busy") && !onboarding.selectionTrialComplete &&
+                    [status.stringValue isEqualToString:@"Could not load the practice model"],
+                    @"A cancelled practice request must leave the model's load error visible");
+                continue;
+            }
             if (scenario == Case::Binding) {
                 auto binding = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
                 binding.keyCode = 2;
@@ -871,11 +884,20 @@ static void CheckSelectionTrial(void) {
                     notificationWithName:NSApplicationDidBecomeActiveNotification object:NSApp]];
             } else if (scenario == Case::Revisit) {
                 [panel showForManualInput];
+                Require(!Flag(delegate, @"busy") && status.hidden,
+                    @"Leaving the trial page must cancel inference without a translator cancellation message");
                 [delegate showOnboarding];
             } else if (scenario == Case::Skip) {
                 [primary performClick:nil];
+                Require(status.hidden,
+                    @"Skipping active practice must not show a translator cancellation message");
+            } else if (scenario == Case::FocusChange) {
+                [onboarding setActive:NO];
+                Require(Flag(delegate, @"busy") && monitor.selectionTrialView == nil,
+                    @"Losing focus must disarm the shortcut while allowing the current trial to finish");
             }
             const BOOL success = scenario == Case::Success || scenario == Case::Queued ||
+                scenario == Case::LaterExternalSelection || scenario == Case::FocusChange ||
                 scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding;
             const BOOL terminalFailure = scenario == Case::Truncated || scenario == Case::Empty ||
                 scenario == Case::Error || scenario == Case::Cancelled;
@@ -901,6 +923,19 @@ static void CheckSelectionTrial(void) {
                 !trialStatus.hidden && [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
                 ![defaults boolForKey:@"firstLaunchShown"] && !Flag(delegate, @"busy"),
                 @"Only the exact successful request may complete the trial; Finish remains an explicit user action");
+            if (scenario == Case::FocusChange) [onboarding setActive:YES];
+            if (scenario == Case::LaterExternalSelection) {
+                NSString *later = @"A selection made after the practice result";
+                [delegate handleSelectionText:later];
+                Require(!onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
+                    @"A later external selection must supersede a finished trial");
+                [primary performClick:nil];
+                const uint64_t ordinaryRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                Require(ordinaryRequest != 0 && ordinaryRequest != request &&
+                    [source.string isEqualToString:later] && output.string.length == 0,
+                    @"Finishing setup must submit the later external selection instead of restoring the sample");
+                continue;
+            }
             [delegate handleEngineEvent:terminal];
             [delegate handleSelectionText:sample.string];
             Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,

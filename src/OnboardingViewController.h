@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Leaves onboarding for the translator from the shortcut step, ready or still downloading.
 @property(nonatomic, copy, nullable) void (^onFinish)(void);
 @property(nonatomic, copy, nullable) void (^onModelLicense)(void);
+@property(nonatomic, copy, nullable) void (^onSelectionTrialInterrupted)(void);
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress;
 - (void)setActive:(BOOL)active;
@@ -28,6 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(nullable NSString *)output
                   direction:(bawan::Direction)direction;
 - (void)cancelSelectionTrial;
+- (void)discardSelectionTrialResult;
 @end
 
 NS_ASSUME_NONNULL_END

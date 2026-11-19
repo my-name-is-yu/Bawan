@@ -194,16 +194,19 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)showOnboarding {
+    __weak AppDelegate *weakSelf = self;
     if (!_onboardingViewController) {
         _onboardingViewController = [[OnboardingViewController alloc]
             initWithPreferences:_shortcutPreferences monitor:_shortcut];
-        __weak AppDelegate *weakSelf = self;
         _onboardingViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
         _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
         _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
+        _onboardingViewController.onSelectionTrialInterrupted = ^{
+            AppDelegate *owner = weakSelf;
+            if (owner && owner->_selectionTrialAttempt) [owner cancelTranslationKeepingPendingSelection:YES];
+        };
     }
     [self pushModelStateToPage:_onboardingViewController];
-    __weak AppDelegate *weakSelf = self;
     [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
@@ -513,8 +516,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (!utf8) return;
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
-    if (!attempt) [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-    [self showTranslationStatus:@"" kind:BawanStatusInformation];
+    if (!attempt) {
+        [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
+        [self showTranslationStatus:@"" kind:BawanStatusInformation];
+    }
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
@@ -573,6 +578,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection {
+    const BOOL cancellingTrial = _selectionTrialAttempt != 0;
     [_onboardingViewController cancelSelectionTrial];
     _selectionTrialAttempt = 0;
     _pendingTrialText = nil;
@@ -580,7 +586,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _warmUpWhenAvailable = NO;
     if (_engine) _engine->cancel();
     _model.stopLoading();
-    const BOOL showCancellation = _busy && !_pendingText;
+    const BOOL showCancellation = _busy && !cancellingTrial && !_pendingText;
     _activeRequestId = 0;
     _busy = _pendingText != nil;
     [self updateStatus];
@@ -610,6 +616,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         return;
     }
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
+    [_onboardingViewController discardSelectionTrialResult];
     [_translationPanel showForSelection:text];
     if ([self needsOnboarding]) {
         if (![self modelFailed]) [self queueTranslation:text direction:bawan::Direction::Automatic];

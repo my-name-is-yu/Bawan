@@ -392,7 +392,10 @@ static void RunSmoke(void) {
         attempt = [onboarding beginSelectionTrial];
         Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The revisit fixture must start a practice request");
         [onboarding setActive:NO];
-        [onboarding setActive:YES];
+        Require([onboarding isSelectionTrialCurrent:attempt] && monitor.selectionTrialView == nil,
+            @"Losing focus must keep the pending trial while disarming its shortcut");
+        [panel showForManualInput];
+        [panel showOnboarding:onboarding onBack:^{ ++backs; }];
         Require(![onboarding finishSelectionTrial:attempt output:@"Late page output"
             direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
             @"Leaving a pending trial must reject its late completion when the page is revisited");

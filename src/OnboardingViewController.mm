@@ -327,10 +327,15 @@ struct ShortcutRow {
         [self refresh];
     } else {
         _monitor.selectionTrialView = nil;
-        [self cancelSelectionTrial];
         [_mascot resetHoverAnimation];
         [_heroMascot resetHoverAnimation];
     }
+}
+
+- (void)willLeavePanelPage {
+    if (_trialPhase != TrialPhase::Translating) return;
+    [self cancelSelectionTrial];
+    if (self.onSelectionTrialInterrupted) self.onSelectionTrialInterrupted();
 }
 
 - (NSString *)selectionTrialText { return _selectionSample.string; }
@@ -347,8 +352,9 @@ struct ShortcutRow {
 }
 
 - (BOOL)isSelectionTrialText:(NSString *)text {
+    if (!_active) return NO;
     [self refresh];
-    return _active && _selectionReady && ![self showingModelStep] &&
+    return _selectionReady && ![self showingModelStep] &&
         _selectionSample.window.isKeyWindow && _selectionSample.window.firstResponder == _selectionSample &&
         NSEqualRanges(_selectionSample.selectedRange, NSMakeRange(0, _selectionSample.string.length)) &&
         [text isEqualToString:_selectionSample.string];
@@ -367,7 +373,7 @@ struct ShortcutRow {
 
 - (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt {
     const auto binding = [_preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-    return attempt && attempt == _trialAttempt && _active &&
+    return attempt && attempt == _trialAttempt &&
         ![self showingModelStep] && _trialPhase == TrialPhase::Translating &&
         binding == _trialBinding && binding.enabled &&
         [_monitor availabilityForAction:bawan::ShortcutAction::TranslateSelection] == ShortcutAvailabilityAvailable;
@@ -390,6 +396,12 @@ struct ShortcutRow {
 
 - (void)cancelSelectionTrial {
     if (_trialPhase != TrialPhase::Translating) return;
+    [self resetSelectionTrial];
+    [self updateFooter];
+}
+
+- (void)discardSelectionTrialResult {
+    if (_trialPhase != TrialPhase::Complete) return;
     [self resetSelectionTrial];
     [self updateFooter];
 }
