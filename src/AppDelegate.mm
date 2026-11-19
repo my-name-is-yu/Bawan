@@ -40,6 +40,7 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     BOOL _terminating;
     StatusOwner _statusOwner;
     BawanModelState _model;
+    NSString *_memoryProbeDirectory;
 }
 @end
 
@@ -131,7 +132,41 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
-    [self startInitialSetup];
+    _memoryProbeDirectory = NSProcessInfo.processInfo.environment[@"BAWAN_MEMORY_PROBE"];
+    if (_memoryProbeDirectory.length) {
+        [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(memoryProbeTick:)
+                                      userInfo:nil repeats:YES];
+    } else {
+        [self startInitialSetup];
+    }
+}
+
+- (void)memoryProbeWrite:(NSString *)value name:(NSString *)name {
+    [value writeToFile:[_memoryProbeDirectory stringByAppendingPathComponent:name]
+           atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+- (void)memoryProbeTick:(NSTimer *)timer {
+    NSString *path = [_memoryProbeDirectory stringByAppendingPathComponent:@"command"];
+    NSString *command = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    if (!command) return;
+    [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+    if ([command isEqualToString:@"translation"]) [_translationPanel showForManualInput];
+    else if ([command isEqualToString:@"settings"]) [self openSettings:nil];
+    else if ([command isEqualToString:@"setup"]) [self showOnboarding];
+    else if ([command isEqualToString:@"close"]) [_translationPanel close];
+    else if ([command isEqualToString:@"prepare"]) [self prepareModel];
+    else if ([command isEqualToString:@"model"]) {
+        [self memoryProbeWrite:[self hasVerifiedModelFile] ? @"ready" :
+            ([self modelFailed] ? @"error" : @"waiting") name:@"reply"];
+        return;
+    } else if ([command isEqualToString:@"translate"]) {
+        [self translateText:@"Hello. How are you?" direction:bawan::Direction::EnglishToJapanese];
+    } else if (![command isEqualToString:@"ping"]) {
+        [self memoryProbeWrite:@"error" name:@"reply"];
+        return;
+    }
+    [self memoryProbeWrite:@"ok" name:@"reply"];
 }
 
 - (void)modelDownloadStateDidChange:(ModelStoreState)state {
@@ -174,7 +209,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateStatus];
 }
 
-- (BOOL)needsOnboarding { return ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
+- (BOOL)needsOnboarding { return !_memoryProbeDirectory.length && ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
 
 - (void)markOnboardingComplete {
     if ([self needsOnboarding]) [_defaults setBool:YES forKey:BawanOnboardingCompletedKey];
@@ -563,6 +598,12 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
     using Kind = bawan::EngineEvent::Kind;
+    if (_memoryProbeDirectory.length) {
+        if (event.kind == Kind::Complete) [self memoryProbeWrite:@"complete" name:@"engine"];
+        else if (event.kind == Kind::Idle) [self memoryProbeWrite:@"idle" name:@"engine"];
+        else if (event.kind == Kind::Error || event.kind == Kind::Cancelled)
+            [self memoryProbeWrite:@"error" name:@"engine"];
+    }
     if (event.requestId == 0) {
         if (event.kind == Kind::Idle) return;
         if (event.kind == Kind::Loading) _model.engineLoading();

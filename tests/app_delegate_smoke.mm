@@ -45,6 +45,7 @@
 - (void)refreshSettings;
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification;
+- (void)memoryProbeTick:(NSTimer *)timer;
 @end
 
 @interface SmokeAppDelegate : AppDelegate
@@ -1425,6 +1426,40 @@ static void CheckDownloadActions(void) {
     }
 }
 
+static void CheckMemoryProbe(void) {
+    AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
+    NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    Require([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:NO
+        attributes:nil error:nil], @"Probe fixture directory must be created");
+    [delegate setValue:directory forKey:@"memoryProbeDirectory"];
+    NSString *command = [directory stringByAppendingPathComponent:@"command"];
+    NSString *reply = [directory stringByAppendingPathComponent:@"reply"];
+    NSString *engine = [directory stringByAppendingPathComponent:@"engine"];
+    @try {
+        [delegate memoryProbeTick:nil];
+        Require(![NSFileManager.defaultManager fileExistsAtPath:reply], @"No command must produce no reply");
+        for (NSString *value in @[@"ping", @"", @"unknown", @"model"]) {
+            [value writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [delegate memoryProbeTick:nil];
+            NSString *expected = [value isEqualToString:@"ping"] ? @"ok" :
+                ([value isEqualToString:@"model"] ? @"waiting" : @"error");
+            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
+                isEqualToString:expected], @"Probe commands must acknowledge success, waiting, and errors");
+            Require(![NSFileManager.defaultManager fileExistsAtPath:command], @"Commands must be consumed once");
+        }
+        for (auto kind : {bawan::EngineEvent::Kind::Complete, bawan::EngineEvent::Kind::Idle,
+                          bawan::EngineEvent::Kind::Error}) {
+            [delegate handleEngineEvent:{kind, 99, ""}];
+            NSString *expected = kind == bawan::EngineEvent::Kind::Complete ? @"complete" :
+                (kind == bawan::EngineEvent::Kind::Idle ? @"idle" : @"error");
+            Require([[NSString stringWithContentsOfFile:engine encoding:NSUTF8StringEncoding error:nil]
+                isEqualToString:expected], @"Probe must expose completion, actual unload, and engine errors");
+        }
+    } @finally {
+        [NSFileManager.defaultManager removeItemAtPath:directory error:nil];
+    }
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -1474,6 +1509,7 @@ int main(int argc, const char *argv[]) {
         @try {
             try {
                 CheckPendingSelection(delegate, panel);
+                CheckMemoryProbe();
                 CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
