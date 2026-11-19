@@ -72,6 +72,7 @@
     NSView *_translationContent;
     BawanMascotView *_mascot;
     NSViewController<BawanPanelPage> *_page;
+    NSViewController<BawanPanelPage> *_coveredPage;
     BawanPanelPageKind _currentPage;
     __weak NSResponder *_translationResponder;
     BawanTextView *_source;
@@ -340,6 +341,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
             [_copy resetPressFeedback];
         }
         [_panel makeFirstResponder:nil];
+        _coveredPage = showingPage && kind == BawanPanelPageSettings ? _page : nil;
         _page = page;
         _currentPage = kind;
         NSView *view = page.view;
@@ -362,6 +364,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     [_page setActive:NO];
     if ([_page respondsToSelector:@selector(willLeavePanelPage)]) [_page willLeavePanelPage];
     _page = nil;
+    _coveredPage = nil;
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;

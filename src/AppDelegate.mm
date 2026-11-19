@@ -20,8 +20,8 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     NSMenuItem *_shortcutItem;
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
-    SettingsViewController *_settingsViewController;
-    OnboardingViewController *_onboardingViewController;
+    __weak SettingsViewController *_settingsViewController;
+    __weak OnboardingViewController *_onboardingViewController;
     NSUserDefaults *_defaults;
     ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
@@ -245,19 +245,20 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)showOnboarding {
     __weak AppDelegate *weakSelf = self;
-    if (!_onboardingViewController) {
-        _onboardingViewController = [[OnboardingViewController alloc]
-            initWithPreferences:_shortcutPreferences monitor:_shortcut];
-        _onboardingViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
-        _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
-        _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
-        _onboardingViewController.onSelectionTrialInterrupted = ^{
+    OnboardingViewController *onboarding = _onboardingViewController;
+    if (!onboarding) {
+        onboarding = [[OnboardingViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
+        onboarding.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
+        onboarding.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        onboarding.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
+        onboarding.onSelectionTrialInterrupted = ^{
             AppDelegate *owner = weakSelf;
             if (owner && owner->_selectionTrialAttempt) [owner cancelTranslationKeepingPendingSelection:YES];
         };
+        _onboardingViewController = onboarding;
     }
-    [self pushModelStateToPage:_onboardingViewController];
-    [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOnboarding]; }];
+    [self pushModelStateToPage:onboarding];
+    [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
 // The shortcut step's button: leave for the translator even while the model is
@@ -302,16 +303,8 @@ static NSString *StringFromUTF8(const std::string &text) {
         [weakSelf translateText:text direction:direction];
     };
     panel.onCancel = ^{ [weakSelf cancelTranslation]; };
-    panel.onClose = ^{
-        [weakSelf cancelTranslation];
-        [weakSelf releaseClosedPages];
-    };
+    panel.onClose = ^{ [weakSelf cancelTranslation]; };
     panel.onSettings = ^{ [weakSelf openSettings:nil]; };
-}
-
-- (void)releaseClosedPages {
-    if (!_settingsViewController.recordingShortcut) _settingsViewController = nil;
-    if (![self needsOnboarding]) _onboardingViewController = nil;
 }
 
 - (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
@@ -780,20 +773,19 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)openSettings:(id)sender {
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
-    if (!_settingsViewController) {
-        _settingsViewController = [[SettingsViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
-        __weak AppDelegate *weakSelf = self;
-        _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
-        _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
-        _settingsViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
-        _settingsViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
+    __weak AppDelegate *weakSelf = self;
+    SettingsViewController *settings = _settingsViewController;
+    if (!settings) {
+        settings = [[SettingsViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
+        settings.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
+        settings.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        settings.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        settings.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
+        _settingsViewController = settings;
     }
     [self refreshSettings];
-    [_translationPanel showSettings:_settingsViewController];
-    if ([self needsOnboarding]) {
-        __weak AppDelegate *weakSelf = self;
-        _settingsViewController.onBack = ^{ [weakSelf showOnboarding]; };
-    }
+    [_translationPanel showSettings:settings];
+    if ([self needsOnboarding]) settings.onBack = ^{ [weakSelf showOnboarding]; };
 }
 
 - (void)refreshSettings {

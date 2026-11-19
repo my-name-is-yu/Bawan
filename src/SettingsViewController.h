@@ -13,7 +13,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^onModelLicense)(void);
 // Performs the current model action: download, retry, pause or resume.
 @property(nonatomic, copy, nullable) void (^onModelSetup)(void);
-@property(nonatomic, readonly) BOOL recordingShortcut;
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
 // The host owns window focus; active means this screen is visible and key.
 - (void)setActive:(BOOL)active;

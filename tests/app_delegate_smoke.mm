@@ -1275,6 +1275,73 @@ static void CheckFirstRunIntegration(void) {
     }
 }
 
+static void CheckPageRelease(void) {
+    NSString *suite = [@"local.bawan.PageReleaseSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults removePersistentDomainForName:suite];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+    SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] init];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:preferences forKey:@"shortcutPreferences"];
+    [delegate setValue:monitor forKey:@"shortcut"];
+    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectTranslationPanel:panel];
+    [delegate buildMenus];
+    SetAvailableModel(delegate);
+    [defaults setBool:YES forKey:@"firstLaunchShown"];
+    NSWindow *window = panel.window;
+    @try {
+        __weak NSViewController *settings = nil;
+        @autoreleasepool {
+            [delegate openSettings:nil];
+            settings = [panel valueForKey:@"page"];
+            [window orderOut:nil];
+        }
+        Require(settings != nil, @"A hidden panel must keep its selected Settings page");
+        @autoreleasepool { [delegate openSettings:nil]; }
+        Require([panel valueForKey:@"page"] == settings, @"Reopening a hidden panel must show the same Settings");
+        @autoreleasepool { [window cancelOperation:nil]; }
+        Require(settings == nil, @"Leaving Settings must release it");
+        @autoreleasepool {
+            [delegate openSettings:nil];
+            settings = [panel valueForKey:@"page"];
+            [window close];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        Require(settings == nil, @"Closing the panel on Settings must release it");
+
+        [defaults setBool:NO forKey:@"firstLaunchShown"];
+        __weak NSViewController *onboarding = nil;
+        @autoreleasepool {
+            [delegate showOnboarding];
+            onboarding = [panel valueForKey:@"page"];
+            [delegate openSettings:nil];
+            settings = [panel valueForKey:@"page"];
+        }
+        Require(onboarding != nil && panel.currentPage == BawanPanelPageSettings,
+            @"Settings opened from onboarding must keep the onboarding it returns to");
+        @autoreleasepool {
+            [window cancelOperation:nil];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        Require(panel.currentPage == BawanPanelPageOnboarding && [panel valueForKey:@"page"] == onboarding,
+            @"Leaving Settings must return to the same onboarding");
+        Require(settings == nil, @"Leaving Settings for onboarding must release Settings");
+        @autoreleasepool {
+            [window close];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        Require(onboarding == nil, @"Closing the panel on onboarding must release it");
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
 static void CheckModelLicenseSheet(void) {
     NSString *suite = [@"local.bawan.LicenseSheetSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
@@ -1515,6 +1582,7 @@ int main(int argc, const char *argv[]) {
                 CheckSelectionTrial();
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
+                CheckPageRelease();
                 CheckDownloadActions();
                 std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run selection translation, first-run navigation, the license sheet and contextual download actions\n";
             } catch (const std::exception &error) {
