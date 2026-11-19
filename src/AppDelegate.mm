@@ -40,6 +40,8 @@ using Session = bawan::TranslationSession;
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory;
 - (Session &)translationSession;
 - (void)applyTranslationEvent:(Session::Event)event;
+- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy;
+- (void)synchronizeTranslationModel;
 - (void)invalidateSelectionTrial;
 - (void)handleEngineLifecycle:(const bawan::engine::Lifecycle &)state;
 @end
@@ -206,13 +208,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_engineHost startWithModelURL:fileURL];
     _model.fileReady(fileURL);
     [self updateStatus];
-    [self applyTranslationEvent:Session::ModelReady{}];
+    [self synchronizeTranslationModel];
 }
 
 - (void)modelFileDidFail:(NSString *)message {
     [_engineHost stopAndDiscardEvents];
     _model.fileFailed(message, _modelStore.canResume);
-    [self applyTranslationEvent:Session::ModelReset{}];
+    [self synchronizeTranslationModel];
     [self updateStatus];
 }
 
@@ -527,7 +529,18 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applyTranslationEvent:(Session::Event)event {
     if (_terminating) return;
     const BOOL wasBusy = [self busy];
-    auto effects = _translationSession.reduce(std::move(event), [self modelAvailability]);
+    [self applyTranslationEffects:_translationSession.reduce(std::move(event), [self modelAvailability])
+                         wasBusy:wasBusy];
+}
+
+- (void)synchronizeTranslationModel {
+    if (_terminating) return;
+    const BOOL wasBusy = [self busy];
+    [self applyTranslationEffects:_translationSession.synchronizeModel([self modelAvailability])
+                         wasBusy:wasBusy];
+}
+
+- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy {
     while (!effects.empty()) {
         Session::Effects next;
         for (auto &effect : effects) {
