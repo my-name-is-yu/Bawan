@@ -743,11 +743,11 @@ static void CheckSelectionTrial(void) {
                       Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
                       Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
                       CallbackNone, CallbackPanelBinding,
-                      CallbackSelectionBinding, CallbackPermission };
+                      CallbackSelectionBinding, CallbackPermission, Reopen };
     for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
             Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
             Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
-            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
+            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission, Case::Reopen}) {
         const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
             scenario == Case::SkipActiveWithSelection;
         const BOOL checkRefreshes = scenario == Case::CallbackPanelBinding || scenario == Case::CallbackSelectionBinding ||
@@ -998,7 +998,7 @@ static void CheckSelectionTrial(void) {
             }
             const BOOL success = scenario == Case::Success || scenario == Case::Queued ||
                 scenario == Case::LaterExternalSelection || scenario == Case::FocusChange ||
-                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding;
+                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding || scenario == Case::Reopen;
             const BOOL terminalFailure = scenario == Case::Truncated || scenario == Case::Empty ||
                 scenario == Case::Error || scenario == Case::Cancelled;
             Kind kind = scenario == Case::Error ? Kind::Error :
@@ -1023,6 +1023,18 @@ static void CheckSelectionTrial(void) {
                 !trialStatus.hidden && [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
                 ![defaults boolForKey:@"firstLaunchShown"] && !Flag(delegate, @"busy"),
                 @"Only the exact successful request may complete the trial; Finish remains an explicit user action");
+            if (scenario == Case::Reopen) {
+                OnboardingViewController *closed = onboarding;
+                [window close];
+                [delegate setValue:nil forKey:@"onboardingViewController"];
+                [delegate showOnboarding];
+                onboarding = [delegate valueForKey:@"onboardingViewController"];
+                Require(onboarding != closed, @"Reopening released onboarding must build a new page");
+                primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+                trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
+                Require(onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Start Translating"] &&
+                    !trialStatus.hidden, @"A completed practice must stay complete after closing and reopening onboarding");
+            }
             if (scenario == Case::FocusChange) [onboarding setActive:YES];
             if (scenario == Case::LaterExternalSelection) {
                 // Clipboard selections remain ordinary requests even when the text matches the sample.
@@ -1302,8 +1314,13 @@ static void CheckPageRelease(void) {
         }
         Require(settings != nil, @"A hidden panel must keep its selected Settings page");
         @autoreleasepool { [delegate openSettings:nil]; }
-        Require([panel valueForKey:@"page"] == settings, @"Reopening a hidden panel must show the same Settings");
-        @autoreleasepool { [window cancelOperation:nil]; }
+        @autoreleasepool {
+            Require([panel valueForKey:@"page"] == settings, @"Reopening a hidden panel must show the same Settings");
+        }
+        @autoreleasepool {
+            [window cancelOperation:nil];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
         Require(settings == nil, @"Leaving Settings must release it");
         @autoreleasepool {
             [delegate openSettings:nil];
@@ -1327,8 +1344,10 @@ static void CheckPageRelease(void) {
             [window cancelOperation:nil];
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
         }
-        Require(panel.currentPage == BawanPanelPageOnboarding && [panel valueForKey:@"page"] == onboarding,
-            @"Leaving Settings must return to the same onboarding");
+        @autoreleasepool {
+            Require(panel.currentPage == BawanPanelPageOnboarding && [panel valueForKey:@"page"] == onboarding,
+                @"Leaving Settings must return to the same onboarding");
+        }
         Require(settings == nil, @"Leaving Settings for onboarding must release Settings");
         @autoreleasepool {
             [window close];

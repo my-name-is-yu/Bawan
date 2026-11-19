@@ -35,6 +35,8 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     bawan::Direction _pendingDirection;
     NSString *_pendingTrialText;
     NSUInteger _selectionTrialAttempt;
+    NSString *_practiceOutput;
+    bawan::Direction _practiceDirection;
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
@@ -246,7 +248,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)showOnboarding {
     __weak AppDelegate *weakSelf = self;
     OnboardingViewController *onboarding = _onboardingViewController;
-    if (!onboarding) {
+    BOOL created = !onboarding;
+    if (created) {
         onboarding = [[OnboardingViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
         onboarding.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
         onboarding.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
@@ -258,6 +261,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _onboardingViewController = onboarding;
     }
     [self pushModelStateToPage:onboarding];
+    if (created && _practiceOutput) [onboarding restoreSelectionTrialOutput:_practiceOutput direction:_practiceDirection];
     [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
@@ -277,12 +281,10 @@ static NSString *StringFromUTF8(const std::string &text) {
         // Accepting the successful practice result explicitly replaces the old selection.
         _pendingText = nil;
         _busy = NO;
-        NSString *text = _onboardingViewController.selectionTrialText;
-        NSString *output = _onboardingViewController.selectionTrialOutput;
-        const auto direction = _onboardingViewController.selectionTrialDirection;
-        [_translationPanel showForSelection:text];
-        [_translationPanel setOutput:output direction:direction];
+        [_translationPanel showForSelection:_onboardingViewController.selectionTrialText];
+        [_translationPanel setOutput:_practiceOutput direction:_practiceDirection];
     }
+    _practiceOutput = nil;
     [_translationPanel showForManualInput];
     if (![self submitPendingTranslationIfReady]) [self updateStatus];
 }
@@ -313,11 +315,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 // Hidden pages are brought up to date when they are shown.
 - (void)refreshSetupPages {
-    switch (_translationPanel.currentPage) {
-        case BawanPanelPageOnboarding: [self pushModelStateToPage:_onboardingViewController]; break;
-        case BawanPanelPageSettings: [self pushModelStateToPage:_settingsViewController]; break;
-        case BawanPanelPageTranslation: break;
-    }
+    [self pushModelStateToPage:_onboardingViewController];
+    [self pushModelStateToPage:_settingsViewController];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -632,7 +631,10 @@ static NSString *StringFromUTF8(const std::string &text) {
             NSString *output = event.kind == Kind::Complete && !event.truncated ?
                 [[NSString alloc] initWithBytes:event.text.data() length:event.text.size()
                     encoding:NSUTF8StringEncoding] : nil;
-            [_onboardingViewController finishSelectionTrial:attempt output:output direction:event.direction];
+            if ([_onboardingViewController finishSelectionTrial:attempt output:output direction:event.direction]) {
+                _practiceOutput = output;
+                _practiceDirection = event.direction;
+            }
             [self updateStatus];
         }
         return;
@@ -705,6 +707,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)handleSelectionText:(NSString *)text {
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [_onboardingViewController discardSelectionTrialResult];
+    _practiceOutput = nil;
     [_translationPanel showForSelection:text];
     const BOOL needsOnboarding = [self needsOnboarding];
     if (needsOnboarding || _model.setupNotStarted()) {
@@ -785,7 +788,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     [self refreshSettings];
     [_translationPanel showSettings:settings];
-    if ([self needsOnboarding]) settings.onBack = ^{ [weakSelf showOnboarding]; };
 }
 
 - (void)refreshSettings {

@@ -389,6 +389,17 @@ struct ShortcutRow {
 - (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(NSString *)output direction:(bawan::Direction)direction {
     if (![self isSelectionTrialCurrent:attempt]) return NO;
     BOOL complete = [output stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
+    [self showSelectionTrialOutput:complete ? output : nil direction:direction];
+    return complete;
+}
+
+- (void)restoreSelectionTrialOutput:(NSString *)output direction:(bawan::Direction)direction {
+    [self refresh];
+    if (_selectionReady && ![self showingModelStep]) [self showSelectionTrialOutput:output direction:direction];
+}
+
+- (void)showSelectionTrialOutput:(NSString *)output direction:(bawan::Direction)direction {
+    BOOL complete = output != nil;
     _trialPhase = complete ? TrialPhase::Complete : TrialPhase::Ready;
     _trialOutput = complete ? [output copy] : nil;
     _trialDirection = direction;
@@ -398,7 +409,6 @@ struct ShortcutRow {
     _trialStatus.hidden = NO;
     [self updateFooter];
     [self.view layoutSubtreeIfNeeded];
-    return complete;
 }
 
 - (void)cancelSelectionTrial {

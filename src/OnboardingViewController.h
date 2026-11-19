@@ -31,6 +31,7 @@ NS_ASSUME_NONNULL_BEGIN
                   direction:(bawan::Direction)direction;
 - (void)cancelSelectionTrial;
 - (void)discardSelectionTrialResult;
+- (void)restoreSelectionTrialOutput:(NSString *)output direction:(bawan::Direction)direction;
 @end
 
 NS_ASSUME_NONNULL_END
