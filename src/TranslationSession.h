@@ -23,13 +23,11 @@ public:
     enum class TranslatorAccess { AwaitingOnboarding, Open };
     enum class PendingSelection { Resume, Discard };
     struct OpenTranslator { PendingSelection pending = PendingSelection::Resume; };
-    struct ModelReady {};
-    struct ModelReset {};
     struct Submit { Source source; Origin origin; };
     struct Cancel {};
     struct WarmUpRequested {};
     struct TrialInvalidated {};
-    using Event = std::variant<OpenTranslator, ModelReady, ModelReset, Submit, Cancel, WarmUpRequested, TrialInvalidated, EngineEvent>;
+    using Event = std::variant<OpenTranslator, Submit, Cancel, WarmUpRequested, TrialInvalidated, EngineEvent>;
 
     struct SubmitRequest { Source source; };
     struct CancelEngine {};
@@ -51,6 +49,7 @@ public:
     bool busy() const { return phase() != Phase::Idle; }
     std::optional<RequestId> activeRequestId() const;
     [[nodiscard]] Effects reduce(Event event, ModelAvailability model);
+    [[nodiscard]] Effects synchronizeModel(ModelAvailability model);
     [[nodiscard]] Effects resolveSubmission(std::optional<RequestId> id);
 
 private:
@@ -73,7 +72,7 @@ private:
     template <class O> static void interrupt(Work<O> & work, Effects & effects);
     bool practicing() const;
     void openTranslator(OpenTranslator event, ModelAvailability model, Effects & effects);
-    void modelReady(Effects & effects);
+    void drainPendingWork(Effects & effects);
     void resetWork(ModelAvailability model, Effects & effects);
     void submit(Submit event, ModelAvailability model, Effects & effects);
     void receiveEngineEvent(EngineEvent event, Effects & effects);

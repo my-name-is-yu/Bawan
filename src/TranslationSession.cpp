@@ -97,8 +97,6 @@ TranslationSession::Effects TranslationSession::reduce(Event event, ModelAvailab
     Effects effects;
     std::visit(Overload{
         [&](OpenTranslator opened) { openTranslator(opened, model, effects); },
-        [&](ModelReady) { modelReady(effects); },
-        [&](ModelReset) { resetWork(model, effects); },
         [&](Submit submitted) { submit(std::move(submitted), model, effects); },
         [&](Cancel) {
             const bool reportCancellation = busy() && !practicing();
@@ -116,6 +114,16 @@ TranslationSession::Effects TranslationSession::reduce(Event event, ModelAvailab
         },
         [&](EngineEvent update) { receiveEngineEvent(std::move(update), effects); },
     }, std::move(event));
+    return effects;
+}
+
+TranslationSession::Effects TranslationSession::synchronizeModel(ModelAvailability model) {
+    Effects effects;
+    switch (model) {
+        case ModelAvailability::Pending: break;
+        case ModelAvailability::Available: drainPendingWork(effects); break;
+        case ModelAvailability::Failed: resetWork(model, effects); break;
+    }
     return effects;
 }
 
@@ -148,10 +156,10 @@ void TranslationSession::openTranslator(OpenTranslator event, ModelAvailability 
         translator.work = DeferredWarmUp{};
     }
     surface_ = std::move(translator);
-    if (model == ModelAvailability::Available) modelReady(effects);
+    if (model == ModelAvailability::Available) drainPendingWork(effects);
 }
 
-void TranslationSession::modelReady(Effects & effects) {
+void TranslationSession::drainPendingWork(Effects & effects) {
     withWork(*this, [&](auto & work) {
         if (std::holds_alternative<DeferredWarmUp>(work)) {
             work = Idle{};

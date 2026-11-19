@@ -49,11 +49,12 @@ struct Fixture {
     explicit Fixture(Session::TranslatorAccess access = Session::TranslatorAccess::Open) : session(access) {}
 
     Session::Effects reduce(Session::Event event) {
-        if (std::holds_alternative<Session::ModelReady>(event)) availability = Model::Available;
-        const bool resetsModel = std::holds_alternative<Session::ModelReset>(event);
-        auto effects = session.reduce(std::move(event), availability);
-        if (resetsModel) availability = Model::Pending;
-        return effects;
+        return session.reduce(std::move(event), availability);
+    }
+
+    Session::Effects synchronizeModel(Model model) {
+        availability = model;
+        return session.synchronizeModel(availability);
     }
 
     Session::Effects resolveSubmission(std::optional<Session::RequestId> id) { return session.resolveSubmission(id); }
@@ -83,36 +84,37 @@ void latestQueuedRequestWins() {
     (void)session.reduce(manual(u8"次の文", ToEnglish));
     require(session.phase() == Phase::Queued, "Unverified work stays queued");
     expect<>(session.reduce(Session::WarmUpRequested{}), "Warmup waits for verification");
-    const auto effects = session.reduce(Session::ModelReady{});
+    expect<>(session.synchronizeModel(Model::Pending), "Preparation updates keep pending work queued");
+    const auto effects = session.synchronizeModel(Model::Available);
     expect<Session::Status, Session::SubmitRequest>(effects, "The pending request takes priority over prewarming");
     const auto & source = std::get<Session::SubmitRequest>(effects.back()).source;
     require(source.text == u8"次の文" && source.direction == ToEnglish, "Readiness submits the latest text and direction");
     requestStarted(session, 61);
-    expect<>(session.reduce(Session::ModelReady{}), "Repeated readiness must not replay a request");
+    expect<>(session.synchronizeModel(Model::Available), "Repeated readiness must not replay a request");
 }
 
 void warmupAndCancellation() {
     Fixture session;
     expect<>(session.reduce(Session::WarmUpRequested{}), "Prewarming waits for verification");
     expect<>(session.reduce(Session::WarmUpRequested{}), "Pending prewarm requests coalesce");
-    expect<Session::WarmUp>(session.reduce(Session::ModelReady{}), "Verification releases the deferred warmup");
-    expect<>(session.reduce(Session::ModelReady{}), "Deferred warmup is consumed only once");
+    expect<Session::WarmUp>(session.synchronizeModel(Model::Available), "Verification releases the deferred warmup");
+    expect<>(session.synchronizeModel(Model::Available), "Deferred warmup is consumed only once");
     expect<Session::WarmUp>(session.reduce(Session::WarmUpRequested{}), "A verified idle model can be prewarmed");
     expect<Session::CancelEngine>(session.reduce(Session::Cancel{}), "Idle cancellation also stops engine warmup");
-    (void)session.reduce(Session::ModelReset{});
+    (void)session.synchronizeModel(Model::Pending);
     (void)session.reduce(manual("Queued"));
     (void)session.reduce(Session::WarmUpRequested{});
     const auto cancelled = session.reduce(Session::Cancel{});
     expect<Session::Status>(cancelled, "Cancel queued work without creating an engine");
     require(std::get<Session::Status>(cancelled.front()) == Session::Status::Cancelled,
         "Queued cancellation reports a cancellation outcome");
-    expect<>(session.reduce(Session::ModelReady{}), "Cancel drops both queued work and deferred warmup");
+    expect<>(session.synchronizeModel(Model::Available), "Cancel drops both queued work and deferred warmup");
     require(!session.busy(), "Cancel leaves no active request");
 }
 
 void replacementAndStaleCallbacks() {
     Fixture session;
-    (void)session.reduce(Session::ModelReady{});
+    (void)session.synchronizeModel(Model::Available);
     expect<Session::ClearOutput, Session::Status, Session::SubmitRequest>(
         session.reduce(manual("Old")), "A fresh submission resets output");
     requestStarted(session, 13);
@@ -140,7 +142,7 @@ void replacementAndStaleCallbacks() {
 
 void rejectedEngineStartIsTerminal() {
     Fixture session;
-    (void)session.reduce(Session::ModelReady{});
+    (void)session.synchronizeModel(Model::Available);
     (void)session.reduce(manual("Rejected"));
     expect<Session::TranslationError>(session.resolveSubmission(std::nullopt), "A rejected dispatch is terminal");
     require(!session.busy(), "A rejected dispatch must not leave the controls busy");
@@ -148,7 +150,7 @@ void rejectedEngineStartIsTerminal() {
 
     Fixture onboarding{Session::TranslatorAccess::AwaitingOnboarding};
     (void)onboarding.reduce(selection("Held"));
-    (void)onboarding.reduce(Session::ModelReady{});
+    (void)onboarding.synchronizeModel(Model::Available);
     (void)onboarding.reduce(trial());
     const auto rejected = onboarding.resolveSubmission(std::nullopt);
     expect<Session::TrialFinished>(rejected, "A rejected trial reports failure only to onboarding");
@@ -160,7 +162,7 @@ void rejectedEngineStartIsTerminal() {
 
 void requestErrorsAndRevalidation() {
     Fixture session;
-    (void)session.reduce(Session::ModelReady{});
+    (void)session.synchronizeModel(Model::Available);
     auto start = [&session](Session::RequestId id) {
         expect<Session::ClearOutput, Session::Status, Session::SubmitRequest>(
             session.reduce(manual("Some text")), "A ready session submits immediately");
@@ -180,9 +182,10 @@ void requestErrorsAndRevalidation() {
     expect<Session::CancelEngine, Session::Status>(session.reduce(Session::Cancel{}), "Explicit cancellation stops inference");
     expect<>(session.reduce(Progress{30, "Late text", ToJapanese}), "Late progress cannot update cancelled output");
     start(40);
-    expect<Session::CancelEngine>(session.reduce(Session::ModelReset{}), "Revalidation stops active inference");
+    expect<Session::CancelEngine>(session.synchronizeModel(Model::Failed), "Model failure retires active inference");
+    (void)session.synchronizeModel(Model::Pending);
     (void)session.reduce(manual("Fresh"));
-    expect<Session::Status, Session::SubmitRequest>(session.reduce(Session::ModelReady{}), "New work waits through revalidation");
+    expect<Session::Status, Session::SubmitRequest>(session.synchronizeModel(Model::Available), "New work waits through revalidation");
     requestStarted(session, 50);
     expect<>(session.reduce(Finished{40, Error{"Late failure"}}), "Old inference cannot affect the new request");
     expect<Session::Output, Session::Status>(
@@ -194,16 +197,15 @@ void modelFailureDropsQueuedWorkAndWarmup() {
     (void)session.reduce(selection("Held"));
     (void)session.reduce(trial());
     (void)session.reduce(Session::WarmUpRequested{});
-    const auto failure = session.reduce(Session::ModelReset{});
+    const auto failure = session.synchronizeModel(Model::Failed);
     expect<Session::TrialDiscarded>(failure, "Verification failure discards the trial");
     require(!session.busy(), "Verification failure drops all queued work");
-    session.availability = Model::Failed;
     const auto rejected = session.reduce(trial());
     expect<Session::TrialFinished>(rejected, "A trial cannot start while model preparation has failed");
     require(!std::get<Session::TrialFinished>(rejected.front()).output, "A rejected trial has no output");
     expect<>(session.reduce(Session::OpenTranslator{}), "Opening does not revive discarded selections");
-    (void)session.reduce(Session::ModelReset{});
-    expect<>(session.reduce(Session::ModelReady{}), "Retry cannot resurrect dropped requests or warmup");
+    (void)session.synchronizeModel(Model::Pending);
+    expect<>(session.synchronizeModel(Model::Available), "Retry cannot resurrect dropped requests or warmup");
 }
 
 void trialInvalidationPreservesAQueuedSelection() {
@@ -213,7 +215,7 @@ void trialInvalidationPreservesAQueuedSelection() {
         expect<>(session.reduce(trial()), "Queuing a trial does not update translator output");
         expect<>(session.reduce(trial()), "Duplicate trial submission is a no-op");
         if (running) {
-            const auto ready = session.reduce(Session::ModelReady{});
+            const auto ready = session.synchronizeModel(Model::Available);
             expect<Session::SubmitRequest>(ready, "Verification starts the trial before the held selection");
             require(std::get<Session::SubmitRequest>(ready.front()).source.text == "Practice", "Start the trial text");
             requestStarted(session, 23);
@@ -226,7 +228,7 @@ void trialInvalidationPreservesAQueuedSelection() {
                 session.reduce(Session::TrialInvalidated{}), "Invalidating queued practice does not cancel the engine");
         }
         expect<>(session.reduce(Session::TrialInvalidated{}), "Repeating an interruption after practice ended is a no-op");
-        expect<>(session.reduce(Session::ModelReady{}), "The verified model cannot bypass onboarding");
+        expect<>(session.synchronizeModel(Model::Available), "The verified model cannot bypass onboarding");
         const auto opened = session.reduce(Session::OpenTranslator{});
         expect<Session::Status, Session::SubmitRequest>(opened, "Opening the translator resumes the held selection");
         require(std::get<Session::SubmitRequest>(opened.back()).source.text == "External selection",
@@ -245,7 +247,7 @@ void trialCompletionAndOnboardingHandoff() {
     for (const auto & [event, succeeds] : cases) {
         Fixture session{Session::TranslatorAccess::AwaitingOnboarding};
         (void)session.reduce(selection("Prior selection"));
-        (void)session.reduce(Session::ModelReady{});
+        (void)session.synchronizeModel(Model::Available);
         expect<Session::SubmitRequest>(session.reduce(trial()), "A trial starts without resetting output");
         requestStarted(session, 40);
         const auto finished = session.reduce(event);
@@ -269,7 +271,7 @@ void trialCompletionAndOnboardingHandoff() {
 
 void returningUserCanPracticeWithoutGatingTheTranslator() {
     Fixture session;
-    session.availability = Model::Available;
+    expect<>(session.synchronizeModel(Model::Available), "Verification with no pending work is a no-op");
     expect<Session::SubmitRequest>(session.reduce(trial()), "Revisited setup can start a practice request");
     requestStarted(session, 16);
     expect<Session::CancelEngine, Session::TrialDiscarded>(session.reduce(Session::OpenTranslator{}),
