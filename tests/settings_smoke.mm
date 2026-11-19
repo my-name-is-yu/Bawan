@@ -829,8 +829,7 @@ static void RunSmoke(void) {
     Require(modelProgress.indeterminate && std::isfinite(modelProgress.doubleValue),
         @"Unknown model progress must remain a finite indeterminate presentation");
     BawanModelState loadingModel;
-    loadingModel.beginPreparing();
-    loadingModel.fileReady([NSURL fileURLWithPath:@"/__bawan_tests__/model.gguf"]);
+    loadingModel.fileChanged({ModelStoreReady, 1, nil, [NSURL fileURLWithPath:@"/__bawan_tests__/model.gguf"]});
     loadingModel.engineLoading();
     [settings setModelPhase:loadingModel.phase() message:loadingModel.message() progress:loadingModel.progress()];
     Require(!modelProgress.hidden && modelProgress.indeterminate && modelProgress.doubleValue == 0 &&

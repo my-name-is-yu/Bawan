@@ -82,21 +82,9 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_resume(_memoryPressure);
 
     _modelStore = [[ModelStore alloc] init];
-    _modelStore.onStateChange = ^(ModelStoreState state) {
+    _modelStore.onChange = ^(const ModelStoreSnapshot &snapshot) {
         AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelDownloadStateDidChange:state];
-    };
-    _modelStore.onProgress = ^(double progress, NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelFileDidProgress:progress message:message];
-    };
-    _modelStore.onReady = ^(NSURL *fileURL) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelFileDidBecomeReady:fileURL];
-    };
-    _modelStore.onError = ^(NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelFileDidFail:message];
+        if (owner && !owner->_terminating) [owner modelStoreDidChange:snapshot];
     };
 
     SelectionReader *selectionReader = [SelectionReader new];
@@ -166,44 +154,30 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self memoryProbeWrite:@"ok" name:@"reply"];
 }
 
-- (void)modelDownloadStateDidChange:(ModelStoreState)state {
-    switch (state) {
-        case ModelStoreDownloading: _model.fileDownloading(); break;
-        case ModelStorePaused: _model.filePaused(); break;
-        case ModelStoreVerifying: _model.fileVerifying(); break;
-        case ModelStoreIdle:
-        case ModelStoreReady:
-        case ModelStoreFailed: return;
-    }
+- (void)modelStoreDidChange:(const ModelStoreSnapshot &)snapshot {
+    _model.fileChanged(snapshot);
+    if (snapshot.state == ModelStoreReady) [self modelFileDidBecomeReady];
+    else if (snapshot.state == ModelStoreFailed) [self modelFileDidFail];
     [self updateStatus];
 }
 
-- (void)modelFileDidProgress:(double)progress message:(NSString *)message {
-    _model.fileProgress(progress, message);
-    [self updateStatus];
-}
-
-- (void)modelFileDidBecomeReady:(NSURL *)fileURL {
-    _model.fileReady(fileURL);
+- (void)modelFileDidBecomeReady {
     if (_pendingTrialText && [_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt]) {
         [self translateText:_pendingTrialText direction:bawan::Direction::Automatic trialAttempt:_selectionTrialAttempt];
     } else {
         if (_pendingTrialText) [self cancelTranslationKeepingPendingSelection:YES];
         if (![self submitPendingTranslationIfReady] && !_pendingText && _warmUpWhenAvailable) [self warmUpEngine];
     }
-    [self updateStatus];
 }
 
-- (void)modelFileDidFail:(NSString *)message {
+- (void)modelFileDidFail {
     [_onboardingViewController cancelSelectionTrial];
     _selectionTrialAttempt = 0;
     _pendingTrialText = nil;
-    _model.fileFailed(message, _modelStore.canResume);
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     _busy = NO;
     _activeRequestId = 0;
-    [self updateStatus];
 }
 
 - (BOOL)needsOnboarding { return !_memoryProbeDirectory.length && ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
@@ -241,8 +215,6 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self retryModel:nil];
         return;
     }
-    _model.beginPreparing();
-    [self updateStatus];
     [_modelStore prepare];
 }
 
@@ -747,8 +719,6 @@ static NSString *StringFromUTF8(const std::string &text) {
             return;
         case BawanModelSetupPaused:
         case BawanModelSetupResumableFailure:
-            _model.beginPreparing();
-            [self updateStatus];
             [_modelStore resume];
             return;
         case BawanModelSetupPreparing:
@@ -765,8 +735,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self cancelTranslation];
     ++_engineGeneration;
     _engine.reset();
-    _model.beginPreparing();
-    [self updateStatus];
     [_modelStore revalidate];
 }
 

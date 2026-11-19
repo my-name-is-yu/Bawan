@@ -4,6 +4,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, ModelStoreState) {
     ModelStoreIdle,
+    ModelStoreChecking,
     ModelStoreDownloading,
     ModelStorePaused,
     ModelStoreVerifying,
@@ -11,14 +12,21 @@ typedef NS_ENUM(NSInteger, ModelStoreState) {
     ModelStoreFailed
 };
 
-// Use on the main thread. Callbacks arrive there too; hashing runs on a utility queue.
+struct ModelStoreSnapshot {
+    ModelStoreState state = ModelStoreIdle;
+    double progress = 0;
+    NSString *_Nullable message = nil;
+    // Set only when Ready.
+    NSURL *_Nullable fileURL = nil;
+    // Paused or Failed with bytes a resume can keep.
+    bool resumable = false;
+};
+
+// Use on the main thread. onChange arrives there too, once per snapshot of the
+// current preparation; hashing runs on a utility queue.
 @interface ModelStore : NSObject
-@property(nonatomic, readonly) ModelStoreState state;
-@property(nonatomic, readonly) BOOL canResume;
-@property(nonatomic, copy, nullable) void (^onStateChange)(ModelStoreState state);
-@property(nonatomic, copy, nullable) void (^onProgress)(double fraction, NSString *message);
-@property(nonatomic, copy, nullable) void (^onReady)(NSURL *fileURL);
-@property(nonatomic, copy, nullable) void (^onError)(NSString *message);
+@property(nonatomic, readonly) ModelStoreSnapshot snapshot;
+@property(nonatomic, copy, nullable) void (^onChange)(const ModelStoreSnapshot &snapshot);
 // Trusts a saved model whose size, inode and modification time still match
 // its last successful SHA256 verification.
 - (void)prepare;
