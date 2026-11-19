@@ -86,7 +86,7 @@ if(APPLE AND (BAWAN_BUILD_APP OR BAWAN_BUILD_TESTS))
         add_library(${target} STATIC
             src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm
             src/BawanAppearance.mm src/BawanMascotView.mm
-            src/ShortcutMonitor.mm src/ShortcutPreferences.mm
+            src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm
             src/SetupUI.mm src/OnboardingViewController.mm)
         target_include_directories(${target} PUBLIC src)
         target_link_libraries(${target} PUBLIC bawan_gesture
@@ -148,6 +148,9 @@ if(BAWAN_BUILD_TESTS)
         add_executable(shortcut_preferences_tests tests/shortcut_preferences_tests.mm)
         target_link_libraries(shortcut_preferences_tests PRIVATE bawan_ui_test)
         add_test(NAME shortcut_preferences COMMAND shortcut_preferences_tests)
+        add_executable(selection_reader_tests tests/selection_reader_tests.mm)
+        target_link_libraries(selection_reader_tests PRIVATE bawan_ui_test)
+        add_test(NAME selection_reader COMMAND selection_reader_tests)
         add_executable(shortcut_monitor_tests tests/shortcut_monitor_tests.mm)
         target_link_libraries(shortcut_monitor_tests PRIVATE bawan_ui_test)
         add_test(NAME shortcut_monitor COMMAND shortcut_monitor_tests)
