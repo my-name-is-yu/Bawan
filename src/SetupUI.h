@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "BawanAppearance.h"
+#import "BawanBorderlessControl.h"
 
 @class BawanActionButton;
 
@@ -28,10 +29,10 @@ static constexpr CGFloat BawanSetupModelActionWidth = 224; // Model setup or ret
 
 // Checkbox, switch and progress bar drawn in Bawan's palette instead of the
 // system accent, keeping the native control semantics and accessibility.
-@interface BawanCheckbox : NSButton
+@interface BawanCheckbox : BawanBorderlessButton
 @end
 
-@interface BawanToggle : NSButton
+@interface BawanToggle : BawanBorderlessButton
 @end
 
 @interface BawanProgressBar : NSProgressIndicator

@@ -154,6 +154,33 @@ produced `カフェ` and `カフェで会いましょう。`. Direct builds of `
 against unchanged main at `café`. Native build, model progress/Settings/onboarding
 tests, AppKit rendering and Metal inference remain unverified on this host.
 
+## Shared-control appearance regression (#42)
+
+`panel_smoke` renders the real primary/secondary footer buttons in Aqua and
+Dark Aqua, enabled and disabled, and checks that disabled clicks leave translation
+and the clipboard unchanged. `settings_smoke` renders checked/unchecked shortcut
+checkboxes, the login toggle in both states, and both recorder/press-count inputs.
+The checks assert opaque enabled faces, 40% disabled face opacity, light/dark
+input colors, appearance-callback repaint requests, and unchanged alignment rects.
+Repaint checks drain and verify both view/layer dirty flags before the callback,
+then require a new view or layer repaint request, including layer-backed controls.
+Rendered custom focus masks retain the checkbox-only rounded box, capsule toggle,
+and rounded input bounds, excluding labels and outer corners. Action-button focus
+mask bounds and pixels are compared with an equivalent native `NSButton`; these
+tests do not claim to verify OS focus-ring styling.
+The native checkbox and toggle click paths also verify preference changes and
+exactly one owner callback, alongside the existing recorder/popup action scenarios.
+Control and focus-mask PNGs are saved under `panel-smoke/` and `settings-smoke/`.
+
+After the native build above, run:
+
+```sh
+ctest --test-dir build-check --output-on-failure -R '^(translation_panel|settings_navigation)$'
+```
+
+These additions were inspected on Linux, where AppKit is unavailable; their
+compilation, execution and rendered PNGs still require macOS verification.
+
 ## Verification for this review
 
 Environment: Linux x86_64, GCC 14.2, Release, pinned llama.cpp `b12307`, verified

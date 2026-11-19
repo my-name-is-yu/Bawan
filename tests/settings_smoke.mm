@@ -12,6 +12,7 @@
 #include <set>
 
 #import "WindowDragChecks.h"
+#import "ControlAppearanceChecks.h"
 
 @interface SmokeShortcutMonitor : ShortcutMonitor {
     ShortcutPreferences *_testPreferences;
@@ -387,6 +388,34 @@ static void CheckInputFaces(NSWindow *window) {
     window.appearance = previous;
 }
 
+static void CheckCustomControlAppearance(NSWindow *window) {
+    using namespace ControlAppearanceChecks;
+    NSButton *checkbox = (NSButton *)FindView(window.contentView, @"shortcut-selection-enabled");
+    NSButton *toggle = (NSButton *)FindView(window.contentView, @"launch-at-login");
+    NSControlStateValue checkboxState = checkbox.state, toggleState = toggle.state;
+    CGFloat boxY = std::floor((NSHeight(checkbox.bounds) - 18) / 2);
+    for (NSNumber *on in @[@YES, @NO]) {
+        checkbox.state = on.boolValue ? NSControlStateValueOn : NSControlStateValueOff;
+        toggle.state = checkbox.state;
+        Check(checkbox, NSMakePoint(9, boxY + 3), !on.boolValue, @"settings-smoke");
+        Check(toggle, NSMakePoint(NSMidX(toggle.bounds), 4), !on.boolValue, @"settings-smoke");
+    }
+    checkbox.state = checkboxState;
+    toggle.state = toggleState;
+    CheckFocus(checkbox, NSMakeRect(0, boxY, 18, 18), NSMakePoint(9, boxY + 9),
+        NSMakePoint(1, boxY + 1), NSMakePoint(28, NSMidY(checkbox.bounds)), @"settings-smoke");
+    CheckFocus(toggle, toggle.bounds, NSMakePoint(2, NSMidY(toggle.bounds)),
+        NSMakePoint(3, 3), NSMakePoint(0, NSMidY(toggle.bounds)), @"settings-smoke");
+    for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key",
+                                    @"shortcut-selection-count", @"shortcut-panel-count"]) {
+        NSButton *input = (NSButton *)FindView(window.contentView, identifier);
+        Check(input, NSMakePoint(NSMidX(input.bounds), 4), YES, @"settings-smoke");
+        CheckFocus(input, NSInsetRect(input.bounds, 1, 1),
+            NSMakePoint(NSMidX(input.bounds), NSMidY(input.bounds)), NSMakePoint(1, 1),
+            NSMakePoint(0, NSMidY(input.bounds)), @"settings-smoke");
+    }
+}
+
 static NSString *TextInView(NSView *view) {
     NSMutableString *text = [NSMutableString string];
     if ([view isKindOfClass:NSTextField.class]) [text appendString:((NSTextField *)view).stringValue];
@@ -656,8 +685,13 @@ static void RunSmoke(void) {
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
     Require(!loginItems.hidden, @"A pending login approval must expose its System Settings action");
     [loginItems performClick:nil];
-    login.state = NSControlStateValueOn;
-    SendControlAction(login);
+    [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
+    login.enabled = NO;
+    [login performClick:nil];
+    Require(loginChanges == 0 && login.state == NSControlStateValueOff,
+        @"A disabled login toggle must not change state or notify its owner");
+    login.enabled = YES;
+    [login performClick:nil];
     Require(loginSettings == 1 && loginChanges == 1 && requestedLogin,
         @"Login actions must forward exactly once without changing system services");
 
@@ -736,6 +770,7 @@ static void RunSmoke(void) {
     [settings refresh];
     Capture(window, @"light");
     CheckInputFaces(window);
+    CheckCustomControlAppearance(window);
     NSScrollView *scroll = (NSScrollView *)FindView(root, @"settings-scroll");
     NSView *document = FindView(root, @"settings-document");
     CGFloat baseHeight = document.bounds.size.height;
@@ -833,8 +868,7 @@ static void RunSmoke(void) {
     Capture(window, @"shortcut-error");
     [settings showError:@""];
 
-    selectionEnabled.state = NSControlStateValueOff;
-    SendControlAction(selectionEnabled);
+    [selectionEnabled performClick:nil];
     Require(![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
         [preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled &&
         [selectionStatus.stringValue isEqualToString:@"Off"], @"Disabling one action must preserve the other");
@@ -875,8 +909,7 @@ static void RunSmoke(void) {
     Require([selectionStatus.stringValue isEqualToString:@"Off"] &&
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
         @"Key release must restore each row's actual enabled and ready state");
-    selectionEnabled.state = NSControlStateValueOn;
-    SendControlAction(selectionEnabled);
+    [selectionEnabled performClick:nil];
     Require(![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
         selectionEnabled.state == NSControlStateValueOff && !feedback.hidden,
         @"A conflicting single/double assignment must reject enabling without changing the old setting");
@@ -886,8 +919,7 @@ static void RunSmoke(void) {
     SendKey(settings, window, 40, customModifiers, YES, @"k");
     Require(monitor.suspended, @"An accepted key must remain suspended until release");
     SendKey(settings, window, 40, customModifiers, NO, @"k");
-    selectionEnabled.state = NSControlStateValueOn;
-    SendControlAction(selectionEnabled);
+    [selectionEnabled performClick:nil];
     bawan::ShortcutBinding custom = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
     Require(custom.enabled && custom.keyCode == 40 && custom.modifiers == (bawan::Control | bawan::Option) &&
         custom.pressCount == 1 && [selectionKey.title isEqualToString:ShortcutKeyLabel(custom)],

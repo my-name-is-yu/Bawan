@@ -63,26 +63,15 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     [super setTitle:title];
     [self invalidateIntrinsicContentSize];
 }
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (NSRect)focusRingMaskBounds { return [self boxRect]; }
-- (void)drawFocusRingMask { [BawanInputPath([self boxRect]) fill]; }
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+- (NSBezierPath *)bawanFocusRingPath { return BawanInputPath([self boxRect]); }
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect box = [self boxRect];
     BOOL on = self.state == NSControlStateValueOn;
     BOOL highlighted = self.cell.highlighted;
     if (on) {
         NSBezierPath *path = BawanInputPath(box);
-        NSColor *fill = BawanPrimaryButtonFill(highlighted);
-        [(self.enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
-        [path fill];
-        [BawanColor(BawanBorder) setStroke];
-        path.lineWidth = BawanChromeLineWidth;
-        [path stroke];
+        BawanDrawControlSurface(path, BawanPrimaryButtonFill(highlighted), self.enabled);
         NSBezierPath *check = [NSBezierPath bezierPath];
         [check moveToPoint:NSMakePoint(NSMinX(box) + 4.5, NSMidY(box))];
         [check lineToPoint:NSMakePoint(NSMinX(box) + 7.5, NSMaxY(box) - 5)];
@@ -90,13 +79,13 @@ static constexpr CGFloat BawanCheckboxGap = 8;
         check.lineWidth = 2;
         check.lineCapStyle = NSLineCapStyleRound;
         check.lineJoinStyle = NSLineJoinStyleRound;
-        [BawanRGB(0xF7E7BB) setStroke];
+        [BawanAccentForegroundColor() setStroke];
         [check stroke];
     } else {
         BawanDrawInputSurface(box, self.enabled, highlighted);
     }
     NSColor *color = BawanColor(BawanText);
-    if (!self.enabled) color = [BawanColor(BawanSecondaryText) colorWithAlphaComponent:0.65];
+    if (!self.enabled) color = [color colorWithAlphaComponent:BawanDisabledAlpha];
     NSDictionary *attributes = @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:color};
     NSSize size = [self.title sizeWithAttributes:attributes];
     [self.title drawAtPoint:NSMakePoint(NSMaxX(box) + BawanCheckboxGap, floor((NSHeight(self.bounds) - size.height) / 2))
@@ -119,34 +108,24 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     return self;
 }
 - (NSSize)intrinsicContentSize { return NSMakeSize(42, 24); }
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (NSBezierPath *)trackPath {
     NSRect track = NSInsetRect(self.bounds, 1, 1);
     return [NSBezierPath bezierPathWithRoundedRect:track xRadius:NSHeight(track) / 2 yRadius:NSHeight(track) / 2];
 }
 - (NSRect)focusRingMaskBounds { return self.bounds; }
-- (void)drawFocusRingMask { [[self trackPath] fill]; }
+- (NSBezierPath *)bawanFocusRingPath { return [self trackPath]; }
 - (id)accessibilityValue { return @(self.state == NSControlStateValueOn); }
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
 - (void)drawRect:(NSRect)dirtyRect {
     BOOL on = self.state == NSControlStateValueOn;
     NSBezierPath *track = [self trackPath];
     NSColor *fill = on ? BawanPrimaryButtonFill(self.cell.highlighted) :
         BawanColor(self.cell.highlighted ? BawanButton : BawanBackground);
-    [(self.enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
-    [track fill];
-    [BawanColor(BawanBorder) setStroke];
-    track.lineWidth = BawanChromeLineWidth;
-    [track stroke];
+    BawanDrawControlSurface(track, fill, self.enabled);
     CGFloat diameter = NSHeight(self.bounds) - 8;
     CGFloat x = on ? NSMaxX(self.bounds) - 4 - diameter : 4;
     NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:
         NSMakeRect(x, floor((NSHeight(self.bounds) - diameter) / 2), diameter, diameter)];
-    [(on ? BawanRGB(0xF7E7BB) : BawanColor(BawanBorder)) setFill];
+    [(on ? BawanAccentForegroundColor() : BawanColor(BawanBorder)) setFill];
     [knob fill];
 }
 @end
@@ -182,7 +161,7 @@ static char ProgressWindowVisibilityContext;
 }
 - (void)updateMarquee {
     if (!_marquee) return;
-    NSRect track = NSInsetRect(self.bounds, 0.75, 0.75);
+    NSRect track = NSInsetRect(self.bounds, BawanChromeLineWidth / 2, BawanChromeLineWidth / 2);
     track.size.width = std::max(CGFloat(0), NSWidth(track));
     track.size.height = std::max(CGFloat(0), NSHeight(track));
     const CGFloat radius = std::min(NSWidth(track), NSHeight(track)) / 2;
@@ -308,7 +287,7 @@ static char ProgressWindowVisibilityContext;
     [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    NSRect track = NSInsetRect(self.bounds, 0.75, 0.75);
+    NSRect track = NSInsetRect(self.bounds, BawanChromeLineWidth / 2, BawanChromeLineWidth / 2);
     if (NSIsEmptyRect(track)) return;
     CGFloat radius = std::min(NSWidth(track), NSHeight(track)) / 2;
     NSBezierPath *trackPath = [NSBezierPath bezierPathWithRoundedRect:track xRadius:radius yRadius:radius];

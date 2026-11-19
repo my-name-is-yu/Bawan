@@ -10,20 +10,11 @@
 #include <set>
 #include <vector>
 
-@interface BawanShortcutButton : NSButton
+@interface BawanShortcutButton : BawanBorderlessButton
 @end
 
 @implementation BawanShortcutButton
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
-- (void)drawFocusRingMask {
-    [BawanInputPath(self.bounds) fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+- (NSBezierPath *)bawanFocusRingPath { return BawanInputPath(self.bounds); }
 - (void)drawRect:(NSRect)dirtyRect {
     BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
@@ -34,16 +25,7 @@
 @end
 
 @implementation BawanShortcutPressCount
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
-- (void)drawFocusRingMask {
-    [BawanInputPath(self.bounds) fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+BAWAN_BORDERLESS_CONTROL_METHODS(BawanInputPath(self.bounds))
 - (void)drawRect:(NSRect)dirtyRect {
     BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
