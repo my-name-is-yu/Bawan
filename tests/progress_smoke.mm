@@ -148,8 +148,19 @@ static void CheckDeterminate(BawanProgressBar *bar, NSWindow *window) {
     }
 }
 
-static NSWindow *MakeWindow(CGFloat x) {
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(x, 100, 280, 100)
+@interface ProgressSmokeWindow : NSWindow
+@property(nonatomic) BOOL covered;
+@end
+
+@implementation ProgressSmokeWindow
+- (NSWindowOcclusionState)occlusionState {
+    // Keep this smoke independent of other applications covering its windows.
+    return self.visible && !self.covered ? NSWindowOcclusionStateVisible : 0;
+}
+@end
+
+static ProgressSmokeWindow *MakeWindow(CGFloat x) {
+    ProgressSmokeWindow *window = [[ProgressSmokeWindow alloc] initWithContentRect:NSMakeRect(x, 100, 280, 100)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
     window.releasedWhenClosed = NO;
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
@@ -160,7 +171,7 @@ static void RunSmoke(void) {
     Method getter = class_getInstanceMethod(NSWorkspace.class, @selector(accessibilityDisplayShouldReduceMotion));
     Require(getter != nullptr, @"Cannot isolate Reduce Motion for the smoke process");
     IMP original = method_setImplementation(getter, reinterpret_cast<IMP>(TestReduceMotion));
-    NSWindow *window = MakeWindow(100);
+    ProgressSmokeWindow *window = MakeWindow(100);
     NSWindow *other = MakeWindow(420);
     @try {
         BawanProgressBar *bar = [[BawanProgressBar alloc] initWithFrame:NSMakeRect(20, 45, 240, 8)];
@@ -206,14 +217,27 @@ static void RunSmoke(void) {
         [other close];
         RequireMoving(bar, @"after its previous window closes");
 
+        window.covered = YES;
+        [NSNotificationCenter.defaultCenter postNotificationName:NSWindowDidChangeOcclusionStateNotification object:window];
+        RequireStopped(bar, @"while its window is completely covered");
         [window orderOut:nil];
         RequireStopped(bar, @"after ordering its window out");
+        window.covered = NO;
         [window makeKeyAndOrderFront:nil];
         RequireMoving(bar, @"after ordering its window in");
         [window close];
         RequireStopped(bar, @"after closing its window");
         [window makeKeyAndOrderFront:nil];
         RequireMoving(bar, @"after reopening its window");
+
+        [bar setFrameSize:NSMakeSize(0, 8)];
+        [bar layoutSubtreeIfNeeded];
+        RequireStopped(bar, @"when the progress track has no width");
+        [bar setFrameSize:NSMakeSize(4, 8)];
+        [bar layoutSubtreeIfNeeded];
+        Require(Capture(bar) != nil, @"A progress track narrower than its height must still render");
+        [bar setFrameSize:NSMakeSize(240, 8)];
+        [bar layoutSubtreeIfNeeded];
 
         CheckDeterminate(bar, window);
         bar.indeterminate = YES;

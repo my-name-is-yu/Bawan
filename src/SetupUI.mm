@@ -151,12 +151,15 @@ static constexpr CGFloat BawanCheckboxGap = 8;
 }
 @end
 
+static char ProgressWindowVisibilityContext;
+
 @implementation BawanProgressBar {
     CALayer *_marqueeClip;
     CALayer *_marquee;
     CAShapeLayer *_marqueeBorder;
     BOOL _animationRequested;
     BOOL _windowClosing;
+    __weak NSWindow *_observedWindow;
 }
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -182,15 +185,19 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     NSRect track = NSInsetRect(self.bounds, 0.75, 0.75);
     track.size.width = std::max(CGFloat(0), NSWidth(track));
     track.size.height = std::max(CGFloat(0), NSHeight(track));
+    const CGFloat radius = std::min(NSWidth(track), NSHeight(track)) / 2;
+    const BOOL hasTrack = NSWidth(track) > 0 && NSHeight(track) > 0;
     BOOL resized = !CGSizeEqualToSize(_marqueeClip.bounds.size, track.size);
+    NSWindow *window = self.window;
     BOOL animate = _animationRequested && self.indeterminate && !self.hiddenOrHasHiddenAncestor &&
-        self.window.visible && !_windowClosing && NSWidth(track) > 0 && NSHeight(track) > 0 &&
+        window.visible && (window.occlusionState & NSWindowOcclusionStateVisible) &&
+        !_windowClosing && hasTrack &&
         !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _marqueeClip.hidden = _marqueeBorder.hidden = !self.indeterminate;
     _marqueeClip.frame = track;
-    _marqueeClip.cornerRadius = NSHeight(track) / 2;
+    _marqueeClip.cornerRadius = radius;
     _marquee.bounds = CGRectMake(0, 0, NSWidth(track) * 0.3, NSHeight(track));
     // The model layer remains a visible, stationary unknown-length indicator.
     _marquee.position = CGPointMake(NSWidth(track) / 2, NSHeight(track) / 2);
@@ -199,10 +206,11 @@ static constexpr CGFloat BawanCheckboxGap = 8;
         self->_marqueeBorder.strokeColor = BawanColor(BawanBorder).CGColor;
     }];
     _marqueeBorder.frame = self.bounds;
-    CGPathRef border = CGPathCreateWithRoundedRect(NSRectToCGRect(track),
-        NSHeight(track) / 2, NSHeight(track) / 2, nullptr);
+    CGPathRef border = self.indeterminate && hasTrack ?
+        CGPathCreateWithRoundedRect(NSRectToCGRect(track), radius, radius, nullptr) : nullptr;
     _marqueeBorder.path = border;
     CGPathRelease(border);
+    _marqueeBorder.contentsScale = window.backingScaleFactor ?: 1;
     _marqueeBorder.lineWidth = BawanChromeLineWidth;
     if (!animate || resized) [_marquee removeAnimationForKey:@"bawan.marquee"];
     if (animate && ![_marquee animationForKey:@"bawan.marquee"]) {
@@ -225,6 +233,10 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     [self updateMarquee];
     self.needsDisplay = YES;
 }
+- (void)viewDidChangeBackingProperties {
+    [super viewDidChangeBackingProperties];
+    [self updateMarquee];
+}
 - (void)startAnimation:(id)sender {
     _animationRequested = YES;
     [self updateMarquee];
@@ -236,21 +248,39 @@ static constexpr CGFloat BawanCheckboxGap = 8;
 - (void)viewDidHide { [super viewDidHide]; [self updateMarquee]; }
 - (void)viewDidUnhide { [super viewDidUnhide]; [self updateMarquee]; }
 - (void)viewWillMoveToWindow:(NSWindow *)window {
-    [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillCloseNotification object:self.window];
-    [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidChangeOcclusionStateNotification object:self.window];
+    [self stopObservingWindow];
     [_marquee removeAnimationForKey:@"bawan.marquee"];
     _windowClosing = NO;
     [super viewWillMoveToWindow:window];
 }
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    if (self.window) {
+    NSWindow *window = self.window;
+    if (window) {
+        _observedWindow = window;
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowWillClose:)
-            name:NSWindowWillCloseNotification object:self.window];
+            name:NSWindowWillCloseNotification object:window];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowVisibilityChanged:)
-            name:NSWindowDidChangeOcclusionStateNotification object:self.window];
+            name:NSWindowDidChangeOcclusionStateNotification object:window];
+        // Ordering can change visible while the occlusion state stays the same.
+        [window addObserver:self forKeyPath:@"visible" options:0 context:&ProgressWindowVisibilityContext];
     }
     [self updateMarquee];
+}
+- (void)stopObservingWindow {
+    NSWindow *window = _observedWindow;
+    if (!window) return;
+    [NSNotificationCenter.defaultCenter removeObserver:self name:nil object:window];
+    [window removeObserver:self forKeyPath:@"visible" context:&ProgressWindowVisibilityContext];
+    _observedWindow = nil;
+}
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
+                        change:(NSDictionary *)change context:(void *)context {
+    if (context == &ProgressWindowVisibilityContext) {
+        [self windowVisibilityChanged:nil];
+    } else {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    }
 }
 - (void)windowWillClose:(NSNotification *)notification {
     _windowClosing = YES;
@@ -274,12 +304,13 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     self.needsDisplay = YES;
 }
 - (void)dealloc {
+    [self stopObservingWindow];
     [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
-    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect track = NSInsetRect(self.bounds, 0.75, 0.75);
-    CGFloat radius = NSHeight(track) / 2;
+    if (NSIsEmptyRect(track)) return;
+    CGFloat radius = std::min(NSWidth(track), NSHeight(track)) / 2;
     NSBezierPath *trackPath = [NSBezierPath bezierPathWithRoundedRect:track xRadius:radius yRadius:radius];
     [BawanColor(BawanBackground) setFill];
     [trackPath fill];
