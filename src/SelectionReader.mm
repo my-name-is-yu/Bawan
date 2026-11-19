@@ -124,7 +124,9 @@
         [self finishSession:session text:nil problem:@"Clipboard access was denied. Allow Bawan to read the clipboard in System Settings, or type or paste text."];
         return;
     }
-    if ([_environment pasteboardChangeCount] != session.changeCount) {
+    const NSInteger changeCount = [_environment pasteboardChangeCount];
+    if (_session != session) return;
+    if (changeCount != session.changeCount) {
         NSString *text = [_environment copiedText];
         NSString *problem = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length ? nil :
             @"Unable to read copied text. Select text and try translating again, or type or paste text.";
