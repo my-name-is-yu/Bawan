@@ -7,6 +7,8 @@ static constexpr CGFloat BawanHeaderHeight = 80;
 static constexpr CGFloat BawanBrandMarkSize = 72;
 static constexpr CGFloat BawanInputHeight = 28;
 static constexpr CGFloat BawanInputFontSize = 13;
+static constexpr CGFloat BawanChromeLineWidth = 1.5;
+static constexpr CGFloat BawanDisabledAlpha = 0.4;
 
 typedef NS_ENUM(NSInteger, BawanColorRole) {
     BawanBackground, BawanSurface, BawanText, BawanSecondaryText, BawanBorder,
@@ -56,6 +58,7 @@ inline NSColor *BawanColor(BawanColorRole role) {
 
 static inline NSColor *BawanAccentFillColor(void) { return BawanRGB(0xB53B28); }
 static inline NSColor *BawanAccentColor(void) { return BawanColor(BawanError); }
+static inline NSColor *BawanAccentForegroundColor(void) { return BawanColor(BawanHeaderText); }
 
 static inline NSColor *BawanPrimaryButtonFill(BOOL highlighted) {
     return highlighted ? BawanRGB(0x943020) : BawanAccentFillColor();
@@ -85,14 +88,17 @@ static inline NSBezierPath *BawanInputPath(NSRect rect) {
     return [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 1, 1) xRadius:6 yRadius:6];
 }
 
-static inline void BawanDrawInputSurface(NSRect rect, BOOL enabled, BOOL highlighted) {
-    NSBezierPath *path = BawanInputPath(rect);
-    NSColor *fill = BawanColor(enabled && highlighted ? BawanButton : BawanBackground);
-    [(enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
+static inline void BawanDrawControlSurface(NSBezierPath *path, NSColor *fill, BOOL enabled) {
+    [(enabled ? fill : [fill colorWithAlphaComponent:BawanDisabledAlpha]) setFill];
     [path fill];
     [BawanColor(BawanBorder) setStroke];
-    path.lineWidth = 1.5;
+    path.lineWidth = BawanChromeLineWidth;
     [path stroke];
+}
+
+static inline void BawanDrawInputSurface(NSRect rect, BOOL enabled, BOOL highlighted) {
+    BawanDrawControlSurface(BawanInputPath(rect),
+        BawanColor(enabled && highlighted ? BawanButton : BawanBackground), enabled);
 }
 
 static inline NSFont *BawanSerifFont(CGFloat size, BOOL bold) {
@@ -176,7 +182,7 @@ static inline void BawanDrawMedallionBase(NSRect rect) {
     [BawanColor(BawanGold) setFill];
     [path fill];
     [BawanColor(BawanGoldText) setStroke];
-    path.lineWidth = 1.5;
+    path.lineWidth = BawanChromeLineWidth;
     [path stroke];
 }
 

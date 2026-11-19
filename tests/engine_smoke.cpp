@@ -170,6 +170,18 @@ int main(int argc, char ** argv) {
             invitation.find("仲間") == std::string::npos) {
             throw std::runtime_error("Short invitation lost its meaning: " + invitation);
         }
+        const auto cafe = completed(events, engine.translate(u8"café", bawan::Direction::Automatic),
+                                    bawan::Direction::EnglishToJapanese);
+        if (cafe.find("カフェ") == std::string::npos && cafe.find("喫茶") == std::string::npos &&
+            cafe.find("コーヒー") == std::string::npos) {
+            throw std::runtime_error("Accented short word lost its meaning: " + cafe);
+        }
+        const auto cafeInvitation = completed(events, engine.translate(u8"Let's meet at the café.", bawan::Direction::Automatic),
+                                              bawan::Direction::EnglishToJapanese);
+        if (cafeInvitation.find("会") == std::string::npos && cafeInvitation.find("集合") == std::string::npos &&
+            cafeInvitation.find("待ち合") == std::string::npos) {
+            throw std::runtime_error("Accented invitation lost its meaning: " + cafeInvitation);
+        }
         const auto idiom = completed(events, engine.translate("on the fence", bawan::Direction::Automatic),
                                      bawan::Direction::EnglishToJapanese);
         // Quantized inference can vary by GPU backend; check completion and
@@ -177,7 +189,8 @@ int main(int argc, char ** argv) {
         if (!hasNonASCII(idiom)) throw std::runtime_error("Short idiom did not produce Japanese: " + idiom);
         completed(events, engine.translate("Please do not leave just yet.", bawan::Direction::Automatic),
                   bawan::Direction::EnglishToJapanese);
-        std::cout << "Short EN→JA: " << word << " / " << invitation << " / " << idiom << '\n';
+        std::cout << "Short EN→JA: " << word << " / " << invitation << " / " << cafe << " / "
+                  << cafeInvitation << " / " << idiom << '\n';
 
         if (completed(events, engine.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Repeated greedy translation changed after another request (possible stale KV)");
@@ -194,8 +207,17 @@ int main(int argc, char ** argv) {
             throw std::runtime_error("Warm-up reloaded an already resident model");
         }
 
-        const auto invalid = events.wait(engine.translate(std::string("\xFF"), bawan::Direction::Automatic));
-        if (invalid.kind != bawan::EngineEvent::Kind::Error) { throw std::runtime_error("Invalid UTF-8 was not rejected"); }
+        const std::string invalidInputs[] = {
+            "\xFF", "\x80", "\xC0\xAF", "\xE0\x80\xAF", "\xED\xA0\x80",
+            "\xF4\x90\x80\x80", "\xE2\x82", "\xE2!", "\xF0\x90\x80",
+        };
+        for (const auto &input : invalidInputs) {
+            const auto invalid = events.wait(engine.translate(input, bawan::Direction::Automatic));
+            if (invalid.kind != bawan::EngineEvent::Kind::Error) {
+                throw std::runtime_error("Invalid or incomplete UTF-8 was not rejected");
+            }
+            events.requireNoOutput(invalid.requestId);
+        }
         if (completed(events, engine.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Translation did not recover after invalid UTF-8");
         }

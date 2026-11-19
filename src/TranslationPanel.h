@@ -10,12 +10,18 @@ typedef NS_ENUM(NSInteger, BawanStatusKind) {
     BawanStatusInformation, BawanStatusWarning, BawanStatusError
 };
 
+typedef NS_ENUM(NSInteger, BawanPanelPageKind) {
+    BawanPanelPageTranslation, BawanPanelPageSettings, BawanPanelPageOnboarding
+};
+
 @interface TranslationPanel : NSObject
 @property(nonatomic, copy, nullable) void (^onTranslate)(NSString *text, bawan::Direction direction);
 @property(nonatomic, copy, nullable) void (^onCancel)(void);
 @property(nonatomic, copy, nullable) void (^onClose)(void);
 @property(nonatomic, copy, nullable) void (^onSettings)(void);
 @property(nonatomic, readonly) NSWindow *window;
+// Selected content, including while the window is hidden. Closing returns to Translation.
+@property(nonatomic, readonly) BawanPanelPageKind currentPage;
 
 - (void)showForSelection:(NSString *)text;
 - (void)showForManualInput;
