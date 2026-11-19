@@ -1,6 +1,6 @@
 #pragma once
 
-#include "TranslationEngine.h"
+#include "EngineEvent.h"
 
 #include <cstdint>
 #include <optional>
@@ -12,7 +12,7 @@ namespace bawan {
 
 class TranslationSession final {
 public:
-    using RequestId = decltype(EngineEvent::requestId);
+    using RequestId = engine::RequestId;
     struct TrialAttempt {
         std::uint64_t value;
         bool operator==(TrialAttempt other) const { return value == other.value; }

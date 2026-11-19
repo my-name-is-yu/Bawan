@@ -10,7 +10,7 @@ namespace {
 using bawan::Direction;
 using bawan::EngineEvent;
 using Session = bawan::TranslationSession;
-using Kind = EngineEvent::Kind;
+using namespace bawan::engine;
 using Phase = Session::Phase;
 constexpr auto ToJapanese = Direction::EnglishToJapanese;
 constexpr auto ToEnglish = Direction::JapaneseToEnglish;
@@ -50,14 +50,14 @@ void requestStarted(Session & session, Session::RequestId id) {
 
 void latestQueuedRequestWins() {
     Session session;
-    expect<Session::ClearOutput, Session::Status>(session.reduce(manual("First")), "Queuing clears the output and status");
+    expect<Session::ClearOutput>(session.reduce(manual("First")), "Queuing clears stale output");
     (void)session.reduce(manual(u8"次の文", ToEnglish));
     require(session.phase() == Phase::Queued, "Unverified work stays queued");
     expect<>(session.reduce(Session::WarmUpRequested{}), "Warmup waits for verification");
     expect<>(session.reduce(Session::ModelPreparing{}), "Starting verification preserves queued work");
     const auto effects = session.reduce(Session::ModelReady{});
-    expect<Session::SubmitRequest>(effects, "The pending request takes priority over prewarming");
-    const auto & source = std::get<Session::SubmitRequest>(effects.front()).source;
+    expect<Session::Status, Session::SubmitRequest>(effects, "The pending request takes priority over prewarming");
+    const auto & source = std::get<Session::SubmitRequest>(effects.back()).source;
     require(source.text == u8"次の文" && source.direction == ToEnglish, "Readiness submits the latest text and direction");
     requestStarted(session, 61);
     expect<>(session.reduce(Session::ModelReady{}), "Repeated readiness must not replay a request");
@@ -90,24 +90,44 @@ void replacementAndStaleCallbacks() {
     requestStarted(session, 13);
     expect<Session::CancelEngine, Session::ClearOutput, Session::Status, Session::SubmitRequest>(
         session.reduce(selection("New")), "Cancel the old engine work before submitting the replacement");
-    expect<>(session.reduce(EngineEvent{Kind::Complete, 13, "Premature completion"}),
+    expect<>(session.reduce(Finished{13, Complete{"Premature completion", false, ToJapanese}}),
         "Completion before the engine acknowledges the new request is stale");
     requestStarted(session, 27);
-    expect<>(session.reduce(EngineEvent{Kind::Text, 13, "Late partial"}), "Stale progress cannot update the translator");
-    expect<>(session.reduce(EngineEvent{Kind::Complete, 13, "Late result"}), "Stale completion cannot finish the replacement");
-    expect<>(session.reduce(EngineEvent{Kind::Error, 13, "Late failure"}), "Stale errors cannot reach the translator");
-    expect<>(session.reduce(EngineEvent{Kind::Error, 0, "Lifecycle failure"}), "Lifecycle reports are not request errors");
-    auto effects = session.reduce(EngineEvent{Kind::Text, 27, u8"新しい", false, ToJapanese});
+    expect<>(session.reduce(Progress{13, "Late partial", ToJapanese}), "Stale progress cannot update the translator");
+    expect<>(session.reduce(Finished{13, Complete{"Late result", false, ToJapanese}}), "Stale completion cannot finish the replacement");
+    expect<>(session.reduce(Finished{13, Error{"Late failure"}}), "Stale errors cannot reach the translator");
+    expect<>(session.reduce(EngineEvent{Lifecycle{Failed{"Lifecycle failure"}}}), "Lifecycle reports are not request errors");
+    auto effects = session.reduce(Progress{27, u8"新しい", ToJapanese});
     expect<Session::Output>(effects, "Matching progress updates the translator");
     const auto & partial = std::get<Session::Output>(effects.front());
     require(partial.text == u8"新しい" && partial.direction == ToJapanese && session.busy(),
         "Progress preserves text and direction and is not terminal");
-    effects = session.reduce(EngineEvent{Kind::Complete, 27, u8"新しい文", true, ToJapanese});
+    effects = session.reduce(Finished{27, Complete{u8"新しい文", true, ToJapanese}});
     expect<Session::Output, Session::Status>(effects, "Completion publishes final output before its status");
     require(std::get<Session::Output>(effects.front()).text == u8"新しい文" &&
         std::get<Session::Status>(effects.back()) == Session::Status::Truncated && !session.busy(),
         "A truncated result still displays its text with a warning");
-    expect<>(session.reduce(EngineEvent{Kind::Cancelled, 27, {}}), "Duplicate terminal events are stale");
+    expect<>(session.reduce(Finished{27, Cancelled{}}), "Duplicate terminal events are stale");
+}
+
+void rejectedEngineStartIsTerminal() {
+    Session session;
+    (void)session.reduce(Session::ModelReady{});
+    (void)session.reduce(manual("Rejected"));
+    expect<Session::TranslationError>(session.reduce(Session::RequestStarted{0}), "A rejected dispatch is terminal");
+    require(!session.busy(), "A rejected dispatch must not leave the controls busy");
+    expect<>(session.reduce(Session::RequestStarted{0}), "A duplicate rejection is stale");
+
+    Session onboarding{Session::TranslatorAccess::AwaitingOnboarding};
+    (void)onboarding.reduce(selection("Held"));
+    (void)onboarding.reduce(Session::ModelReady{});
+    (void)onboarding.reduce(trial({17}));
+    const auto rejected = onboarding.reduce(Session::RequestStarted{0});
+    expect<Session::TrialFinished>(rejected, "A rejected trial reports failure only to onboarding");
+    require(!std::get<Session::TrialFinished>(rejected.front()).output && !onboarding.trialAttempt(),
+        "The user can retry practice or resume the held selection");
+    expect<Session::Status, Session::SubmitRequest>(
+        onboarding.reduce(Session::OpenTranslator{}), "A rejected trial does not discard the held selection");
 }
 
 void requestErrorsAndRevalidation() {
@@ -119,26 +139,26 @@ void requestErrorsAndRevalidation() {
         requestStarted(session, id);
     };
     start(10);
-    auto effects = session.reduce(EngineEvent{Kind::Error, 10, "Inference failed"});
+    auto effects = session.reduce(Finished{10, Error{"Inference failed"}});
     expect<Session::TranslationError>(effects, "A current engine error reports a translation error");
     require(std::get<Session::TranslationError>(effects.front()).message == "Inference failed" && !session.busy(),
         "An engine error preserves its message and ends the request");
     start(20);
-    effects = session.reduce(EngineEvent{Kind::Cancelled, 20, {}});
+    effects = session.reduce(Finished{20, Cancelled{}});
     expect<Session::Status>(effects, "A current engine cancellation emits only a status");
     require(std::get<Session::Status>(effects.front()) == Session::Status::Cancelled && !session.busy(),
         "Engine cancellation is terminal");
     start(30);
     expect<Session::CancelEngine, Session::Status>(session.reduce(Session::Cancel{}), "Explicit cancellation stops inference");
-    expect<>(session.reduce(EngineEvent{Kind::Text, 30, "Late text"}), "Late progress cannot update cancelled output");
+    expect<>(session.reduce(Progress{30, "Late text", ToJapanese}), "Late progress cannot update cancelled output");
     start(40);
     expect<Session::CancelEngine>(session.reduce(Session::ModelPreparing{}), "Revalidation stops active inference");
     (void)session.reduce(manual("Fresh"));
-    expect<Session::SubmitRequest>(session.reduce(Session::ModelReady{}), "New work waits through revalidation");
+    expect<Session::Status, Session::SubmitRequest>(session.reduce(Session::ModelReady{}), "New work waits through revalidation");
     requestStarted(session, 50);
-    expect<>(session.reduce(EngineEvent{Kind::Error, 40, "Late failure"}), "Old inference cannot affect the new request");
+    expect<>(session.reduce(Finished{40, Error{"Late failure"}}), "Old inference cannot affect the new request");
     expect<Session::Output, Session::Status>(
-        session.reduce(EngineEvent{Kind::Complete, 50, "Fresh result", false, ToJapanese}), "New inference can finish normally");
+        session.reduce(Finished{50, Complete{"Fresh result", false, ToJapanese}}), "New inference can finish normally");
 }
 
 void modelFailureDropsQueuedWorkAndWarmup() {
@@ -171,29 +191,29 @@ void trialInvalidationPreservesAQueuedSelection() {
             expect<Session::SubmitRequest>(ready, "Verification starts the trial before the held selection");
             require(std::get<Session::SubmitRequest>(ready.front()).source.text == "Practice", "Start the trial text");
             requestStarted(session, 23);
-            expect<>(session.reduce(EngineEvent{Kind::Text, 23, "Partial"}), "Trial progress is isolated from the translator");
+            expect<>(session.reduce(Progress{23, "Partial", ToJapanese}), "Trial progress is isolated from the translator");
             expect<Session::CancelEngine, Session::TrialDiscarded>(
                 session.reduce(Session::TrialInvalidated{attempt}), "Invalidating running practice stops inference");
-            expect<>(session.reduce(EngineEvent{Kind::Complete, 23, "Late practice"}), "Late completion cannot revive a trial");
+            expect<>(session.reduce(Finished{23, Complete{"Late practice", false, ToJapanese}}), "Late completion cannot revive a trial");
         } else {
             expect<Session::TrialDiscarded>(
                 session.reduce(Session::TrialInvalidated{attempt}), "Invalidating queued practice does not cancel the engine");
         }
         expect<>(session.reduce(Session::ModelReady{}), "The verified model cannot bypass onboarding");
         const auto opened = session.reduce(Session::OpenTranslator{});
-        expect<Session::SubmitRequest>(opened, "Opening the translator resumes the held selection");
-        require(std::get<Session::SubmitRequest>(opened.front()).source.text == "External selection",
+        expect<Session::Status, Session::SubmitRequest>(opened, "Opening the translator resumes the held selection");
+        require(std::get<Session::SubmitRequest>(opened.back()).source.text == "External selection",
             "Practice must not erase the held selection");
     }
 }
 
 void trialCompletionAndOnboardingHandoff() {
     const std::pair<EngineEvent, bool> cases[] = {
-        {{Kind::Complete, 40, u8"練習", false, ToJapanese}, true},
-        {{Kind::Complete, 40, "Truncated", true, ToJapanese}, false},
-        {{Kind::Complete, 40, "", false, ToJapanese}, false},
-        {{Kind::Cancelled, 40, {}}, false},
-        {{Kind::Error, 40, "Failed"}, false},
+        {Finished{40, Complete{u8"練習", false, ToJapanese}}, true},
+        {Finished{40, Complete{"Truncated", true, ToJapanese}}, false},
+        {Finished{40, Complete{"", false, ToJapanese}}, false},
+        {Finished{40, Cancelled{}}, false},
+        {Finished{40, Error{"Failed"}}, false},
     };
     for (const auto & [event, succeeds] : cases) {
         Session session{Session::TranslatorAccess::AwaitingOnboarding};
@@ -215,7 +235,7 @@ void trialCompletionAndOnboardingHandoff() {
                 "Accepting the trial discards the held selection without starting inference");
             require(!session.busy(), "Accepting the trial leaves no pending work");
         } else {
-            expect<Session::SubmitRequest>(
+            expect<Session::Status, Session::SubmitRequest>(
                 session.reduce(Session::OpenTranslator{}), "Skipping practice resumes the held selection");
         }
     }
@@ -227,6 +247,7 @@ int main() {
     latestQueuedRequestWins();
     warmupAndCancellation();
     replacementAndStaleCallbacks();
+    rejectedEngineStartIsTerminal();
     requestErrorsAndRevalidation();
     modelFailureDropsQueuedWorkAndWarmup();
     trialInvalidationPreservesAQueuedSelection();
