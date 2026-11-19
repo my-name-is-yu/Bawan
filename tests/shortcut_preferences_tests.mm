@@ -99,6 +99,7 @@ int main() {
             @"number payload": @7,
             @"missing version": @{@"bindings": validStored[@"bindings"]},
             @"string version": @{@"version": @"1", @"bindings": validStored[@"bindings"]},
+            @"Boolean version": @{@"version": @YES, @"bindings": validStored[@"bindings"]},
             @"fractional version": @{@"version": @1.5, @"bindings": validStored[@"bindings"]},
             @"missing bindings": @{@"version": @1},
             @"non-dictionary bindings": @{@"version": @1, @"bindings": @[selectionRow, panelRow]},
@@ -112,12 +113,15 @@ int main() {
             @"string enabled": @{@"enabled": @"YES"},
             @"invalid enabled": @{@"enabled": @2},
             @"string key": @{@"keyCode": @"D"},
+            @"Boolean key": @{@"keyCode": @YES},
             @"unsupported key": @{@"keyCode": @52},
             @"negative key": @{@"keyCode": @-1},
             @"string modifiers": @{@"modifiers": @"4"},
+            @"Boolean modifiers": @{@"modifiers": @YES},
             @"invalid modifiers": @{@"modifiers": @16},
             @"string count": @{@"pressCount": @"1"},
             @"fractional count": @{@"pressCount": @1.5},
+            @"Boolean count": @{@"pressCount": @YES},
             @"zero count": @{@"pressCount": @0}
         };
         for (NSString *name in invalidFields) {

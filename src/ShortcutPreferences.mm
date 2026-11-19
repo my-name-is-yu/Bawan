@@ -122,8 +122,9 @@ std::uint8_t ShortcutModifiersFromFlags(NSEventModifierFlags flags, std::uint16_
     return bawan::normalizeShortcutModifiers(result, keyCode);
 }
 
-static bool ReadInteger(id value, unsigned maximum, unsigned &result) {
-    if (![value isKindOfClass:NSNumber.class]) return false;
+static bool ReadInteger(id value, unsigned maximum, unsigned &result, bool allowBoolean = false) {
+    if (![value isKindOfClass:NSNumber.class] ||
+        (!allowBoolean && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID())) return false;
     double number = [value doubleValue];
     if (!std::isfinite(number) || number < 0 || number > maximum || std::floor(number) != number) return false;
     result = static_cast<unsigned>(number);
@@ -133,7 +134,7 @@ static bool ReadInteger(id value, unsigned maximum, unsigned &result) {
 static bool ReadBinding(id value, bawan::ShortcutBinding &binding) {
     if (![value isKindOfClass:NSDictionary.class]) return false;
     unsigned enabled, key, modifiers, count;
-    if (!ReadInteger(value[@"enabled"], 1, enabled) ||
+    if (!ReadInteger(value[@"enabled"], 1, enabled, true) ||
         !ReadInteger(value[@"keyCode"], UINT16_MAX, key) ||
         !ReadInteger(value[@"modifiers"], UINT8_MAX, modifiers) ||
         !ReadInteger(value[@"pressCount"], 2, count)) return false;
