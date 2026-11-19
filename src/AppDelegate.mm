@@ -237,8 +237,8 @@ static NSString *StringFromUTF8(const std::string &text) {
         _practiceBinding != [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]) {
         _practiceOutput = nil;
     }
-    if (created && _practiceOutput) [onboarding restoreCompletedSelectionTrial];
     [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOnboarding]; }];
+    if (created && _practiceOutput) [onboarding restoreCompletedSelectionTrial];
 }
 
 // The shortcut step's button: leave for the translator even while the model is
