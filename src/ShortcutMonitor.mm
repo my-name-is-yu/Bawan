@@ -30,6 +30,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     NSMutableArray<id> *_workspaceObservers;
     id _preferencesObserver;
 }
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
 - (void)cancelPending;
 - (void)configureGestures;
@@ -65,6 +66,15 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (!self) return nil;
     _preferences = preferences;
     _selectionReader = selectionReader;
+    __weak ShortcutMonitor *weakSelf = self;
+    _selectionReader.onText = ^(NSString *text) {
+        ShortcutMonitor *self = weakSelf;
+        if (self.onSelectionText) self.onSelectionText(text);
+    };
+    _selectionReader.onProblem = ^(NSString *message) {
+        ShortcutMonitor *self = weakSelf;
+        if (self.onSelectionProblem) self.onSelectionProblem(message);
+    };
     _availability.fill(ShortcutAvailabilityOff);
     [self loadBindings];
     return self;

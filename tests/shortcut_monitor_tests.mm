@@ -7,6 +7,7 @@
 
 // Exercise the production tap callback's routing without installing system-wide taps.
 @interface ShortcutMonitor (EventRoutingTests)
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
 @end
 @interface RoutingMonitor : ShortcutMonitor
@@ -104,6 +105,33 @@ struct RoutingFixture {
 
 static void postWorkspaceNotification(NSNotificationName name) {
     [NSWorkspace.sharedWorkspace.notificationCenter postNotificationName:name object:nil];
+}
+
+static void testSelectionCallbacks() {
+    RoutingFixture fixture;
+    fixture.reader.onText(@"No listener");
+    fixture.reader.onProblem(@"No listener");
+    __block NSString *selectedText;
+    __block NSString *problem;
+    fixture.monitor.onSelectionText = ^(NSString *text) {
+        require(NSThread.isMainThread, "selection text callback runs on the main thread");
+        selectedText = text;
+    };
+    fixture.monitor.onSelectionProblem = ^(NSString *message) {
+        require(NSThread.isMainThread, "selection problem callback runs on the main thread");
+        problem = message;
+    };
+    fixture.reader.onText(@"Selected sentence");
+    fixture.reader.onProblem(@"Copy failed");
+    require([selectedText isEqualToString:@"Selected sentence"], "reader text reaches the monitor callback");
+    require([problem isEqualToString:@"Copy failed"], "reader problem reaches the monitor callback");
+    fixture.reader.onText(@"");
+    fixture.reader.onProblem(@"");
+    require([selectedText isEqualToString:@""] && [problem isEqualToString:@""], "callbacks preserve empty payloads");
+    fixture.monitor.onSelectionText = nil;
+    fixture.monitor.onSelectionProblem = nil;
+    fixture.reader.onText(@"No listener");
+    fixture.reader.onProblem(@"No listener");
 }
 
 static void testHeldKeyReconfiguration() {
@@ -554,6 +582,7 @@ int main() {
         require(selectionReader.begins == 1 && selectionReader.lastPassive && selectionReader.reads == 1,
                 "native commands bypass selection acquisition; only the final passive pair reads");
         testHeldKeyReconfiguration();
+        testSelectionCallbacks();
         testIndependentModes();
         testCancellationAndRecovery();
         testRepeatedTriggersAndDeferredCopy();

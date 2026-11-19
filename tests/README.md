@@ -288,7 +288,8 @@ across gesture reconfiguration and owns the deferred active-copy release.
 `shortcut_tests` exercises those portable policies alongside the existing
 active/passive gesture timing tests. `shortcut_monitor_tests` routes real CGEvents
 through the production monitor and observes panel dispatch and SelectionReader
-begin/read/cancel calls. It covers key/press-count/enable changes while held,
+begin/read/cancel calls and text/problem forwarding through monitor callbacks.
+It covers key/press-count/enable changes while held,
 active/passive transitions, overlapping sleep/suspension/configuration, queued
 cancellation, matching/duplicate releases and multiple fresh trigger cycles.
 
