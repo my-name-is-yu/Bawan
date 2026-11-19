@@ -21,7 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Main-thread only. Each begin replaces the previous read, including queued copy events.
 @interface SelectionReader : NSObject
-@property(nonatomic, copy, nullable) void (^onResult)(SelectionResult *result);
+@property(nonatomic, copy, nullable) void (^onResult)(const SelectionReadResult &result);
 - (instancetype)initWithEnvironment:(id<SelectionReaderEnvironment>)environment;
 // Passive copy begins before the first physical Cmd-C reaches the source app.
 - (void)beginCopyFromApplication:(pid_t)application passive:(BOOL)passive;

@@ -56,12 +56,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 }
 
 @implementation ShortcutMonitor
-@synthesize onSelection = _onSelection;
-
-- (void)setOnSelection:(void (^)(SelectionResult *))onSelection {
-    _onSelection = [onSelection copy];
-    _selectionReader.onResult = _onSelection;
-}
 
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences {
     return [self initWithPreferences:preferences selectionReader:[SelectionReader new]];
@@ -72,7 +66,13 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (!self) return nil;
     _preferences = preferences;
     _selectionReader = selectionReader;
-    _selectionReader.onResult = _onSelection;
+    __weak ShortcutMonitor *weakSelf = self;
+    _selectionReader.onResult = ^(const SelectionReadResult &result) {
+        ShortcutMonitor *self = weakSelf;
+        if (self.onSelection) {
+            std::visit([&](const auto &value) { self.onSelection(SelectionEvent{value}); }, result);
+        }
+    };
     _availability.fill(ShortcutAvailabilityOff);
     [self loadBindings];
     return self;
@@ -389,8 +389,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
                     if (!self || !view || generation != self->_actionGeneration ||
                         [self activeSelectionTrialView] != view ||
                         !NSEqualRanges(view.selectedRange, selected) || ![view.string isEqualToString:source]) return;
-                    if (self.onSelection) self.onSelection([[SelectionResult alloc]
-                        initWithKind:SelectionResultKindTrial text:source]);
+                    if (self.onSelection) self.onSelection(SelectionTrial{source});
                 });
             } else if (passive) {
                 [_selectionReader readSelection];

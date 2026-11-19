@@ -1,19 +1,22 @@
 #import <Foundation/Foundation.h>
 
-NS_ASSUME_NONNULL_BEGIN
+#include <type_traits>
+#include <variant>
 
-typedef NS_ENUM(NSInteger, SelectionResultKind) {
-    SelectionResultKindText,
-    SelectionResultKindTrial,
-    SelectionResultKindProblem
+struct SelectedText {
+    NSString *__strong text;
+    explicit SelectedText(NSString *value) : text([value copy]) {}
 };
 
-@interface SelectionResult : NSObject
-@property(nonatomic, readonly) SelectionResultKind kind;
-@property(nonatomic, copy, readonly) NSString *text;
-- (instancetype)initWithKind:(SelectionResultKind)kind text:(NSString *)text NS_DESIGNATED_INITIALIZER;
-- (instancetype)init NS_UNAVAILABLE;
-+ (instancetype)new NS_UNAVAILABLE;
-@end
+struct SelectionTrial {
+    NSString *__strong text;
+    explicit SelectionTrial(NSString *value) : text([value copy]) {}
+};
 
-NS_ASSUME_NONNULL_END
+struct SelectionProblem {
+    NSString *__strong message;
+    explicit SelectionProblem(NSString *value) : message([value copy]) {}
+};
+
+using SelectionReadResult = std::variant<SelectedText, SelectionProblem>;
+using SelectionEvent = std::variant<SelectedText, SelectionTrial, SelectionProblem>;
