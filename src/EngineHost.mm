@@ -66,14 +66,20 @@ struct Running {
         });
 }
 
-- (void)warmUp {
+- (BOOL)warmUp {
     dispatch_assert_queue(dispatch_get_main_queue());
-    std::get<Running>(_state).engine.warmUp();
+    auto *running = std::get_if<Running>(&_state);
+    if (!running) return NO;
+    running->engine.warmUp();
+    return YES;
 }
 
-- (bawan::engine::RequestId)translate:(std::string)text direction:(bawan::Direction)direction {
+- (std::optional<bawan::engine::RequestId>)translate:(std::string)text direction:(bawan::Direction)direction {
     dispatch_assert_queue(dispatch_get_main_queue());
-    return std::get<Running>(_state).engine.translate(std::move(text), direction);
+    if (auto *running = std::get_if<Running>(&_state)) {
+        return running->engine.translate(std::move(text), direction);
+    }
+    return std::nullopt;
 }
 
 - (void)cancel {

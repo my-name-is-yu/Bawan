@@ -272,7 +272,7 @@ static void CheckEngineHostReset() {
     const auto direction = bawan::Direction::EnglishToJapanese;
     NSURL *missing = [NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"];
     __block std::vector<bawan::EngineEvent> events;
-    __block std::uint64_t replacementId = 0;
+    __block std::optional<RequestId> replacementId;
     __block __weak EngineHost *weakHost;
     EngineHost *host = [[SmokeEngineHost alloc] initWithEventHandler:^(const bawan::EngineEvent &event) {
         Require(NSThread.isMainThread, @"EngineHost must deliver on the main thread");
@@ -284,13 +284,15 @@ static void CheckEngineHostReset() {
         }
     }];
     weakHost = host;
+    Require(![host warmUp], @"A stopped host must decline warm-up");
+    Require(![host translate:"Not started" direction:direction], @"A stopped host must reject submissions");
     [host startWithModelURL:missing];
     [host translate:"Old request" direction:direction];
     [host startWithModelURL:missing];
     Require(events.empty(), @"EngineHost delivery must not be synchronous");
     const auto *delivered = &events;
     WaitFor([delivered] { return delivered->size() >= 5; }, @"The fresh engine did not finish after reset");
-    Require(events.size() == 5 && replacementId != 0 &&
+    Require(events.size() == 5 && replacementId &&
         std::holds_alternative<Loading>(std::get<Lifecycle>(events[0])) &&
         std::holds_alternative<Loading>(std::get<Lifecycle>(events[1])) &&
         std::holds_alternative<Idle>(std::get<Lifecycle>(events[2])) &&
@@ -1036,6 +1038,9 @@ static void CheckSelectionTrial(void) {
                 monitor.selectionAvailable = NO;
                 [delegate applicationDidBecomeActive:[NSNotification
                     notificationWithName:NSApplicationDidBecomeActiveNotification object:NSApp]];
+                Require(!Flag(delegate, @"busy") &&
+                    [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
+                    @"Losing shortcut permission must cancel without waiting for an engine event");
             } else if (scenario == Case::Revisit) {
                 [panel showForManualInput];
                 Require(!Flag(delegate, @"busy") && status.hidden,
