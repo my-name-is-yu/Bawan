@@ -116,6 +116,7 @@ static const char ModelSHA256[] =
     const uint64_t generation = _generation.load();
     _downloader = nil;
     [self publish:{ModelStoreChecking} generation:generation];
+    if (_generation.load() != generation) return;
     NSError *error = nil;
     NSURL *support = [_files URLForDirectory:NSApplicationSupportDirectory
                                    inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:&error];
