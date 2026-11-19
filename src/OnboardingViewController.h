@@ -13,14 +13,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^onFinish)(void);
 @property(nonatomic, copy, nullable) void (^onModelLicense)(void);
 @property(nonatomic, copy, nullable) void (^onSelectionTrialInterrupted)(void);
+@property(nonatomic, copy, nullable) void (^onSelectionTrialDiscarded)(void);
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress;
 - (void)setActive:(BOOL)active;
 - (void)focusInitialControl;
 - (void)refresh;
 @property(nonatomic, readonly) NSString *selectionTrialText;
-@property(nonatomic, readonly, nullable) NSString *selectionTrialOutput;
-@property(nonatomic, readonly) bawan::Direction selectionTrialDirection;
 @property(nonatomic, readonly) BOOL selectionTrialComplete;
 // Only the real selection callback may begin a trial; selection or setup alone cannot finish it.
 - (BOOL)isSelectionTrialText:(NSString *)text;
@@ -31,7 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
                   direction:(bawan::Direction)direction;
 - (void)cancelSelectionTrial;
 - (void)discardSelectionTrialResult;
-- (void)restoreSelectionTrialOutput:(NSString *)output direction:(bawan::Direction)direction;
+- (void)restoreCompletedSelectionTrial;
 @end
 
 NS_ASSUME_NONNULL_END

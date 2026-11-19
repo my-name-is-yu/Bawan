@@ -389,7 +389,6 @@ static void RunSmoke(void) {
             direction:bawan::Direction::EnglishToJapanese] && IsShown(trialStatus) &&
             [trialStatus.stringValue containsString:@"successfully"] &&
             [primary.title hasPrefix:@"Start Translating"] && onboarding.selectionTrialComplete &&
-            [onboarding.selectionTrialOutput isEqualToString:@"小さな一歩が新しい世界を開く。"] &&
             [onboarding beginSelectionTrial] == 0,
             @"Only the practice request's successful result may complete the trial, once");
         CheckBounds(window);

@@ -743,11 +743,11 @@ static void CheckSelectionTrial(void) {
                       Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
                       Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
                       CallbackNone, CallbackPanelBinding,
-                      CallbackSelectionBinding, CallbackPermission, Reopen };
+                      CallbackSelectionBinding, CallbackPermission, Reopen, StaleReopen };
     for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
             Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
             Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
-            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission, Case::Reopen}) {
+            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission, Case::Reopen, Case::StaleReopen}) {
         const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
             scenario == Case::SkipActiveWithSelection;
         const BOOL checkRefreshes = scenario == Case::CallbackPanelBinding || scenario == Case::CallbackSelectionBinding ||
@@ -998,7 +998,8 @@ static void CheckSelectionTrial(void) {
             }
             const BOOL success = scenario == Case::Success || scenario == Case::Queued ||
                 scenario == Case::LaterExternalSelection || scenario == Case::FocusChange ||
-                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding || scenario == Case::Reopen;
+                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding || scenario == Case::Reopen ||
+                scenario == Case::StaleReopen;
             const BOOL terminalFailure = scenario == Case::Truncated || scenario == Case::Empty ||
                 scenario == Case::Error || scenario == Case::Cancelled;
             Kind kind = scenario == Case::Error ? Kind::Error :
@@ -1034,6 +1035,22 @@ static void CheckSelectionTrial(void) {
                 trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
                 Require(onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Start Translating"] &&
                     !trialStatus.hidden, @"A completed practice must stay complete after closing and reopening onboarding");
+            }
+            if (scenario == Case::StaleReopen) {
+                [window close];
+                [delegate setValue:nil forKey:@"onboardingViewController"];
+                auto binding = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+                binding.keyCode = 2;
+                binding.modifiers = bawan::Option;
+                NSString *error = nil;
+                Require([preferences setBinding:binding forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+                    @"The stale practice fixture must change the selection shortcut");
+                [delegate showOnboarding];
+                onboarding = [delegate valueForKey:@"onboardingViewController"];
+                primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+                Require(!onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
+                    @"A practice made with an older shortcut must not come back after reopening onboarding");
+                continue;
             }
             if (scenario == Case::FocusChange) [onboarding setActive:YES];
             if (scenario == Case::LaterExternalSelection) {
@@ -1348,6 +1365,8 @@ static void CheckPageRelease(void) {
             Require(panel.currentPage == BawanPanelPageOnboarding && [panel valueForKey:@"page"] == onboarding,
                 @"Leaving Settings must return to the same onboarding");
         }
+        Require(monitor.configurationActive == window.keyWindow,
+            @"Releasing Settings must not disarm the onboarding page that replaced it");
         Require(settings == nil, @"Leaving Settings for onboarding must release Settings");
         @autoreleasepool {
             [window close];

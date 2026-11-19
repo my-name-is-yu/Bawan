@@ -36,6 +36,7 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     NSString *_pendingTrialText;
     NSUInteger _selectionTrialAttempt;
     NSString *_practiceOutput;
+    bawan::ShortcutBinding _practiceBinding;
     bawan::Direction _practiceDirection;
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
@@ -258,10 +259,18 @@ static NSString *StringFromUTF8(const std::string &text) {
             AppDelegate *owner = weakSelf;
             if (owner && owner->_selectionTrialAttempt) [owner cancelTranslationKeepingPendingSelection:YES];
         };
+        onboarding.onSelectionTrialDiscarded = ^{
+            AppDelegate *owner = weakSelf;
+            if (owner) owner->_practiceOutput = nil;
+        };
         _onboardingViewController = onboarding;
     }
     [self pushModelStateToPage:onboarding];
-    if (created && _practiceOutput) [onboarding restoreSelectionTrialOutput:_practiceOutput direction:_practiceDirection];
+    if (_practiceOutput &&
+        _practiceBinding != [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]) {
+        _practiceOutput = nil;
+    }
+    if (created && _practiceOutput) [onboarding restoreCompletedSelectionTrial];
     [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
@@ -633,6 +642,7 @@ static NSString *StringFromUTF8(const std::string &text) {
                     encoding:NSUTF8StringEncoding] : nil;
             if ([_onboardingViewController finishSelectionTrial:attempt output:output direction:event.direction]) {
                 _practiceOutput = output;
+                _practiceBinding = [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
                 _practiceDirection = event.direction;
             }
             [self updateStatus];
