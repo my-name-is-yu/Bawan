@@ -17,6 +17,7 @@
 @property(nonatomic, copy) void (^onCopyKey)(void);
 @property(nonatomic, copy) void (^onEscape)(void);
 @property(nonatomic, weak) NSView *editingContent;
+- (void)discardEditingUndoHistory;
 @end
 
 @implementation BawanPanel
@@ -25,6 +26,7 @@
 - (NSUndoManager *)undoManager {
     return self.contentView == self.editingContent ? [super undoManager] : nil;
 }
+- (void)discardEditingUndoHistory { [[super undoManager] removeAllActions]; }
 - (void)cancelOperation:(id)sender { if (self.onEscape) self.onEscape(); }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     NSEventModifierFlags modifiers = event.modifierFlags &
@@ -300,7 +302,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 - (void)setSelection:(NSString *)text {
     _inputDirection = bawan::Direction::Automatic;
     _source.string = text;
-    [_source.undoManager removeAllActions];
+    [_panel discardEditingUndoHistory];
     [self setOutput:@"" direction:bawan::Direction::Automatic];
 }
 

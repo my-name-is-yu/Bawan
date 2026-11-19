@@ -634,10 +634,10 @@ static NSEvent *SetupKey(NSWindow *window, NSString *characters, NSEventModifier
 }
 
 static void CheckFirstRunSelection(void) {
-    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, Edit, Cancel, Close,
+    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, FromSettings, Edit, Cancel, Close,
                         ExistingUserDeclined };
     for (Change change : {Change::None, Change::ReadyBeforeFinish, Change::ReadyBeforeReplacement,
-            Change::NewSelection, Change::Edit, Change::Cancel, Change::Close, Change::ExistingUserDeclined}) {
+            Change::NewSelection, Change::FromSettings, Change::Edit, Change::Cancel, Change::Close, Change::ExistingUserDeclined}) {
         NSString *suite = [@"local.bawan.FirstSelectionSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
@@ -668,13 +668,29 @@ static void CheckFirstRunSelection(void) {
                     @"Declining model consent must leave returning users out of the busy state");
                 continue;
             }
+            const BOOL fromSettings = change == Change::FromSettings;
+            if (fromSettings) {
+                [panel showForManualInput];
+                NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
+                source.string = @"Original draft";
+                NSUndoManager *undo = source.undoManager;
+                BOOL groupsByEvent = undo.groupsByEvent;
+                undo.groupsByEvent = NO;
+                [undo beginUndoGrouping];
+                [source insertText:@"Edited draft" replacementRange:NSMakeRange(0, source.string.length)];
+                [undo endUndoGrouping];
+                undo.groupsByEvent = groupsByEvent;
+                Require(undo.canUndo, @"The detached-selection fixture must begin with editable history");
+            }
             [delegate openSettings:nil];
             Require([window.contentView.identifier isEqualToString:@"bawan-settings"],
                 @"Settings must open before the first selection");
-            [window cancelOperation:nil];
-            Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
-                ![defaults boolForKey:@"firstLaunchShown"],
-                @"Back from Settings must return to unfinished onboarding without a queued selection");
+            if (!fromSettings) {
+                [window cancelOperation:nil];
+                Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    ![defaults boolForKey:@"firstLaunchShown"],
+                    @"Back from Settings must return to unfinished onboarding without a queued selection");
+            }
             [delegate handleSelectionText:@"The first selected sentence"];
             Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
                 [delegate busy] &&
@@ -737,13 +753,17 @@ static void CheckFirstRunSelection(void) {
             NSButton *translate = (NSButton *)FindView(window.contentView, @"translate");
             Require(source && output && translate && [source.string isEqualToString:expectedSource],
                 @"Guidance must restore the latest selected source in the real translator");
+            if (fromSettings) {
+                Require(!source.undoManager.canUndo && !source.undoManager.canRedo,
+                    @"A selection received in Settings must not inherit the previous draft's history");
+            }
             if (change == Change::Edit) {
                 expectedSource = @"An edited sentence waiting for an explicit translation";
                 [source insertText:expectedSource replacementRange:NSMakeRange(0, source.string.length)];
             } else if (change == Change::Cancel) {
                 [translate performClick:nil];
             }
-            const BOOL shouldTranslate = change == Change::None || readyBeforeFinish || change == Change::NewSelection;
+            const BOOL shouldTranslate = change == Change::None || readyBeforeFinish || change == Change::NewSelection || fromSettings;
             if (!readyBeforeFinish) {
                 if (shouldTranslate) {
                     Require([source.string isEqualToString:expectedSource] && [delegate busy],
