@@ -26,8 +26,10 @@ static NSString *const ModelDownloadURL =
 static const off_t ModelSize = 573126848;
 static const char ModelSHA256[] =
     "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6";
+static NSString *const ModelPathCollision =
+    @"The model file path is occupied by a folder or another item. Move it out of the model folder and try again.";
 
-enum class Verification { Valid, Invalid, Failed, Cancelled };
+enum class Verification { Valid, Invalid, Failed, Collision, Cancelled };
 
 class PartialDownloadLock {
 public:
@@ -73,6 +75,31 @@ static bool RemovePartialFile(NSURL *url) {
     return unlink(url.fileSystemRepresentation) == 0 || errno == ENOENT;
 }
 
+static NSString *CheckSavedModelPath(NSURL *url, bool *present = nullptr) {
+    struct stat info {};
+    const bool exists = lstat(url.fileSystemRepresentation, &info) == 0;
+    if (present) *present = exists;
+    if (exists) return S_ISREG(info.st_mode) ? nil : ModelPathCollision;
+    return errno == ENOENT ? nil : @"Unable to check the saved model path. Check the folder permissions and try again.";
+}
+
+static NSString *RemoveInvalidSavedModel(NSURL *url, const struct stat &verified) {
+    const char *path = url.fileSystemRepresentation;
+    struct stat current {};
+    if (lstat(path, &current) == 0) {
+        if (!S_ISREG(current.st_mode)) return ModelPathCollision;
+        if (current.st_dev != verified.st_dev || current.st_ino != verified.st_ino ||
+            current.st_size != verified.st_size || current.st_mtimespec.tv_sec != verified.st_mtimespec.tv_sec ||
+            current.st_mtimespec.tv_nsec != verified.st_mtimespec.tv_nsec) {
+            return @"The saved model changed during verification. Please try again.";
+        }
+        // The path could have changed since lstat. Unlink never recurses into a directory.
+        if (unlink(path) == 0) return nil;
+    }
+    if (errno == ENOENT) return nil;
+    return CheckSavedModelPath(url) ?: @"Unable to remove the invalid model file. Check the folder permissions.";
+}
+
 static NSDictionary *ReadPartialMetadata(NSURL *url) {
     constexpr off_t MaxMetadataBytes = 64 * 1024;
     const int descriptor = open(url.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
@@ -111,19 +138,25 @@ static bool HasVerificationStamp(int descriptor, const std::string &stamp) {
 
 static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generation,
                                 uint64_t expectedGeneration, int64_t expectedSize,
-                                const char *expectedSHA256, bool trustStamp, NSString **reason) {
-    std::unique_ptr<FILE, decltype(&std::fclose)> file(
-        std::fopen(url.fileSystemRepresentation, "rb"), &std::fclose);
-    if (!file) {
+                                const char *expectedSHA256, bool trustStamp, struct stat &info, NSString **reason) {
+    const int descriptor = open(url.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (descriptor < 0) {
+        if (errno == ELOOP) return Verification::Collision;
         *reason = @"Unable to open the model file. Check the folder permissions.";
         return Verification::Failed;
     }
-    struct stat info {};
-    if (fstat(fileno(file.get()), &info) != 0) {
+    std::unique_ptr<FILE, decltype(&std::fclose)> file(fdopen(descriptor, "rb"), &std::fclose);
+    if (!file) {
+        close(descriptor);
+        *reason = @"Unable to open the model file. Check the folder permissions.";
+        return Verification::Failed;
+    }
+    if (fstat(descriptor, &info) != 0) {
         *reason = @"Unable to check the model file size.";
         return Verification::Failed;
     }
-    if (!S_ISREG(info.st_mode) || info.st_size != expectedSize) {
+    if (!S_ISREG(info.st_mode)) return Verification::Collision;
+    if (info.st_size != expectedSize) {
         *reason = @"The model file size is incorrect.";
         return Verification::Invalid;
     }
@@ -339,12 +372,21 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     _modelURL = [directory URLByAppendingPathComponent:ModelFilename];
     _partialURL = [directory URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", ModelFilename]];
     _metadataURL = [_partialURL URLByAppendingPathExtension:@"plist"];
-    BOOL hasSavedModel = [_files fileExistsAtPath:_modelURL.path];
+    bool hasSavedModel;
+    NSString *pathError = CheckSavedModelPath(_modelURL, &hasSavedModel);
+    if (pathError) {
+        [self reportError:pathError generation:generation];
+        return;
+    }
     if (!hasSavedModel) {
         // Own the shared partial from inspection through transfer and installation.
         const auto lock = _partialLock.acquire([_partialURL URLByAppendingPathExtension:@"lock"]);
         // A peer may have installed the model while we were acquiring the lock.
-        hasSavedModel = [_files fileExistsAtPath:_modelURL.path];
+        pathError = CheckSavedModelPath(_modelURL, &hasSavedModel);
+        if (pathError) {
+            [self reportError:pathError generation:generation];
+            return;
+        }
         if (lock != PartialDownloadLock::Result::Acquired && !hasSavedModel) {
             [self reportError:lock == PartialDownloadLock::Result::Busy
                 ? @"Another Bawan instance is preparing the model. Pause it or wait for it to finish, then try again."
@@ -427,10 +469,15 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     dispatch_async(_verificationQueue, ^{
         @autoreleasepool {
             NSString *reason = nil;
+            struct stat verified {};
             const Verification result = VerifyModel(url, self->_generation, generation,
-                self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp, &reason);
+                self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp, verified, &reason);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (self->_generation.load() != generation || result == Verification::Cancelled) return;
+                if (result == Verification::Collision && !downloaded) {
+                    [self reportError:ModelPathCollision generation:generation];
+                    return;
+                }
                 if (result != Verification::Valid) {
                     NSString *failureReason = reason ?: @"Model verification failed.";
                     if (downloaded) {
@@ -439,8 +486,11 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                         else
                             failureReason = [failureReason stringByAppendingString:@" The partial download was discarded."];
                     } else if (result == Verification::Invalid) {
-                        if (![self->_files removeItemAtURL:url error:nil])
-                            failureReason = @"Unable to remove the invalid model file. Check the folder permissions.";
+                        NSString *cleanupError = RemoveInvalidSavedModel(url, verified);
+                        if (cleanupError) {
+                            [self reportError:cleanupError generation:generation];
+                            return;
+                        }
                     }
                     [self reportError:[failureReason stringByAppendingString:@" Please try again to download the model."]
                            generation:generation];
@@ -448,7 +498,8 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                 }
                 if (downloaded) {
                     if (![self->_files moveItemAtURL:url toURL:destination error:nil]) {
-                        [self reportError:@"Unable to save the verified model. Check the folder permissions and try again."
+                        NSString *pathError = CheckSavedModelPath(destination);
+                        [self reportError:pathError ?: @"Unable to save the verified model. Check the folder permissions and try again."
                                generation:generation];
                         return;
                     }
