@@ -131,10 +131,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)modelFileDidBecomeReady:(NSURL *)fileURL {
     _model.fileReady(fileURL);
-    if (_pendingText) {
-        NSString *text = _pendingText;
-        [self translateText:text direction:_pendingDirection];
-    } else if (_warmUpWhenAvailable) {
+    if (![self submitPendingTranslationIfReady] && _warmUpWhenAvailable) {
         [self warmUpEngine];
     }
     [self updateStatus];
@@ -207,9 +204,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 // still downloading. The translator shows preparation and translates once ready.
 - (void)finishOnboardingFromShortcuts {
     if (!_model.canFinishSetup()) return;
-    [self markOnboardingComplete];
-    [_translationPanel showForManualInput];
-    [self warmUpEngine];
+    [self enterTranslatorFromOnboarding];
+    if (!_busy) [self warmUpEngine];
 }
 
 // Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
@@ -218,8 +214,13 @@ static NSString *StringFromUTF8(const std::string &text) {
         [_translationPanel close];
         return;
     }
+    [self enterTranslatorFromOnboarding];
+}
+
+- (void)enterTranslatorFromOnboarding {
     [self markOnboardingComplete];
     [_translationPanel showForManualInput];
+    [self submitPendingTranslationIfReady];
 }
 
 - (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
@@ -452,16 +453,27 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_engine) _engine->warmUp();
 }
 
+- (void)queueTranslation:(NSString *)text direction:(bawan::Direction)direction {
+    _pendingText = [text copy];
+    _pendingDirection = direction;
+    _activeRequestId = 0;
+    _busy = YES;
+    [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
+    [self updateStatus];
+}
+
+- (BOOL)submitPendingTranslationIfReady {
+    if (!_pendingText || ![self hasVerifiedModelFile] || [self needsOnboarding]) return NO;
+    NSString *text = _pendingText;
+    [self translateText:text direction:_pendingDirection];
+    return YES;
+}
+
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
     if (_terminating) return;
     if (![self hasVerifiedModelFile]) {
         if ([self modelFailed]) { [self updateStatus]; return; }
-        _pendingText = [text copy];
-        _pendingDirection = direction;
-        _activeRequestId = 0;
-        _busy = YES;
-        [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-        [self updateStatus];
+        [self queueTranslation:text direction:direction];
         return;
     }
     [self markOnboardingComplete];
@@ -530,7 +542,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if ([self needsOnboarding]) {
         if (_model.canEnterTranslator()) {
             [self finishOnboarding];
-            [self warmUpEngine];
+            if (!_busy) [self warmUpEngine];
         } else {
             [self showOnboarding];
         }
@@ -542,7 +554,9 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleSelectionText:(NSString *)text {
     [_translationPanel showForSelection:text];
-    if (_model.setupNotStarted()) {
+    const BOOL needsOnboarding = [self needsOnboarding];
+    if (needsOnboarding || _model.setupNotStarted()) {
+        if (needsOnboarding && ![self modelFailed]) [self queueTranslation:text direction:bawan::Direction::Automatic];
         [self showOnboarding];
         return;
     }
@@ -595,6 +609,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];
+    if ([self needsOnboarding]) {
+        __weak AppDelegate *weakSelf = self;
+        _settingsViewController.onBack = ^{ [weakSelf showOnboarding]; };
+    }
 }
 
 - (void)refreshSettings {

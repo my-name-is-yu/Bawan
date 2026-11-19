@@ -11,6 +11,7 @@
 #include <sys/xattr.h>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
@@ -36,7 +37,22 @@
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 @end
 
-@interface SetupSmokeDelegate : AppDelegate
+@interface SmokeAppDelegate : AppDelegate
+@end
+
+@implementation SmokeAppDelegate
+- (void)buildMenus {
+    // Exercise menu presentation without registering a system status item.
+    for (NSString *key in @[@"modelItem", @"retryItem", @"shortcutItem", @"panelShortcutItem"]) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""];
+        [self setValue:item forKey:key];
+    }
+    [[self valueForKey:@"shortcutItem"] setTag:static_cast<NSInteger>(bawan::ShortcutAction::TranslateSelection)];
+    [[self valueForKey:@"panelShortcutItem"] setTag:static_cast<NSInteger>(bawan::ShortcutAction::OpenPanel)];
+}
+@end
+
+@interface SetupSmokeDelegate : SmokeAppDelegate
 @property(nonatomic) BOOL allowLicense;
 @property(nonatomic) NSUInteger licenseViews;
 @property(nonatomic) NSUInteger warmUps;
@@ -53,6 +69,13 @@
     ++_settingsRefreshes;
     [super refreshSettings];
 }
+@end
+
+@interface SelectionSetupSmokeDelegate : SmokeAppDelegate
+@end
+
+@implementation SelectionSetupSmokeDelegate
+- (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion { completion(YES); }
 @end
 
 @interface SetupSmokeStore : ModelStore
@@ -481,6 +504,155 @@ static NSEvent *SetupKey(NSWindow *window, NSString *characters, NSEventModifier
         characters:characters charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 }
 
+static void CheckFirstRunSelection(void) {
+    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, Edit, Cancel, Close,
+                        ExistingUserDeclined };
+    for (Change change : {Change::None, Change::ReadyBeforeFinish, Change::ReadyBeforeReplacement,
+            Change::NewSelection, Change::Edit, Change::Cancel, Change::Close, Change::ExistingUserDeclined}) {
+        NSString *suite = [@"local.bawan.FirstSelectionSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+        SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+        const BOOL existingUser = change == Change::ExistingUserDeclined;
+        AppDelegate *delegate = existingUser ? [[SetupSmokeDelegate alloc] init] : [[SelectionSetupSmokeDelegate alloc] init];
+        if (existingUser) [defaults setBool:YES forKey:@"firstLaunchShown"];
+        TranslationPanel *panel = [[TranslationPanel alloc] init];
+        [delegate setValue:defaults forKey:@"defaults"];
+        [delegate setValue:preferences forKey:@"shortcutPreferences"];
+        [delegate setValue:monitor forKey:@"shortcut"];
+        [delegate setValue:store forKey:@"modelStore"];
+        [delegate setValue:panel forKey:@"translationPanel"];
+        [delegate buildMenus];
+        __weak AppDelegate *weakDelegate = delegate;
+        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
+        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
+        @try {
+            [delegate startInitialSetup];
+            NSWindow *window = panel.window;
+            if (existingUser) {
+                [delegate handleSelectionText:@"A selection before model consent"];
+                Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    !Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
+                    store.preparations == 0,
+                    @"Declining model consent must leave returning users out of the busy state");
+                continue;
+            }
+            [delegate openSettings:nil];
+            Require([window.contentView.identifier isEqualToString:@"bawan-settings"],
+                @"Settings must open before the first selection");
+            [window cancelOperation:nil];
+            Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                ![defaults boolForKey:@"firstLaunchShown"],
+                @"Back from Settings must return to unfinished onboarding without a queued selection");
+            [delegate handleSelectionText:@"The first selected sentence"];
+            Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                Flag(delegate, @"busy") &&
+                [[delegate valueForKey:@"pendingText"] isEqualToString:@"The first selected sentence"] &&
+                store.preparations == 0 &&
+                [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                @"First-run selection must queue before guidance without preparing a model before consent");
+            NSString *expectedSource = @"The first selected sentence";
+            if (change == Change::NewSelection) {
+                expectedSource = @"The latest selected sentence";
+                [delegate handleSelectionText:expectedSource];
+            } else if (change == Change::Close) {
+                [window cancelOperation:nil];
+                Require(!window.visible && [delegate valueForKey:@"pendingText"] == nil,
+                    @"Closing unfinished guidance must cancel its queued selection");
+                [delegate startInitialSetup];
+            }
+            NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+            [primary performClick:nil];
+            Require(store.preparations == 1 && [defaults boolForKey:@"modelLicenseNoticeShown20261109"],
+                @"Accepting model setup must start preparation for the queued selection");
+            const bool readyBeforeFinish = change == Change::ReadyBeforeFinish ||
+                change == Change::ReadyBeforeReplacement;
+            if (readyBeforeFinish) {
+                for (int readiness = 0; readiness < 2; ++readiness) {
+                    SetAvailableModel(delegate);
+                    Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                        [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                        [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                        @"Model readiness must preserve the selection and leave unfinished onboarding open without inference");
+                }
+            }
+            if (change == Change::ReadyBeforeFinish) {
+                [delegate openSettings:nil];
+                Require([window.contentView.identifier isEqualToString:@"bawan-settings"],
+                    @"Settings must open while a selection is waiting for first-run guidance");
+                [window cancelOperation:nil];
+                Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                    [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                    @"Back from Settings must return to unfinished guidance without consuming the selection");
+            }
+            if (change == Change::ReadyBeforeReplacement) {
+                expectedSource = @"A newer selection after the model is ready";
+                [delegate handleSelectionText:expectedSource];
+                Require(![defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    [[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource] &&
+                    [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                    @"A newer selection must replace the pending text without bypassing unfinished onboarding");
+            }
+            [primary performClick:nil];
+            Require([defaults boolForKey:@"firstLaunchShown"] &&
+                [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
+                ([[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] != 0) == readyBeforeFinish,
+                @"Finishing guidance must start inference only if the model is already ready");
+            NSTextView *source = (NSTextView *)FindView(window.contentView, @"source");
+            NSTextView *output = (NSTextView *)FindView(window.contentView, @"output");
+            NSButton *translate = (NSButton *)FindView(window.contentView, @"translate");
+            Require(source && output && translate && [source.string isEqualToString:expectedSource],
+                @"Guidance must restore the latest selected source in the real translator");
+            if (change == Change::Edit) {
+                expectedSource = @"An edited sentence waiting for an explicit translation";
+                [source insertText:expectedSource replacementRange:NSMakeRange(0, source.string.length)];
+            } else if (change == Change::Cancel) {
+                [translate performClick:nil];
+            }
+            const BOOL shouldTranslate = change == Change::None || readyBeforeFinish || change == Change::NewSelection;
+            if (!readyBeforeFinish) {
+                if (shouldTranslate) {
+                    Require([[delegate valueForKey:@"pendingText"] isEqualToString:expectedSource],
+                        @"Only the latest surviving selection may be submitted when the model becomes ready");
+                } else {
+                    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil,
+                        @"Editing, cancelling or closing must discard the first-run selection before readiness");
+                }
+                SetAvailableModel(delegate);
+            }
+            ScopedEngineCallbackSuppression callbacks(delegate);
+            const uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+            Require((request != 0) == shouldTranslate && Flag(delegate, @"busy") == shouldTranslate &&
+                [delegate valueForKey:@"pendingText"] == nil && [source.string isEqualToString:expectedSource] &&
+                output.string.length == 0,
+                @"Finishing setup and model readiness must submit only the surviving selection and consume the queue");
+            SetAvailableModel(delegate);
+            Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
+                @"Repeated readiness must not submit the first-run selection a second time");
+            if (shouldTranslate) {
+                bawan::EngineEvent complete{bawan::EngineEvent::Kind::Complete, request, "Selected sentence translated",
+                    false, bawan::Direction::EnglishToJapanese};
+                [delegate handleEngineEvent:complete];
+                Require([output.string isEqualToString:@"Selected sentence translated"] && !Flag(delegate, @"busy"),
+                    @"The automatic request's completion must display its translation without a manual Translate action");
+                SetAvailableModel(delegate);
+                Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0 &&
+                    [output.string isEqualToString:@"Selected sentence translated"],
+                    @"Later readiness must preserve the completed translation without replaying the selection");
+            }
+        } @finally {
+            [panel close];
+            [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+            [defaults removePersistentDomainForName:suite];
+        }
+    }
+}
+
 static void CheckFirstRunIntegration(void) {
     NSString *suite = [@"local.bawan.FirstRunSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
@@ -497,6 +669,7 @@ static void CheckFirstRunIntegration(void) {
     [delegate setValue:panel forKey:@"translationPanel"];
     [delegate buildMenus];
     __weak SetupSmokeDelegate *weakDelegate = delegate;
+    panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
     panel.onClose = ^{ [weakDelegate cancelTranslation]; };
     __block NSUInteger translations = 0;
     panel.onTranslate = ^(NSString *, bawan::Direction) { ++translations; };
@@ -513,9 +686,10 @@ static void CheckFirstRunIntegration(void) {
         [delegate handleSelectionText:@"A selection waiting for setup"];
         Require(panel.currentPage == BawanPanelPageOnboarding &&
             [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
-            !Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
+            Flag(delegate, @"busy") &&
+            [[delegate valueForKey:@"pendingText"] isEqualToString:@"A selection waiting for setup"] &&
             store.preparations == 0 && delegate.licenseViews == 0,
-            @"A selection before model consent must show setup without entering an unstarted busy queue");
+            @"A selection before model consent must queue for translation and show setup without starting preparation");
         [panel showForManualInput];
         Require(panel.currentPage == BawanPanelPageTranslation &&
             [source.string isEqualToString:@"A selection waiting for setup"],
@@ -693,8 +867,8 @@ static void CheckModelLicenseSheet(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
     SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-    // A plain AppDelegate keeps the real license presentation.
-    AppDelegate *delegate = [[AppDelegate alloc] init];
+    // Keep the real license presentation.
+    AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
@@ -736,16 +910,26 @@ static void CheckModelLicenseSheet(void) {
     }
 }
 
-int main() {
+int main(int argc, const char *argv[]) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        if (argc == 2 && std::string(argv[1]) == "--first-run-selection") {
+            try {
+                CheckFirstRunSelection();
+                std::cout << "PASS: first-run selection translation, replacement, editing, cancellation and no replay\n";
+                return EXIT_SUCCESS;
+            } catch (const std::exception &error) {
+                std::cerr << "FAIL: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
         NSString *suite = [@"local.bawan.AppDelegateSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         [defaults removePersistentDomainForName:suite];
         [defaults setBool:YES forKey:@"firstLaunchShown"];
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
-        AppDelegate *delegate = [[AppDelegate alloc] init];
+        AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
         [delegate setValue:defaults forKey:@"defaults"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:panel forKey:@"translationPanel"];
@@ -766,9 +950,10 @@ int main() {
                 CheckWarmUpFailure(delegate);
                 CheckModelStatusPresentation(delegate, panel);
                 CheckModelRevalidationOnRetry(delegate);
+                CheckFirstRunSelection();
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
-                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run navigation and the license sheet\n";
+                std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run selection translation, first-run navigation and the license sheet\n";
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
                 result = EXIT_FAILURE;
