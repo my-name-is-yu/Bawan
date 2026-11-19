@@ -47,7 +47,6 @@ using namespace bawan::engine;
 - (void)startInitialSetup;
 - (void)showOnboarding;
 - (void)beginModelSetup;
-- (void)finishOnboarding;
 - (void)finishOnboardingFromShortcuts;
 - (void)openTranslation:(id)sender;
 - (void)openSettings:(id)sender;
@@ -1364,7 +1363,6 @@ static void CheckModelLicenseSheet(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
     SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-    // Keep the real license presentation.
     SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
