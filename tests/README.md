@@ -355,3 +355,59 @@ redirects, native rendering, physical UI interaction, and disk/power failure
 recovery remain unverified until those checks are performed. No full model or
 model-backed inference smoke is required for the fixture suite. The repository
 has no CI workflow; opening a PR does not establish native validation.
+
+## Issue #34: onboarding selection shortcut practice
+
+The `onboarding` smoke covers the selectable sample's visibility for selection
+availability, custom keys and press counts, successful/failed completion, pending
+request invalidation, revisits, and pending/completed layout captures. Availability
+or selecting the text alone must leave the footer at Set Up Later.
+
+`shortcut_monitor` routes real CGEvents through the production gesture recognizer
+with a focused sample. It covers passive Copy and custom bindings, configuration
+isolation, exact selection, duplicate release handling, and stale asynchronous
+delivery after selection, binding, focus or permission changes. It does not install
+an OS event tap or establish physical-key delivery.
+
+The focused native integration check is registered as `onboarding_selection_trial`:
+
+```sh
+./build-check/app_delegate_smoke --selection-trial
+# Or: ctest --test-dir build-check -R '^(onboarding|onboarding_selection_trial|shortcut_monitor)$' --output-on-failure
+```
+
+It creates real engine requests, then controls terminal callbacks to verify request
+identity, empty/truncated/error/cancelled results, no premature onboarding completion,
+queued preparation, duplicate firing, binding/permission/page changes, and exact
+source/result/direction handoff to the translator. It also runs in the default
+`app_delegate_smoke`. Controlled callbacks do not establish model quality.
+The practice fixtures dispatch queued `NSApplication` events for up to one
+second before requiring actual key ownership. They report activation, panel and
+responder state if that prerequisite fails. The AppDelegate executable explicitly
+finishes AppKit launch before constructing windows; production panel policy and
+trial focus guards are unchanged.
+
+Current-trial validity queries must not refresh presentation. The onboarding smoke
+checks zero refreshes from those queries, one explicit refresh followed by a query
+without another refresh, and stale completion rejection after live binding,
+permission or enabled-state changes before any presentation refresh.
+
+The selection trial smoke also queues an external selection, starts practice, and
+skips both before and after the model becomes ready. The external source must
+translate exactly once; a late practice result must not replace that translation.
+
+The AppDelegate trial smoke also delivers one legacy availability callback during
+a queued trial: unchanged state or a panel binding change preserves it, while a
+selection binding change or permission loss cancels it. Every case expects one onboarding
+refresh and retains the Settings refresh. Cancelled trials reject late results
+and cannot resume when the model becomes ready.
+
+Verification on 2026-11-17: Linux x86_64, GCC 14.2, Release with
+`BAWAN_WARNINGS_AS_ERRORS=ON`, using
+`./scripts/check.sh -DBAWAN_BUILD_APP=OFF -DBAWAN_BUILD_SMOKE=ON` (CMake installed
+under `/tmp/bawan-tools` on this cloud host). The portable build and all four
+portable CTests pass. `git diff --check` passes. The changed AppKit sources and
+native tests cannot be compiled or run on Linux; the native checks above, actual
+permission changes, physical shortcuts, macOS rendering and real-model trial
+remain unverified. No successful native result from the prerequisite #47 branch
+is implied by these portable results.

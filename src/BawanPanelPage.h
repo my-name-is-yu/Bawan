@@ -9,6 +9,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)refresh;
 // The page's footer primary action, also bound to ⌘Return like the translator's.
 - (void)performPrimaryAction;
+@optional
+- (void)willLeavePanelPage;
 @end
 
 NS_ASSUME_NONNULL_END

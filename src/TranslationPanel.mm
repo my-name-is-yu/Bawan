@@ -332,6 +332,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         if (showingPage) {
             if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
             [_page setActive:NO];
+            if ([_page respondsToSelector:@selector(willLeavePanelPage)]) [_page willLeavePanelPage];
         } else {
             _translationResponder = _panel.firstResponder;
             [_mascot resetHoverAnimation];
@@ -359,6 +360,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     if (![self isShowingPage]) return;
     if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
     [_page setActive:NO];
+    if ([_page respondsToSelector:@selector(willLeavePanelPage)]) [_page willLeavePanelPage];
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;

@@ -2,6 +2,7 @@
 #import "TranslationPanel.h"
 #import "ModelStore.h"
 #import "OnboardingViewController.h"
+#import "SettingsViewController.h"
 #import "BawanAppearance.h"
 
 #include <cmath>
@@ -11,21 +12,25 @@
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
 - (void)updateStatus;
+- (void)updateShortcutItem;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
 - (void)warmUpEngine;
 - (void)ensureEngine;
 - (void)cancelTranslation;
+- (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection;
 - (void)retryModel:(id)sender;
 - (void)performModelAction:(id)sender;
 - (void)modelDownloadStateDidChange:(ModelStoreState)state;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 - (void)handleSelectionText:(NSString *)text;
+- (void)handleSelectionTrialText:(NSString *)text;
 - (void)handleShortcutProblem:(NSString *)message;
 - (void)modelFileDidProgress:(double)progress message:(NSString *)message;
 - (void)modelFileDidBecomeReady:(NSURL *)fileURL;
@@ -34,10 +39,12 @@
 - (void)showOnboarding;
 - (void)beginModelSetup;
 - (void)finishOnboarding;
+- (void)finishOnboardingFromShortcuts;
 - (void)openTranslation:(id)sender;
 - (void)openSettings:(id)sender;
 - (void)refreshSettings;
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
+- (void)shortcutPreferencesDidChange:(NSNotification *)notification;
 @end
 
 @interface SmokeAppDelegate : AppDelegate
@@ -83,6 +90,39 @@
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion { completion(YES); }
 @end
 
+@interface TrialRefreshSmokeDelegate : SelectionSetupSmokeDelegate
+@property(nonatomic) NSUInteger cancellations;
+@end
+
+@implementation TrialRefreshSmokeDelegate
+- (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection {
+    ++_cancellations;
+    [super cancelTranslationKeepingPendingSelection:keepSelection];
+}
+@end
+
+@interface TrialRefreshSmokeController : OnboardingViewController
+@property(nonatomic) NSUInteger refreshes;
+@end
+
+@implementation TrialRefreshSmokeController
+- (void)refresh {
+    ++_refreshes;
+    [super refresh];
+}
+@end
+
+@interface TrialRefreshSmokeSettings : SettingsViewController
+@property(nonatomic) NSUInteger refreshes;
+@end
+
+@implementation TrialRefreshSmokeSettings
+- (void)refresh {
+    ++_refreshes;
+    [super refresh];
+}
+@end
+
 @interface SetupSmokeStore : ModelStore
 @property(nonatomic) NSUInteger preparations;
 @property(nonatomic) NSUInteger revalidations;
@@ -118,6 +158,7 @@
 
 @interface SetupSmokeMonitor : ShortcutMonitor
 @property(nonatomic) NSUInteger permissionRequests;
+@property(nonatomic) BOOL selectionAvailable;
 @end
 
 @implementation SetupSmokeMonitor
@@ -126,7 +167,8 @@
 - (void)refresh {}
 - (ShortcutAvailability)availabilityForAction:(bawan::ShortcutAction)action {
     return action == bawan::ShortcutAction::TranslateSelection ?
-        ShortcutAvailabilityNeedsInputMonitoring : ShortcutAvailabilityNeedsAccessibility;
+        (_selectionAvailable ? ShortcutAvailabilityAvailable : ShortcutAvailabilityNeedsInputMonitoring) :
+        ShortcutAvailabilityNeedsAccessibility;
 }
 - (void)requestPermissionForAction:(bawan::ShortcutAction)action { ++_permissionRequests; }
 @end
@@ -680,6 +722,349 @@ static void CheckFirstRunSelection(void) {
     }
 }
 
+static void ServiceQueuedAppEvents(NSWindow *window) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:1.0];
+    unsigned dispatched = 0;
+    while ((!NSApp.active || !window.isKeyWindow) && deadline.timeIntervalSinceNow > 0) {
+        NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+            untilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]
+            inMode:NSDefaultRunLoopMode dequeue:YES];
+        if (event) { [NSApp sendEvent:event]; ++dispatched; }
+        [window makeKeyWindow];
+    }
+    std::cerr << "APP EVENTS dispatched=" << dispatched
+        << " appActive=" << NSApp.active
+        << " runningAppActive=" << NSRunningApplication.currentApplication.active
+        << " key=" << window.isKeyWindow << "\n";
+}
+
+static void CheckSelectionTrial(void) {
+    using Kind = bawan::EngineEvent::Kind;
+    enum class Case { Success, LaterExternalSelection, FocusChange, ColdLoadFailure,
+                      Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
+                      Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
+                      CallbackNone, CallbackPanelBinding,
+                      CallbackSelectionBinding, CallbackPermission };
+    for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
+            Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
+            Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
+            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
+        const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
+            scenario == Case::SkipActiveWithSelection;
+        const BOOL checkRefreshes = scenario == Case::CallbackPanelBinding || scenario == Case::CallbackSelectionBinding ||
+            scenario == Case::CallbackNone || scenario == Case::CallbackPermission;
+        NSString *suite = [@"local.bawan.SelectionTrialSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+        [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+        monitor.selectionAvailable = YES;
+        SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+        SelectionSetupSmokeDelegate *delegate = checkRefreshes ? [[TrialRefreshSmokeDelegate alloc] init] :
+            [[SelectionSetupSmokeDelegate alloc] init];
+        TrialRefreshSmokeController *refreshOnboarding = nil;
+        TrialRefreshSmokeSettings *refreshSettings = nil;
+        if (checkRefreshes) {
+            refreshOnboarding = [[TrialRefreshSmokeController alloc] initWithPreferences:preferences monitor:monitor];
+            refreshSettings = [[TrialRefreshSmokeSettings alloc] initWithPreferences:preferences monitor:monitor];
+            [delegate setValue:refreshOnboarding forKey:@"onboardingViewController"];
+            [delegate setValue:refreshSettings forKey:@"settingsViewController"];
+        }
+        TranslationPanel *panel = [[TranslationPanel alloc] init];
+        // Programmatic fixture actions have no mouse hit to request panel keyboard focus.
+        ((NSPanel *)panel.window).becomesKeyOnlyIfNeeded = NO;
+        [delegate setValue:defaults forKey:@"defaults"];
+        [delegate setValue:preferences forKey:@"shortcutPreferences"];
+        [delegate setValue:monitor forKey:@"shortcut"];
+        [delegate setValue:store forKey:@"modelStore"];
+        [delegate setValue:panel forKey:@"translationPanel"];
+        [delegate buildMenus];
+        __weak AppDelegate *weakDelegate = delegate;
+        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
+        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
+        if (checkRefreshes) {
+            refreshOnboarding.onFinish = ^{ [weakDelegate finishOnboardingFromShortcuts]; };
+            monitor.onAvailabilityChanged = ^{ [weakDelegate updateShortcutItem]; };
+        }
+        std::unique_ptr<ScopedEngineCallbackSuppression> callbacks;
+        @try {
+            [panel showForSelection:@"Previous source"];
+            NSTextView *source = (NSTextView *)FindView(panel.window.contentView, @"source");
+            NSTextView *output = (NSTextView *)FindView(panel.window.contentView, @"output");
+            NSTextField *status = (NSTextField *)FindView(panel.window.contentView, @"status");
+            if (skipWithSelection) [delegate handleSelectionText:@"A selection from another app"];
+            [delegate startInitialSetup];
+            const BOOL queued = scenario == Case::Queued || scenario == Case::QueuedInvalidated ||
+                skipWithSelection || checkRefreshes;
+            if (!queued) {
+                SetAvailableModel(delegate);
+                callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
+            }
+            NSWindow *window = panel.window;
+            OnboardingViewController *onboarding = [delegate valueForKey:@"onboardingViewController"];
+            NSTextView *sample = (NSTextView *)FindView(window.contentView, @"onboarding-trial-sample");
+            NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+            NSTextField *trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
+            Require(sample && primary && trialStatus && !sample.hiddenOrHasHiddenAncestor,
+                @"An available selection shortcut must offer its sample even if Open Translator needs permission");
+            ServiceQueuedAppEvents(window);
+            [onboarding setActive:YES];
+            BOOL acceptedFocus = [window makeFirstResponder:sample];
+            [window makeKeyWindow];
+            sample.selectedRange = NSMakeRange(0, sample.string.length);
+            Require(acceptedFocus && window.canBecomeKeyWindow && window.visible && window.isKeyWindow &&
+                NSApp.keyWindow == window && window.firstResponder == sample,
+                [NSString stringWithFormat:@"Selection-trial fixture cannot own keyboard focus: acceptedFocus=%d canKey=%d visible=%d key=%d appKey=%@ active=%d running=%d policy=%ld menu=%@ responder=%@ sampleAcceptsFocus=%d sampleNeedsKey=%d panelKeyOnlyIfNeeded=%d",
+                    acceptedFocus, window.canBecomeKeyWindow, window.visible, window.isKeyWindow, NSApp.keyWindow,
+                    NSApp.active, NSApp.running, (long)NSApp.activationPolicy, NSApp.mainMenu, window.firstResponder,
+                    sample.acceptsFirstResponder, sample.needsPanelToBecomeKey,
+                    ((NSPanel *)window).becomesKeyOnlyIfNeeded]);
+            Require([primary.title hasPrefix:@"Set Up Later"] && !onboarding.selectionTrialComplete &&
+                ![defaults boolForKey:@"firstLaunchShown"],
+                @"Selecting the practice sentence and enabling permissions must not complete the trial or onboarding");
+            [delegate handleSelectionTrialText:sample.string];
+            uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+            Require(Flag(delegate, @"busy") && !onboarding.selectionTrialComplete &&
+                [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                [primary.title hasPrefix:@"Set Up Later"] && ![defaults boolForKey:@"firstLaunchShown"],
+                @"A real sample callback must start translation while keeping unfinished onboarding visible");
+            [delegate handleSelectionTrialText:sample.string];
+            Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == request,
+                @"A duplicate sample callback must not replace or replay a pending trial");
+            if (skipWithSelection) {
+                uint64_t trialRequest = 0;
+                if (scenario == Case::SkipActiveWithSelection) {
+                    SetAvailableModel(delegate);
+                    callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
+                    trialRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                    Require(trialRequest != 0 && ![defaults boolForKey:@"firstLaunchShown"] &&
+                        [window.contentView.identifier isEqualToString:@"bawan-onboarding"],
+                        @"Readiness must start the practice request without finishing guidance");
+                }
+                [primary performClick:nil];
+                if (scenario == Case::SkipQueuedWithSelection) {
+                    Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
+                        @"Skipping before readiness must not start inference");
+                    SetAvailableModel(delegate);
+                    callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
+                }
+                const uint64_t ordinaryRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                Require([defaults boolForKey:@"firstLaunchShown"] &&
+                    [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
+                    [source.string isEqualToString:@"A selection from another app"] &&
+                    ordinaryRequest != 0 && ordinaryRequest != trialRequest,
+                    @"Skipping a practice trial must submit the original external selection once the model is ready");
+                if (trialRequest) {
+                    bawan::EngineEvent stale{Kind::Complete, trialRequest, "Late practice output", false,
+                        bawan::Direction::EnglishToJapanese};
+                    [delegate handleEngineEvent:stale];
+                    Require(output.string.length == 0 && !onboarding.selectionTrialComplete,
+                        @"A skipped trial must not overwrite the ordinary translation with a late result");
+                }
+                SetAvailableModel(delegate);
+                Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == ordinaryRequest,
+                    @"Duplicate readiness must not submit the ordinary selection again");
+                bawan::EngineEvent complete{Kind::Complete, ordinaryRequest, "External selection translated", false,
+                    bawan::Direction::EnglishToJapanese};
+                [delegate handleEngineEvent:complete];
+                Require([output.string isEqualToString:@"External selection translated"],
+                    @"The original external selection's result must appear in the translator");
+                continue;
+            }
+            if (queued) {
+                Require(request == 0 && [[delegate valueForKey:@"pendingTrialText"] isEqualToString:sample.string],
+                    @"A trial during preparation must retain its selected sample until the model is ready");
+                if (checkRefreshes) {
+                    const NSUInteger attempt = [[delegate valueForKey:@"selectionTrialAttempt"] unsignedIntegerValue];
+                    Require(attempt && [onboarding isSelectionTrialCurrent:attempt] &&
+                        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                        @"The state callback fixture must own a live queued trial before inference starts");
+                    refreshOnboarding.refreshes = 0;
+                    refreshSettings.refreshes = 0;
+                    TrialRefreshSmokeDelegate *countingDelegate = (TrialRefreshSmokeDelegate *)delegate;
+                    countingDelegate.cancellations = 0;
+                    if (scenario == Case::CallbackPermission) {
+                        monitor.selectionAvailable = NO;
+                    } else if (scenario != Case::CallbackNone) {
+                        const auto action = scenario == Case::CallbackPanelBinding ? bawan::ShortcutAction::OpenPanel :
+                            bawan::ShortcutAction::TranslateSelection;
+                        auto binding = [preferences bindingForAction:action];
+                        binding.pressCount = 1;
+                        NSString *error = nil;
+                        Require([preferences setBinding:binding forAction:action error:&error],
+                            @"The state callback fixture must apply its requested shortcut change");
+                    }
+                    Require(monitor.onAvailabilityChanged != nil, @"The legacy availability callback must be installed");
+                    monitor.onAvailabilityChanged();
+                    const BOOL keepTrial = scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding;
+                    Require(refreshOnboarding.refreshes == 1 && refreshSettings.refreshes == 1 &&
+                        countingDelegate.cancellations == (keepTrial ? 0u : 1u),
+                        [NSString stringWithFormat:@"One shortcut state callback must refresh onboarding and Settings once, cancelling only an invalid trial: case=%d onboarding=%lu settings=%lu cancellations=%lu",
+                            (int)scenario, (unsigned long)refreshOnboarding.refreshes,
+                            (unsigned long)refreshSettings.refreshes, (unsigned long)countingDelegate.cancellations]);
+                    Require(Flag(delegate, @"busy") == keepTrial &&
+                        [onboarding isSelectionTrialCurrent:attempt] == keepTrial &&
+                        [[delegate valueForKey:@"selectionTrialAttempt"] unsignedIntegerValue] == (keepTrial ? attempt : 0) &&
+                        ![defaults boolForKey:@"firstLaunchShown"] && !onboarding.selectionTrialComplete &&
+                        [primary.title hasPrefix:@"Set Up Later"],
+                        @"Only a change to the selection shortcut may invalidate its queued trial; no state callback may finish onboarding");
+                    if (keepTrial) {
+                        Require([[delegate valueForKey:@"pendingTrialText"] isEqualToString:sample.string],
+                            @"Unchanged selection state must preserve the queued practice sentence");
+                    } else {
+                        Require([delegate valueForKey:@"pendingTrialText"] == nil &&
+                            ![onboarding finishSelectionTrial:attempt output:@"Late state callback output"
+                                direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
+                            @"Cancelling an invalid trial must clear its queue and reject the old result");
+                        const BOOL hiddenTrial = scenario != Case::CallbackSelectionBinding;
+                        Require(sample.hiddenOrHasHiddenAncestor == hiddenTrial &&
+                            (hiddenTrial ? monitor.selectionTrialView == nil : monitor.selectionTrialView == sample),
+                            @"The same callback must update practice visibility and monitor ownership for the new selection state");
+                        if (!hiddenTrial) {
+                            NSTextField *instructions = (NSTextField *)FindView(window.contentView, @"onboarding-trial-instructions");
+                            Require([instructions.stringValue containsString:@"once"],
+                                @"A changed selection binding must update the practice instructions in that refresh");
+                        }
+                        SetAvailableModel(delegate);
+                        Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingTrialText"] == nil &&
+                            [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0 &&
+                            [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0,
+                            @"Later model readiness must not submit a trial invalidated by a shortcut state callback");
+                        continue;
+                    }
+                }
+                if (scenario == Case::QueuedInvalidated) {
+                    [panel showForManualInput];
+                    [delegate showOnboarding];
+                }
+                SetAvailableModel(delegate);
+                if (scenario == Case::QueuedInvalidated) {
+                    Require(!Flag(delegate, @"busy") && [delegate valueForKey:@"pendingTrialText"] == nil &&
+                        [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue] == 0 &&
+                        !onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
+                        @"A page departure must discard a queued trial before model readiness can submit it");
+                    continue;
+                }
+                callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
+                request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                Require(request != 0 && [delegate valueForKey:@"pendingTrialText"] == nil,
+                    @"Model readiness must submit the surviving trial without leaving onboarding");
+            }
+            Require(request != 0, @"The practice fixture must start a real engine request");
+            bawan::EngineEvent wrong{Kind::Complete, request + 1, "Wrong request output", false,
+                bawan::Direction::EnglishToJapanese};
+            bawan::EngineEvent partial{Kind::Text, request, "Partial output", false,
+                bawan::Direction::EnglishToJapanese};
+            bawan::EngineEvent ready{Kind::Ready, 0, {}};
+            [delegate handleEngineEvent:wrong];
+            [delegate handleEngineEvent:partial];
+            [delegate handleEngineEvent:ready];
+            Require(!onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"] &&
+                [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                ![defaults boolForKey:@"firstLaunchShown"],
+                @"A different request, partial output and model readiness must never count as a successful trial");
+            if (scenario == Case::ColdLoadFailure) {
+                bawan::EngineEvent loadError{Kind::Error, 0, "Could not load the practice model"};
+                bawan::EngineEvent requestError{Kind::Error, request, "The practice request did not run"};
+                [delegate handleEngineEvent:loadError];
+                [delegate handleEngineEvent:requestError];
+                Require(!Flag(delegate, @"busy") && !onboarding.selectionTrialComplete &&
+                    [status.stringValue isEqualToString:@"Could not load the practice model"],
+                    @"A cancelled practice request must leave the model's load error visible");
+                continue;
+            }
+            if (scenario == Case::Binding) {
+                auto binding = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+                binding.keyCode = 2;
+                binding.modifiers = bawan::Option;
+                NSString *error = nil;
+                Require([preferences setBinding:binding forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+                    @"The trial's selection binding must be changeable during inference");
+                [delegate shortcutPreferencesDidChange:nil];
+            } else if (scenario == Case::Permission) {
+                monitor.selectionAvailable = NO;
+                [delegate applicationDidBecomeActive:[NSNotification
+                    notificationWithName:NSApplicationDidBecomeActiveNotification object:NSApp]];
+            } else if (scenario == Case::Revisit) {
+                [panel showForManualInput];
+                Require(!Flag(delegate, @"busy") && status.hidden,
+                    @"Leaving the trial page must cancel inference without a translator cancellation message");
+                [delegate showOnboarding];
+            } else if (scenario == Case::Skip) {
+                [primary performClick:nil];
+                Require(status.hidden,
+                    @"Skipping active practice must not show a translator cancellation message");
+            } else if (scenario == Case::FocusChange) {
+                [onboarding setActive:NO];
+                Require(Flag(delegate, @"busy") && monitor.selectionTrialView == nil,
+                    @"Losing focus must disarm the shortcut while allowing the current trial to finish");
+            }
+            const BOOL success = scenario == Case::Success || scenario == Case::Queued ||
+                scenario == Case::LaterExternalSelection || scenario == Case::FocusChange ||
+                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding;
+            const BOOL terminalFailure = scenario == Case::Truncated || scenario == Case::Empty ||
+                scenario == Case::Error || scenario == Case::Cancelled;
+            Kind kind = scenario == Case::Error ? Kind::Error :
+                scenario == Case::Cancelled ? Kind::Cancelled : Kind::Complete;
+            std::string result = scenario == Case::Empty ? " \n" : "小さな一歩が、新しい世界を開く。";
+            bawan::EngineEvent terminal{kind, request, result, scenario == Case::Truncated,
+                bawan::Direction::EnglishToJapanese};
+            [delegate handleEngineEvent:terminal];
+            if (!success) {
+                Require(!onboarding.selectionTrialComplete && !Flag(delegate, @"busy") &&
+                    (scenario == Case::Skip || [primary.title hasPrefix:@"Set Up Later"]),
+                    @"Failed, truncated, empty, invalidated and skipped trials must never show completion");
+                Require([defaults boolForKey:@"firstLaunchShown"] == (scenario == Case::Skip),
+                    @"Only explicitly skipping the trial may finish onboarding without a successful translation");
+                if (terminalFailure) {
+                    Require(!trialStatus.hidden && trialStatus.stringValue.length,
+                        @"A failed practice translation must explain that the shortcut can be tried again");
+                }
+                continue;
+            }
+            Require(onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Start Translating"] &&
+                !trialStatus.hidden && [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                ![defaults boolForKey:@"firstLaunchShown"] && !Flag(delegate, @"busy"),
+                @"Only the exact successful request may complete the trial; Finish remains an explicit user action");
+            if (scenario == Case::FocusChange) [onboarding setActive:YES];
+            if (scenario == Case::LaterExternalSelection) {
+                // Clipboard selections remain ordinary requests even when the text matches the sample.
+                NSString *later = sample.string;
+                [delegate handleSelectionText:later];
+                Require(!onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
+                    @"A later external selection must supersede a finished trial");
+                [primary performClick:nil];
+                const uint64_t ordinaryRequest = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
+                Require(ordinaryRequest != 0 && ordinaryRequest != request &&
+                    [source.string isEqualToString:later] && output.string.length == 0,
+                    @"Finishing setup must submit the later external selection instead of restoring the sample");
+                continue;
+            }
+            [delegate handleEngineEvent:terminal];
+            [delegate handleSelectionTrialText:sample.string];
+            Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
+                @"Repeated completion and sample triggers must not replay a successful trial");
+            [primary performClick:nil];
+            NSButton *swap = (NSButton *)FindView(window.contentView, @"swap");
+            Require([defaults boolForKey:@"firstLaunchShown"] &&
+                [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
+                [source.string isEqualToString:sample.string] &&
+                [output.string isEqualToString:@"小さな一歩が、新しい世界を開く。"] && swap.enabled,
+                @"Start Translating must hand the exact practice source and completed result to the real translator");
+            __block bawan::Direction reversed = bawan::Direction::Automatic;
+            panel.onTranslate = ^(NSString *, bawan::Direction direction) { reversed = direction; };
+            [swap performClick:nil];
+            Require(reversed == bawan::Direction::JapaneseToEnglish,
+                @"The handed-off result must retain its resolved direction for Swap");
+        } @finally {
+            callbacks.reset();
+            [panel close];
+            [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+            [defaults removePersistentDomainForName:suite];
+        }
+    }
+}
+
 static void CheckFirstRunIntegration(void) {
     NSString *suite = [@"local.bawan.FirstRunSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
@@ -1043,11 +1428,25 @@ static void CheckDownloadActions(void) {
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        if (![NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]) {
+            std::cerr << "FAIL: AppKit smoke fixture could not use accessory activation policy\n";
+            return EXIT_FAILURE;
+        }
+        [NSApp finishLaunching];
         if (argc == 2 && std::string(argv[1]) == "--first-run-selection") {
             try {
                 CheckFirstRunSelection();
                 std::cout << "PASS: first-run selection translation, replacement, editing, cancellation and no replay\n";
+                return EXIT_SUCCESS;
+            } catch (const std::exception &error) {
+                std::cerr << "FAIL: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+        if (argc == 2 && std::string(argv[1]) == "--selection-trial") {
+            try {
+                CheckSelectionTrial();
+                std::cout << "PASS: onboarding selection trial success, failure, stale requests, changes and result handoff\n";
                 return EXIT_SUCCESS;
             } catch (const std::exception &error) {
                 std::cerr << "FAIL: " << error.what() << '\n';
@@ -1081,6 +1480,7 @@ int main(int argc, const char *argv[]) {
                 CheckModelStatusPresentation(delegate, panel);
                 CheckModelRevalidationOnRetry(delegate);
                 CheckFirstRunSelection();
+                CheckSelectionTrial();
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
                 CheckDownloadActions();

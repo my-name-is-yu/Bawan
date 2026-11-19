@@ -195,6 +195,9 @@ if(BAWAN_BUILD_TESTS)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
+        add_test(NAME onboarding_selection_trial COMMAND app_delegate_smoke --selection-trial)
+        set_tests_properties(onboarding_selection_trial PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
         add_executable(mascot_smoke tests/mascot_smoke.mm)
         target_link_libraries(mascot_smoke PRIVATE bawan_ui_test)
         add_test(NAME mascot_hover COMMAND mascot_smoke)

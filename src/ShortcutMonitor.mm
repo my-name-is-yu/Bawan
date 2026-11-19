@@ -21,6 +21,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     bawan::ShortcutMonitorState _state;
     bawan::ShortcutKeyOwnership _keys;
     bool _passiveSelection;
+    __weak NSTextView *_selectionTrialView;
     CFMachPortRef _passiveTap;
     CFMachPortRef _activeTap;
     CFRunLoopSourceRef _passiveSource;
@@ -34,6 +35,7 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
 - (void)configureGestures;
 - (void)applyPreferences;
 - (void)loadBindings;
+- (NSTextView *)activeSelectionTrialView;
 - (BOOL)installTapActive:(BOOL)active;
 - (void)removeTapActive:(BOOL)active;
 @end
@@ -165,6 +167,26 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     [self cancelPending];
     [self configureGestures];
     [self refresh];
+}
+
+- (NSTextView *)selectionTrialView { return _selectionTrialView; }
+- (void)setSelectionTrialView:(NSTextView *)view {
+    if (_selectionTrialView == view) return;
+    _selectionTrialView = view;
+    [self cancelPending];
+    [self configureGestures];
+}
+
+- (NSTextView *)activeSelectionTrialView {
+    if (_state.mode() != bawan::ShortcutMonitorState::Mode::Configuration) return nil;
+    NSTextView *view = _selectionTrialView;
+    NSWindow *window = view.window;
+    const NSUInteger length = view.string.length;
+    if (!view || view.hiddenOrHasHiddenAncestor || !window.isKeyWindow || !window.visible ||
+        window.firstResponder != view || !length ||
+        !NSEqualRanges(view.selectedRange, NSMakeRange(0, length)) || !_bindings[selectionIndex].enabled ||
+        [self availabilityForAction:bawan::ShortcutAction::TranslateSelection] != ShortcutAvailabilityAvailable) return nil;
+    return view;
 }
 
 - (BOOL)installTapActive:(BOOL)active {
@@ -310,7 +332,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     NSWindow *keyWindow = NSApp.keyWindow;
     const bool nativeCommand = keyWindow.isKeyWindow && keyWindow.visible &&
         bawan::isNativeWindowShortcut(key, modifiers);
-    if (!_state.running() || nativeCommand) {
+    NSTextView *trialView = [self activeSelectionTrialView];
+    if ((!_state.running() || nativeCommand) && !trialView) {
         if (_state.configurationActive() || nativeCommand) {
             [self cancelPending];
             [self configureGestures];
@@ -332,6 +355,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self cancelPending];
     }
     for (unsigned i = 0; i < _bindings.size(); ++i) {
+        if (trialView && i != selectionIndex) continue;
         const bool passive = i == selectionIndex && _passiveSelection;
         if (!_bindings[i].enabled || passive == static_cast<bool>(active)) continue;
         if (ownership.drainingDown) continue;
@@ -342,11 +366,25 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
             ++_actionGeneration;
             [_selectionReader cancel];
             _keys.cancelCopy();
-            if (passive) [_selectionReader beginCopyFromApplication:application passive:YES];
+            if (passive && !trialView) [_selectionReader beginCopyFromApplication:application passive:YES];
         }
         if (!result.triggered) continue;
         if (i == selectionIndex) {
-            if (passive) {
+            if (trialView) {
+                const NSUInteger generation = ++_actionGeneration;
+                const NSRange selected = trialView.selectedRange;
+                NSString *source = [trialView.string copy];
+                __weak ShortcutMonitor *weakSelf = self;
+                __weak NSTextView *weakView = trialView;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    ShortcutMonitor *self = weakSelf;
+                    NSTextView *view = weakView;
+                    if (!self || !view || generation != self->_actionGeneration ||
+                        [self activeSelectionTrialView] != view ||
+                        !NSEqualRanges(view.selectedRange, selected) || ![view.string isEqualToString:source]) return;
+                    if (self.onSelectionTrial) self.onSelectionTrial(source);
+                });
+            } else if (passive) {
                 [_selectionReader readSelection];
             } else {
                 ++_actionGeneration;
