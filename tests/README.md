@@ -106,9 +106,52 @@ chmod +x .git/hooks/pre-push
 ```
 
 Run the model-backed command separately there as well. The native CTests cover
-preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four
+preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the five
 portable checks. CI was intentionally removed in `babb935`; native validation
 must not be assumed to happen automatically after opening a PR.
+
+## Issue #46: progress and UTF-8 regressions
+
+`short_input_tests` defines a 1–5 word Latin-script heuristic, not a language
+detector. It accepts ASCII and Latin-1 letters (excluding ×/÷), Latin Extended-A/B
+and Latin Extended Additional. U+0300–036F accents may follow a Latin letter or
+another attached accent. ASCII digits join words, but numbers alone do not qualify.
+The letter ranges follow the Unicode charts for
+[Latin-1](https://www.unicode.org/charts/PDF/U0080.pdf),
+[Extended-A](https://www.unicode.org/charts/PDF/U0100.pdf),
+[Extended-B](https://www.unicode.org/charts/PDF/U0180.pdf) and
+[Extended Additional](https://www.unicode.org/charts/PDF/U1E00.pdf).
+
+Printable ASCII, Unicode spaces, U+2010–2027/U+2030–205E typography, and the
+explicit Latin-1/common symbol set in `ShortInput.h` separate words. Apostrophes
+and hyphens join only adjacent alphanumerics; repeated connectors break words.
+Thus `café-au-lait` counts as one, while bullets, quotes and multiplication signs
+cannot conceal a sixth word. Japanese (including halfwidth kana and supplementary
+kanji), other scripts, emoji, controls/format characters, detached accents and
+invalid/incomplete UTF-8 return zero. All previous exclusions remain except the
+intentional acceptance of accented Latin text and the expanded separator set.
+
+`utf8_tests` exercises the production decoder and prefix used by TranslationEngine:
+valid scalar boundaries, invalid leads/continuations, overlong encodings,
+surrogates, out-of-range values, and impossible partial tails. Every byte cut of
+mixed 1–4 byte text must end at the last complete scalar; resumed and single-byte
+token streams must preserve the complete text and Japanese detection. Potentially
+valid incomplete output waits for another token; incomplete input is rejected.
+`engine_smoke` additionally checks accented short translations, public input
+rejection without output, and recovery.
+
+Native `model_setup_state`, `settings_navigation` and `onboarding` checks cover
+known 0/fraction/1 progress, unknown engine loading as `std::nullopt`, and restored
+progress after loading ends. These require macOS; a portable build cannot verify
+the Objective-C++ signatures or the AppKit indicator behavior.
+
+Verified for #46 on Linux x86_64/GCC 14.2: Release build with
+`BAWAN_WARNINGS_AS_ERRORS=ON`, all five portable CTests, and the full real-model
+`engine_smoke` passed using the pinned model/revision/SHA256 above. Accented cases
+produced `カフェ` and `カフェで会いましょう。`. Direct builds of `short_input_tests`
+(82 cases) and `utf8_tests` also passed ASan/UBSan. The new short-input tests fail
+against unchanged main at `café`. Native build, model progress/Settings/onboarding
+tests, AppKit rendering and Metal inference remain unverified on this host.
 
 ## Verification for this review
 

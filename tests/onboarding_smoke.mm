@@ -269,6 +269,11 @@ static void RunSmoke(void) {
         [primary performClick:nil];
         Require(setups == 3 && finishes == 1, @"Retry must reach setup without finishing onboarding");
 
+        [onboarding setModelPhase:BawanModelSetupPreparing message:BawanModelLoadingStatus progress:std::nullopt];
+        Settle(window);
+        Require(IsShown(shortcutStep) && primary.enabled && [note.stringValue isEqualToString:BawanModelLoadingStatus],
+            @"Indeterminate engine loading must keep onboarding available and show its status");
+
         // Once the shortcut works, the same footer action simply starts translating.
         [onboarding setModelPhase:BawanModelSetupReady message:BawanModelReadyStatus progress:1];
         monitor.permissionsGranted = YES;
