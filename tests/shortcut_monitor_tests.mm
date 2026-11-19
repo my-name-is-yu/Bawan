@@ -25,15 +25,32 @@
 @property(nonatomic) unsigned reads;
 @property(nonatomic) unsigned cancellations;
 @property(nonatomic) BOOL lastPassive;
+@property(nonatomic, strong) SelectionResult *resultToDeliver;
+@property(nonatomic) NSUInteger resultGeneration;
 @end
 @implementation RoutingSelectionReader
 - (void)beginCopyFromApplication:(pid_t)application passive:(BOOL)passive {
     (void)application;
     ++_begins;
+    ++_resultGeneration;
     _lastPassive = passive;
 }
-- (void)readSelection { ++_reads; }
-- (void)cancel { ++_cancellations; }
+- (void)readSelection {
+    ++_reads;
+    SelectionResult *result = _resultToDeliver;
+    if (!result) return;
+    const NSUInteger generation = _resultGeneration;
+    __weak RoutingSelectionReader *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        RoutingSelectionReader *self = weakSelf;
+        if (!self || generation != self.resultGeneration) return;
+        if (self.onResult) self.onResult(result);
+    });
+}
+- (void)cancel {
+    ++_cancellations;
+    ++_resultGeneration;
+}
 @end
 
 @interface RoutingActions : NSObject
@@ -108,25 +125,44 @@ static void postWorkspaceNotification(NSNotificationName name) {
 
 static void testSelectionCallbacks() {
     RoutingFixture fixture;
-    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@"No listener"]);
-    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@"No listener"]);
-    __block NSString *selectedText;
-    __block NSString *problem;
+    fixture.selection();
+    NSMutableArray<SelectionResult *> *results = [NSMutableArray array];
     fixture.monitor.onSelection = ^(SelectionResult *result) {
-        require(NSThread.isMainThread, "selection callback runs on the main thread");
-        if (result.kind == SelectionResultKindText) selectedText = result.text;
-        else if (result.kind == SelectionResultKindProblem) problem = result.text;
+        [results addObject:result];
     };
-    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@"Selected sentence"]);
-    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@"Copy failed"]);
-    require([selectedText isEqualToString:@"Selected sentence"], "reader text reaches the monitor callback");
-    require([problem isEqualToString:@"Copy failed"], "reader problem reaches the monitor callback");
-    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@""]);
-    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@""]);
-    require([selectedText isEqualToString:@""] && [problem isEqualToString:@""], "callbacks preserve empty payloads");
-    fixture.monitor.onSelection = nil;
-    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@"No listener"]);
-    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@"No listener"]);
+    auto gesture = [&](SelectionResultKind kind, NSString *text) {
+        fixture.reader.resultToDeliver = [[SelectionResult alloc] initWithKind:kind text:text];
+        const unsigned reads = fixture.reader.reads;
+        require(route(fixture.monitor, kCGEventKeyDown, 8, kCGEventFlagMaskCommand), "selection gesture captures Copy down");
+        require(fixture.reader.reads == reads, "selection gesture waits for Copy release");
+        require(route(fixture.monitor, kCGEventKeyUp, 8, 0), "selection gesture captures Copy release");
+        require(fixture.reader.reads == reads + 1, "completed selection gesture starts exactly one read");
+    };
+    for (SelectionResultKind kind : {SelectionResultKindText, SelectionResultKindProblem}) {
+        NSString *text = kind == SelectionResultKindText ? @"Selected sentence" : @"Copy failed";
+        gesture(kind, text);
+        require(results.count == 0, "reader completion remains pending after the gesture");
+        settle();
+        require(results.count == 1 && results[0].kind == kind && [results[0].text isEqualToString:text],
+                "completed selection gesture delivers exactly one matching result");
+        [results removeAllObjects];
+    }
+    gesture(SelectionResultKindText, @"Stopped selection");
+    [fixture.monitor stop];
+    settle();
+    require(results.count == 0, "stopping cancels a pending reader result");
+    [fixture.monitor start];
+    gesture(SelectionResultKindText, @"Suspended selection");
+    fixture.monitor.suspended = YES;
+    settle();
+    require(results.count == 0, "suspending cancels a pending reader result");
+    fixture.monitor.suspended = NO;
+    gesture(SelectionResultKindText, @"Superseded selection");
+    gesture(SelectionResultKindText, @"Newest selection");
+    settle();
+    require(results.count == 1 && results[0].kind == SelectionResultKindText &&
+            [results[0].text isEqualToString:@"Newest selection"],
+            "a newer selection gesture cancels the old result and delivers only its own");
 }
 
 static void testHeldKeyReconfiguration() {
