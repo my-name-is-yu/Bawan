@@ -603,8 +603,11 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
-    if (_translationPanel.currentPage == BawanPanelPageSettings) [self refreshSettings];
-    else [_shortcut refresh];
+    if (_translationPanel.window.visible && _translationPanel.currentPage == BawanPanelPageSettings) {
+        [self refreshSettings];
+    } else {
+        [_shortcut refresh];
+    }
     [_onboardingViewController refresh];
 }
 

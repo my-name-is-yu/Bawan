@@ -32,6 +32,7 @@
 - (void)finishOnboarding;
 - (void)openTranslation:(id)sender;
 - (void)openSettings:(id)sender;
+- (void)refreshSettings;
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 @end
 
@@ -39,6 +40,7 @@
 @property(nonatomic) BOOL allowLicense;
 @property(nonatomic) NSUInteger licenseViews;
 @property(nonatomic) NSUInteger warmUps;
+@property(nonatomic) NSUInteger settingsRefreshes;
 @end
 
 @implementation SetupSmokeDelegate
@@ -47,6 +49,10 @@
     completion(_allowLicense);
 }
 - (void)warmUpEngine { ++_warmUps; }
+- (void)refreshSettings {
+    ++_settingsRefreshes;
+    [super refreshSettings];
+}
 @end
 
 @interface SetupSmokeStore : ModelStore
@@ -608,6 +614,16 @@ static void CheckFirstRunIntegration(void) {
             FindView(window.contentView, @"onboarding-title") == nil,
             @"Everyday Settings must be a separate page, without permanent first-run guidance");
         NSView *settingsContent = window.contentView;
+        NSNotification *activated = [NSNotification notificationWithName:NSApplicationDidBecomeActiveNotification
+            object:NSApp];
+        const NSUInteger refreshes = delegate.settingsRefreshes;
+        [delegate applicationDidBecomeActive:activated];
+        Require(delegate.settingsRefreshes == refreshes + 1, @"Activation must refresh visible Settings");
+        [window orderOut:nil];
+        Require(panel.currentPage == BawanPanelPageSettings && !window.visible,
+            @"Ordering the window out must keep Settings selected");
+        [delegate applicationDidBecomeActive:activated];
+        Require(delegate.settingsRefreshes == refreshes + 1, @"Activation must leave hidden Settings unchanged");
         [delegate openSettings:nil];
         Require(panel.currentPage == BawanPanelPageSettings && window.contentView == settingsContent,
             @"Reopening Settings must retain its selected page and content");
