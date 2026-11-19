@@ -2,17 +2,17 @@
 
 @implementation MemoryProbe {
     NSString *_directory;
-    __weak id<MemoryProbeHost> _host;
+    NSDictionary<NSString *, NSString *(^)(void)> *_commands;
     NSTimer *_timer;
 }
 
-+ (instancetype)probeWithEnvironment:(NSDictionary *)environment host:(id<MemoryProbeHost>)host {
-    NSString *directory = environment[@"BAWAN_MEMORY_PROBE"];
-    if (!directory.length) return nil;
-    MemoryProbe *probe = [[self alloc] init];
-    probe->_directory = [directory copy];
-    probe->_host = host;
-    return probe;
+- (instancetype)initWithDirectory:(NSString *)directory commands:(NSDictionary<NSString *, NSString *(^)(void)> *)commands {
+    self = [super init];
+    if (self) {
+        _directory = [directory copy];
+        _commands = [commands copy];
+    }
+    return self;
 }
 
 - (void)start {
@@ -37,23 +37,8 @@
     NSString *command = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
     if (!command) return;
     [NSFileManager.defaultManager removeItemAtPath:path error:nil];
-    id<MemoryProbeHost> host = _host;
-    if ([command isEqualToString:@"translation"]) [host memoryProbeShowTranslationPanel];
-    else if ([command isEqualToString:@"settings"]) [host openSettings:nil];
-    else if ([command isEqualToString:@"setup"]) [host showOnboarding];
-    else if ([command isEqualToString:@"close"]) [host memoryProbeClosePanel];
-    else if ([command isEqualToString:@"prepare"]) [host prepareModel];
-    else if ([command isEqualToString:@"model"]) {
-        [self write:[host hasVerifiedModelFile] ? @"ready" :
-            ([host modelFailed] ? @"error" : @"waiting") name:@"reply"];
-        return;
-    } else if ([command isEqualToString:@"translate"]) {
-        [host translateText:@"Hello. How are you?" direction:bawan::Direction::EnglishToJapanese];
-    } else if (![command isEqualToString:@"ping"]) {
-        [self write:@"error" name:@"reply"];
-        return;
-    }
-    [self write:@"ok" name:@"reply"];
+    NSString *(^action)(void) = _commands[command];
+    [self write:action ? action() : @"error" name:@"reply"];
 }
 
 - (void)recordEngineEvent:(bawan::EngineEvent::Kind)kind {

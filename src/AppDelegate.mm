@@ -15,7 +15,7 @@
 
 enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning };
 
-@interface AppDelegate () <NSMenuDelegate, MemoryProbeHost> {
+@interface AppDelegate () <NSMenuDelegate> {
     NSStatusItem *_statusItem;
     NSMenuItem *_modelItem;
     NSMenuItem *_shortcutItem;
@@ -42,6 +42,7 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     StatusOwner _statusOwner;
     BawanModelState _model;
     MemoryProbe *_memoryProbe;
+    bawan::LaunchMode _launchMode;
 }
 @end
 
@@ -51,9 +52,14 @@ static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown2
 @implementation AppDelegate
 
 - (instancetype)init {
+    return [self initWithLaunchMode:bawan::InteractiveLaunch{}];
+}
+
+- (instancetype)initWithLaunchMode:(bawan::LaunchMode)mode {
     self = [super init];
     if (self) {
         _defaults = NSUserDefaults.standardUserDefaults;
+        _launchMode = std::move(mode);
     }
     return self;
 }
@@ -127,16 +133,35 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
-    _memoryProbe = [MemoryProbe probeWithEnvironment:NSProcessInfo.processInfo.environment host:self];
-    if (_memoryProbe) {
+    if (const auto *probe = std::get_if<bawan::MemoryProbeLaunch>(&_launchMode)) {
+        _memoryProbe = [[MemoryProbe alloc] initWithDirectory:probe->directory commands:@{
+            @"ping": ^NSString *{ return @"ok"; },
+            @"translation": ^NSString *{
+                AppDelegate *owner = weakSelf;
+                if (owner) [owner->_translationPanel showForManualInput];
+                return @"ok";
+            },
+            @"close": ^NSString *{
+                AppDelegate *owner = weakSelf;
+                if (owner) [owner->_translationPanel close];
+                return @"ok";
+            },
+            @"settings": ^NSString *{ [weakSelf openSettings:nil]; return @"ok"; },
+            @"setup": ^NSString *{ [weakSelf showOnboarding]; return @"ok"; },
+            @"prepare": ^NSString *{ [weakSelf prepareModel]; return @"ok"; },
+            @"translate": ^NSString *{
+                [weakSelf translateText:@"Hello. How are you?" direction:bawan::Direction::EnglishToJapanese];
+                return @"ok";
+            },
+            @"model": ^NSString *{
+                return [weakSelf hasVerifiedModelFile] ? @"ready" : ([weakSelf modelFailed] ? @"error" : @"waiting");
+            }
+        }];
         [_memoryProbe start];
     } else {
         [self startInitialSetup];
     }
 }
-
-- (void)memoryProbeShowTranslationPanel { [_translationPanel showForManualInput]; }
-- (void)memoryProbeClosePanel { [_translationPanel close]; }
 
 - (void)modelDownloadStateDidChange:(ModelStoreState)state {
     switch (state) {
@@ -178,7 +203,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateStatus];
 }
 
-- (BOOL)needsOnboarding { return !_memoryProbe && ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
+- (BOOL)needsOnboarding { return std::holds_alternative<bawan::InteractiveLaunch>(_launchMode) && ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
 
 - (void)markOnboardingComplete {
     if ([self needsOnboarding]) [_defaults setBool:YES forKey:BawanOnboardingCompletedKey];

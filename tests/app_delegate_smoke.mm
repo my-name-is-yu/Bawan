@@ -1495,51 +1495,52 @@ static void CheckDownloadActions(void) {
     }
 }
 
-@interface MemoryProbeTestHost : NSObject <MemoryProbeHost>
-@property(nonatomic, copy) NSString *action;
-@property(nonatomic) BOOL ready;
-@property(nonatomic) BOOL failed;
-@end
-
-@implementation MemoryProbeTestHost
-- (void)memoryProbeShowTranslationPanel { self.action = @"translation"; }
-- (void)openSettings:(id)sender { self.action = @"settings"; }
-- (void)showOnboarding { self.action = @"setup"; }
-- (void)memoryProbeClosePanel { self.action = @"close"; }
-- (void)prepareModel { self.action = @"prepare"; }
-- (BOOL)hasVerifiedModelFile { return self.ready; }
-- (BOOL)modelFailed { return self.failed; }
-- (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
-    self.action = [text isEqualToString:@"Hello. How are you?"] &&
-        direction == bawan::Direction::EnglishToJapanese ? @"translate" : @"invalid";
+static NSString *ProbeCommand(NSString *directory, NSString *command) {
+    NSString *reply = [directory stringByAppendingPathComponent:@"reply"];
+    [NSFileManager.defaultManager removeItemAtPath:reply error:nil];
+    [command writeToFile:[directory stringByAppendingPathComponent:@"command"]
+        atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    WaitFor([&] { return [NSFileManager.defaultManager fileExistsAtPath:reply]; },
+        @"Probe command must reply before timeout");
+    Require(![NSFileManager.defaultManager fileExistsAtPath:[directory stringByAppendingPathComponent:@"command"]],
+        @"Commands must be consumed once");
+    return [NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil];
 }
-@end
 
 static void CheckMemoryProbe(void) {
-    MemoryProbeTestHost *host = [[MemoryProbeTestHost alloc] init];
-    Require(![MemoryProbe probeWithEnvironment:@{} host:host], @"Missing probe environment must disable probing");
-    Require(![MemoryProbe probeWithEnvironment:@{@"BAWAN_MEMORY_PROBE": @""} host:host],
-        @"Empty probe environment must disable probing");
+    Require(std::holds_alternative<bawan::InteractiveLaunch>(bawan::LaunchModeFromEnvironment(@{})),
+        @"Missing probe environment must select interactive launch");
+    Require(std::holds_alternative<bawan::InteractiveLaunch>(
+        bawan::LaunchModeFromEnvironment(@{@"BAWAN_MEMORY_PROBE": @""})),
+        @"Empty probe environment must select interactive launch");
     NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    auto mode = bawan::LaunchModeFromEnvironment(@{@"BAWAN_MEMORY_PROBE": directory});
+    Require(std::holds_alternative<bawan::MemoryProbeLaunch>(mode) &&
+        [std::get<bawan::MemoryProbeLaunch>(mode).directory isEqualToString:directory],
+        @"Nonempty probe environment must preserve the probe directory");
     Require([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:NO
         attributes:nil error:nil], @"Probe fixture directory must be created");
-    MemoryProbe *probe = [MemoryProbe probeWithEnvironment:@{@"BAWAN_MEMORY_PROBE": directory} host:host];
-    Require(probe != nil, @"Nonempty probe environment must enable probing");
-    NSString *command = [directory stringByAppendingPathComponent:@"command"];
+    __block NSUInteger calls = 0;
+    MemoryProbe *probe = [[MemoryProbe alloc] initWithDirectory:directory commands:@{
+        @"ping": ^NSString *{ ++calls; return @"ok"; },
+        @"model": ^NSString *{ return @"waiting"; },
+        @"ready": ^NSString *{ return @"ready"; },
+        @"failed": ^NSString *{ return @"error"; }
+    }];
+    [probe start];
     NSString *reply = [directory stringByAppendingPathComponent:@"reply"];
     NSString *engine = [directory stringByAppendingPathComponent:@"engine"];
     @try {
-        [probe tick];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
         Require(![NSFileManager.defaultManager fileExistsAtPath:reply], @"No command must produce no reply");
-        for (NSString *value in @[@"ping", @"", @"unknown", @"model"]) {
-            [value writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            [probe tick];
+        for (NSString *value in @[@"ping", @"", @"unknown", @"model", @"ready", @"failed"]) {
             NSString *expected = [value isEqualToString:@"ping"] ? @"ok" :
-                ([value isEqualToString:@"model"] ? @"waiting" : @"error");
-            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
-                isEqualToString:expected], @"Probe commands must acknowledge success, waiting, and errors");
-            Require(![NSFileManager.defaultManager fileExistsAtPath:command], @"Commands must be consumed once");
+                ([value isEqualToString:@"model"] ? @"waiting" : ([value isEqualToString:@"ready"] ? @"ready" : @"error"));
+            Require([ProbeCommand(directory, value) isEqualToString:expected],
+                @"Probe commands must acknowledge success, waiting, readiness, and errors");
         }
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+        Require(calls == 1, @"Consumed commands must not dispatch again");
         for (auto kind : {bawan::EngineEvent::Kind::Complete, bawan::EngineEvent::Kind::Idle,
                           bawan::EngineEvent::Kind::Error, bawan::EngineEvent::Kind::Cancelled}) {
             [probe recordEngineEvent:kind];
@@ -1548,38 +1549,74 @@ static void CheckMemoryProbe(void) {
             Require([[NSString stringWithContentsOfFile:engine encoding:NSUTF8StringEncoding error:nil]
                 isEqualToString:expected], @"Probe must expose completion, actual unload, and engine errors");
         }
-        for (NSString *value in @[@"translation", @"settings", @"setup", @"close", @"prepare", @"translate"]) {
-            [value writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            [probe tick];
-            Require([host.action isEqualToString:value], @"Probe must dispatch each host action unchanged");
-            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
-                isEqualToString:@"ok"], @"Host actions must acknowledge success");
-            host.action = nil;
-            [probe tick];
-            Require(host.action == nil, @"Consumed commands must not dispatch again");
-        }
-        for (NSString *expected in @[@"ready", @"error"]) {
-            host.ready = [expected isEqualToString:@"ready"];
-            host.failed = !host.ready;
-            [@"model" writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            [probe tick];
-            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
-                isEqualToString:expected], @"Probe must report model readiness and failure");
-        }
         [NSFileManager.defaultManager removeItemAtPath:engine error:nil];
         for (auto kind : {bawan::EngineEvent::Kind::Loading, bawan::EngineEvent::Kind::Ready,
                           bawan::EngineEvent::Kind::Text}) [probe recordEngineEvent:kind];
         Require(![NSFileManager.defaultManager fileExistsAtPath:engine], @"Nonterminal events must not write engine state");
         __weak MemoryProbe *weakProbe;
         @autoreleasepool {
-            MemoryProbe *scheduled = [MemoryProbe probeWithEnvironment:@{@"BAWAN_MEMORY_PROBE": directory} host:host];
+            MemoryProbe *scheduled = [[MemoryProbe alloc] initWithDirectory:directory commands:@{}];
             weakProbe = scheduled;
             [scheduled start];
         }
         Require(!weakProbe, @"The scheduled timer must not retain its probe");
     } @finally {
+        probe = nil;
         [NSFileManager.defaultManager removeItemAtPath:directory error:nil];
     }
+}
+
+static void CheckMemoryProbeIntegration(void) {
+    NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    Require([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:NO
+        attributes:nil error:nil], @"Integration probe directory must be created");
+    for (BOOL probing : {YES, NO}) {
+        NSString *suite = [@"local.bawan.ProbeIntegration." stringByAppendingString:NSUUID.UUID.UUIDString];
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+        [defaults removePersistentDomainForName:suite];
+        bawan::LaunchMode mode = probing ? bawan::LaunchMode{bawan::MemoryProbeLaunch{directory}} :
+            bawan::LaunchMode{bawan::InteractiveLaunch{}};
+        SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] initWithLaunchMode:mode];
+        [delegate setValue:defaults forKey:@"defaults"];
+        Require(Flag(delegate, @"needsOnboarding") == !probing,
+            @"Onboarding must depend on launch mode before the probe exists");
+        @try {
+            [delegate applicationDidFinishLaunching:
+                [NSNotification notificationWithName:NSApplicationDidFinishLaunchingNotification object:NSApp]];
+            TranslationPanel *panel = [delegate valueForKey:@"translationPanel"];
+            if (probing) {
+                Require(!panel.window.visible && ![delegate valueForKey:@"onboardingViewController"] &&
+                    [delegate valueForKey:@"memoryProbe"] && !Flag(delegate, @"needsOnboarding") &&
+                    !Flag(delegate, @"hasVerifiedModelFile") && delegate.licenseViews == 0,
+                    @"Probe launch must skip setup and onboarding");
+                Require([ProbeCommand(directory, @"ping") isEqualToString:@"ok"], @"Wired ping must acknowledge success");
+                Require([ProbeCommand(directory, @"unknown") isEqualToString:@"error"], @"Wired unknown command must fail");
+                Require([ProbeCommand(directory, @"model") isEqualToString:@"waiting"], @"Probe launch must not prepare the model");
+                Require([ProbeCommand(directory, @"translation") isEqualToString:@"ok"] &&
+                    panel.window.visible && panel.currentPage == BawanPanelPageTranslation,
+                    @"Wired translation command must show the real panel");
+                Require([ProbeCommand(directory, @"close") isEqualToString:@"ok"] && !panel.window.visible,
+                    @"Wired close command must hide the real panel");
+                [delegate handleEngineEvent:{bawan::EngineEvent::Kind::Idle, 0, ""}];
+                Require([[NSString stringWithContentsOfFile:[directory stringByAppendingPathComponent:@"engine"]
+                    encoding:NSUTF8StringEncoding error:nil] isEqualToString:@"idle"],
+                    @"Delegate engine events must reach the probe file");
+                Require([ProbeCommand(directory, @"setup") isEqualToString:@"ok"] &&
+                    panel.currentPage == BawanPanelPageOnboarding, @"Wired setup must show onboarding explicitly");
+            } else {
+                Require(panel.window.visible && panel.currentPage == BawanPanelPageOnboarding &&
+                    [delegate valueForKey:@"onboardingViewController"] && Flag(delegate, @"needsOnboarding") &&
+                    ![delegate valueForKey:@"memoryProbe"], @"Interactive launch must run initial onboarding");
+            }
+            Require(![defaults boolForKey:@"firstLaunchShown"], @"Probe and interactive startup must not complete onboarding");
+        } @finally {
+            [[delegate valueForKey:@"translationPanel"] close];
+            [delegate applicationWillTerminate:
+                [NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+            [defaults removePersistentDomainForName:suite];
+        }
+    }
+    [NSFileManager.defaultManager removeItemAtPath:directory error:nil];
 }
 
 int main(int argc, const char *argv[]) {
@@ -1626,6 +1663,7 @@ int main(int argc, const char *argv[]) {
             try {
                 CheckPendingSelection(delegate, panel);
                 CheckMemoryProbe();
+                CheckMemoryProbeIntegration();
                 CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);
