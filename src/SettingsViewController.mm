@@ -523,7 +523,7 @@ struct SettingsShortcutRow {
     }
 }
 
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
     BOOL changed = _modelPhase != phase || ![_modelHint.stringValue isEqualToString:message];
     _modelPhase = phase;
     const BawanModelPresentation presentation = BawanPresentModel(phase);
@@ -534,8 +534,9 @@ struct SettingsShortcutRow {
     _modelSetup.hidden = presentation.actionTitle.length == 0;
     _modelSetup.title = presentation.actionTitle;
     _modelProgress.hidden = phase != BawanModelSetupPreparing;
-    _modelProgress.indeterminate = !std::isfinite(progress) || progress < 0;
-    _modelProgress.doubleValue = std::isfinite(progress) ? std::clamp(progress, 0.0, 1.0) : 0;
+    const bool determinate = progress && std::isfinite(*progress);
+    _modelProgress.indeterminate = !determinate;
+    _modelProgress.doubleValue = determinate ? std::clamp(*progress, 0.0, 1.0) : 0;
     [self updateModelProgressAnimation];
     _modelHint.stringValue = message;
     _modelHint.hidden = message.length == 0 || phase == BawanModelSetupReady;

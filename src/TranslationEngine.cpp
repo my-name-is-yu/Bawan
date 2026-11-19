@@ -1,5 +1,6 @@
 #include "TranslationEngine.h"
 #include "TranslationPrompt.h"
+#include "Utf8.h"
 
 #include "llama.h"
 
@@ -8,11 +9,13 @@
 #include <chrono>
 #include <climits>
 #include <condition_variable>
+#include <cstdio>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bawan {
@@ -25,6 +28,43 @@ constexpr std::size_t kContextGranularity = 256;
 constexpr const char * kUnsupportedModel = "This PLaMo model is not supported.";
 constexpr const char * kUnexpectedError = "An unexpected translation error occurred.";
 
+const char * eventName(EngineEvent::Kind kind) noexcept {
+    switch (kind) {
+        case EngineEvent::Kind::Loading: return "Loading";
+        case EngineEvent::Kind::Ready: return "Ready";
+        case EngineEvent::Kind::Idle: return "Idle";
+        case EngineEvent::Kind::Text: return "Text";
+        case EngineEvent::Kind::Complete: return "Complete";
+        case EngineEvent::Kind::Cancelled: return "Cancelled";
+        case EngineEvent::Kind::Error: return "Error";
+    }
+    return "Unknown";
+}
+
+void logCallbackFailure(EngineEvent::Kind kind, std::uint64_t id, const char * message) noexcept {
+    // Use a fixed buffer and C stdio so diagnostics cannot throw or reenter
+    // the callback. Bound and escape details to prevent forged log entries.
+    constexpr std::size_t limit = 256;
+    constexpr char hex[] = "0123456789ABCDEF";
+    char detail[limit * 4 + 1];
+    std::size_t consumed = 0;
+    std::size_t size = 0;
+    for (; consumed < limit && message[consumed]; ++consumed) {
+        const auto byte = static_cast<unsigned char>(message[consumed]);
+        if (byte >= 0x20 && byte <= 0x7E && byte != '\\') {
+            detail[size++] = static_cast<char>(byte);
+        } else {
+            detail[size++] = '\\';
+            detail[size++] = 'x';
+            detail[size++] = hex[byte >> 4];
+            detail[size++] = hex[byte & 0x0F];
+        }
+    }
+    detail[size] = '\0';
+    std::fprintf(stderr, "[Bawan] TranslationEngine callback threw (event=%s, requestId=%llu): %s%s\n",
+                 eventName(kind), static_cast<unsigned long long>(id), detail, message[consumed] ? "..." : "");
+}
+
 std::size_t contextSize(std::size_t promptTokens) {
     const auto output = std::min(kMaximumOutput, std::max<std::size_t>(512, promptTokens * 2 + 256));
     const auto total = promptTokens + output;
@@ -35,48 +75,6 @@ using Model = std::unique_ptr<llama_model, decltype(&llama_model_free)>;
 using Context = std::unique_ptr<llama_context, decltype(&llama_free)>;
 using Batch = std::unique_ptr<llama_batch_ext, decltype(&llama_batch_ext_free)>;
 using Sampler = std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)>;
-
-// Return the end of the valid UTF-8 prefix. A token can end partway through a
-// character, so incomplete trailing bytes wait for the next generated token.
-std::size_t utf8Prefix(const std::string & text, bool * japanese = nullptr,
-                       std::size_t offset = 0) {
-    while (offset < text.size()) {
-        const auto first = static_cast<unsigned char>(text[offset]);
-        std::size_t width;
-        std::uint32_t codepoint;
-        if (first < 0x80) { width = 1; codepoint = first; }
-        else if (first >= 0xC2 && first <= 0xDF) { width = 2; codepoint = first & 0x1F; }
-        else if (first >= 0xE0 && first <= 0xEF) { width = 3; codepoint = first & 0x0F; }
-        else if (first >= 0xF0 && first <= 0xF4) { width = 4; codepoint = first & 0x07; }
-        else { throw std::runtime_error("The text is not valid UTF-8."); }
-        if (offset + width > text.size()) { return offset; }
-        for (std::size_t byte = 1; byte < width; ++byte) {
-            const auto next = static_cast<unsigned char>(text[offset + byte]);
-            if ((next & 0xC0) != 0x80) {
-                throw std::runtime_error("The text is not valid UTF-8.");
-            }
-            codepoint = (codepoint << 6) | (next & 0x3F);
-        }
-        if ((width == 2 && codepoint < 0x80) ||
-            (width == 3 && codepoint < 0x800) ||
-            (width == 4 && codepoint < 0x10000) ||
-            (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF) {
-            throw std::runtime_error("The text is not valid UTF-8.");
-        }
-        if (japanese && ((codepoint >= 0x3040 && codepoint <= 0x30FF) ||
-                         (codepoint >= 0x31F0 && codepoint <= 0x31FF) ||
-                         (codepoint >= 0xFF66 && codepoint <= 0xFF9F) ||
-                         (codepoint >= 0x3400 && codepoint <= 0x4DBF) ||
-                         (codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||
-                         (codepoint >= 0xF900 && codepoint <= 0xFAFF) ||
-                         (codepoint >= 0x20000 && codepoint <= 0x323AF) ||
-                         (codepoint >= 0x3005 && codepoint <= 0x3007))) {
-            *japanese = true;
-        }
-        offset += width;
-    }
-    return offset;
-}
 
 std::vector<llama_token> tokenize(const llama_vocab * vocab,
                                   const std::string & text, bool special,
@@ -122,59 +120,24 @@ public:
 
     ~Impl() { shutdown(); }
 
-    void warmUp() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (stopping_) { return; }
-            pendingWarmUp_ = true;
-        }
-        changed_.notify_one();
-    }
+    void warmUp() { submit(WorkerInstructions::WarmUp{}); }
 
     std::uint64_t translate(std::string text, Direction direction) {
-        std::uint64_t id;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            id = ++revision_;
-            if (stopping_) { return id; }
-            dropPendingRequestLocked();
-            pendingRequest_ = Request{id, std::move(text), direction};
-        }
-        changed_.notify_one();
-        return id;
+        return submit(Request{0, std::move(text), direction});
     }
 
-    void cancel() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            ++revision_;
-            ++cancellation_;
-            dropPendingRequestLocked();
-            pendingWarmUp_ = false;
-        }
-        changed_.notify_one();
-    }
+    void cancel() { submit(WorkerInstructions::Cancel{}); }
 
-    void releaseMemory() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (stopping_) { return; }
-            pendingRelease_ = true;
-            pendingWarmUp_ = false;
-        }
-        changed_.notify_one();
-    }
+    void releaseMemory() { submit(WorkerInstructions::Release{}); }
 
     void shutdown() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stopping_ = true;
-            ++revision_;
-            ++cancellation_;
-            pendingRequest_.reset();
-            pendingWarmUp_ = false;
-        }
-        changed_.notify_one();
+        submit(WorkerInstructions::Stop{});
+        // Stop cancels model loading at its next progress callback, prompt
+        // decoding between 128-token batches, and generation between tokens.
+        // Backend init, model I/O/mapping, tokenization, context allocation,
+        // each inference call, cleanup and an executing callback must return
+        // before join can finish; there is no fixed wall-clock bound. Joining
+        // keeps this Impl and worker-owned resources alive until cleanup ends.
         if (worker_.joinable()) { worker_.join(); }
     }
 
@@ -185,26 +148,126 @@ private:
         Direction direction;
     };
 
+    enum class FailureStage { Load, Request };
+
+    class WorkerInstructions {
+    public:
+        struct Wait {};
+        struct WarmUp {};
+        struct Release {};
+        struct Cancel {};
+        struct Stop {};
+        struct Translation {
+            enum class Afterwards { Wait, Release };
+            Request request;
+            Afterwards afterwards;
+        };
+        using Command = std::variant<Request, WarmUp, Release, Cancel, Stop>;
+        using Next = std::variant<Wait, WarmUp, Translation, Release, Stop>;
+        struct Work {
+            Next next;
+            std::vector<std::uint64_t> dropped;
+            std::uint64_t cancellation = 0;
+        };
+
+        // Called with mutex_ held. Priority and combination rules live here:
+        // Stop is final and suppresses callbacks. Cancel drops queued work and
+        // aborts the active load/translation, preserving any release obligation.
+        // Translation is latest-wins; it preserves a release, then unloads.
+        // Release replaces warm-up, never translation. Warm-up only fills Wait.
+        // Replacing a queued translation owes exactly one Cancelled callback.
+        std::uint64_t update(Command command) {
+            auto * request = std::get_if<Request>(&command);
+            const auto id = request ? ++revision_ : 0;
+            if (std::holds_alternative<Stop>(command)) {
+                if (stopped()) { return 0; }
+                // The worker checks these atomics without mutex_. Publish Stop
+                // before invalidating work so cancellation cannot emit callbacks.
+                stopped_ = true;
+                ++revision_;
+                ++cancellation_;
+                next_ = Stop{};
+                dropped_.clear();
+                return 0;
+            }
+            const bool cancel = std::holds_alternative<Cancel>(command);
+            if (cancel) {
+                ++revision_;
+                ++cancellation_;
+            }
+            if (stopped()) { return id; }
+            auto * translation = std::get_if<Translation>(&next_);
+            const bool release = std::holds_alternative<Release>(next_) ||
+                (translation && translation->afterwards == Translation::Afterwards::Release);
+            if (request || cancel) {
+                if (translation) { dropped_.push_back(translation->request.id); }
+                if (request) {
+                    request->id = id;
+                    next_ = Translation{std::move(*request), release ?
+                        Translation::Afterwards::Release : Translation::Afterwards::Wait};
+                } else if (release) {
+                    next_ = Release{};
+                } else {
+                    next_ = Wait{};
+                }
+            } else if (std::holds_alternative<Release>(command)) {
+                if (translation) { translation->afterwards = Translation::Afterwards::Release; }
+                else { next_ = Release{}; }
+            } else if (std::holds_alternative<Wait>(next_)) {
+                next_ = WarmUp{};
+            }
+            return id;
+        }
+
+        bool hasWork() const {
+            return !std::holds_alternative<Wait>(next_) || !dropped_.empty();
+        }
+
+        Work take() {
+            Work work{std::move(next_), {}, cancellation_.load()};
+            work.dropped.swap(dropped_);
+            next_ = Wait{};
+            return work;
+        }
+
+        bool stopped() const { return stopped_.load(); }
+        bool cancelled(std::uint64_t id) const { return stopped() || revision_.load() != id; }
+        bool loadCancelled(std::uint64_t epoch) const {
+            return stopped() || cancellation_.load() != epoch;
+        }
+
+    private:
+        Next next_{Wait{}};
+        std::vector<std::uint64_t> dropped_;
+        // A replacement translation can reuse an in-flight load; only Cancel
+        // and Stop advance its cancellation epoch.
+        std::atomic<bool> stopped_{false};
+        std::atomic<std::uint64_t> revision_{0};
+        std::atomic<std::uint64_t> cancellation_{0};
+    };
+
     struct LoadProgress {
         Impl * owner;
         std::uint64_t cancellation;
     };
 
-    void dropPendingRequestLocked() {
-        if (pendingRequest_) { droppedRequests_.push_back(pendingRequest_->id); }
-        pendingRequest_.reset();
-    }
-
-    bool cancelled(std::uint64_t id) const {
-        return stopping_ || revision_.load() != id;
+    std::uint64_t submit(WorkerInstructions::Command command) {
+        std::uint64_t id;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            id = instructions_.update(std::move(command));
+        }
+        changed_.notify_one();
+        return id;
     }
 
     void emit(EngineEvent::Kind kind, std::uint64_t id = 0,
               std::string text = {}, bool truncated = false,
               Direction direction = Direction::Automatic) noexcept {
-        if (stopping_) { return; }
+        if (instructions_.stopped()) { return; }
         try { callback_(EngineEvent{kind, id, std::move(text), truncated, direction}); }
-        catch (...) {  }
+        catch (const std::exception & error) { logCallbackFailure(kind, id, error.what()); }
+        catch (...) { logCallbackFailure(kind, id, "non-standard exception"); }
     }
 
     void unload() {
@@ -218,15 +281,15 @@ private:
 
     bool load(std::uint64_t cancellation) {
         if (model_) { return true; }
-        if (stopping_ || cancellation_.load() != cancellation) { return false; }
+        if (instructions_.loadCancelled(cancellation)) { return false; }
         emit(EngineEvent::Kind::Loading, 0, "Loading the model…");
-        if (stopping_ || cancellation_.load() != cancellation) {
+        if (instructions_.loadCancelled(cancellation)) {
             emit(EngineEvent::Kind::Cancelled);
             return false;
         }
         llama_backend_init();
         backendInitialized_ = true;
-        if (stopping_ || cancellation_.load() != cancellation) {
+        if (instructions_.loadCancelled(cancellation)) {
             unload();
             emit(EngineEvent::Kind::Cancelled);
             return false;
@@ -237,12 +300,11 @@ private:
         LoadProgress progress{this, cancellation};
         modelParameters.progress_callback = [](float, void * opaque) {
             const auto * state = static_cast<LoadProgress *>(opaque);
-            return !state->owner->stopping_ &&
-                state->owner->cancellation_.load() == state->cancellation;
+            return !state->owner->instructions_.loadCancelled(state->cancellation);
         };
         modelParameters.progress_callback_user_data = &progress;
         model_.reset(llama_model_load_from_file(modelPath_.c_str(), modelParameters));
-        if (stopping_ || cancellation_.load() != cancellation) {
+        if (instructions_.loadCancelled(cancellation)) {
             unload();
             emit(EngineEvent::Kind::Cancelled);
             return false;
@@ -252,7 +314,6 @@ private:
         bos_ = llama_vocab_bos(vocab);
         const auto stopTags = tokenize(vocab, "<|plamo:tag|>", true);
         if (bos_ == LLAMA_TOKEN_NULL || stopTags.size() != 1) {
-            model_.reset();
             throw std::runtime_error(kUnsupportedModel);
         }
         stopTag_ = stopTags.front();
@@ -262,7 +323,7 @@ private:
 
     std::vector<llama_token> prompt(Request & request) {
         bool japanese = false;
-        if (utf8Prefix(request.text, &japanese) != request.text.size()) {
+        if (detail::utf8Prefix(request.text, &japanese) != request.text.size()) {
             throw std::runtime_error("The text is not valid UTF-8.");
         }
         if (request.text.find_first_not_of(" \t\r\n") == std::string::npos) {
@@ -278,12 +339,12 @@ private:
             (toEnglish ? "en" : "ja") + "<|plamo:msg|>", true);
         const auto overhead = result.size() + prefix.size() + suffix.size();
         if (overhead > kMaximumPrompt) { throw std::runtime_error(kUnsupportedModel); }
-        if (cancelled(request.id)) return {};
+        if (instructions_.cancelled(request.id)) return {};
         // Parse only the application's PFML3 delimiters as special tokens.
         // Keep the existing token limit, not a byte heuristic that could reject
         // valid input. llama_tokenize's sizing pass itself is not interruptible.
         const auto source = tokenize(vocab, request.text, false, kMaximumPrompt - overhead);
-        if (cancelled(request.id)) return {};
+        if (instructions_.cancelled(request.id)) return {};
         result.reserve(overhead + source.size());
         result.insert(result.end(), prefix.begin(), prefix.end());
         result.insert(result.end(), source.begin(), source.end());
@@ -312,7 +373,7 @@ private:
     EngineEvent translate(Request & request) {
         if (!model_) { throw std::runtime_error("The model is not ready."); }
         const auto tokens = prompt(request);
-        if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+        if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
 
         auto parameters = llama_context_default_params();
         const auto contextTokens = contextSize(tokens.size());
@@ -337,7 +398,7 @@ private:
         llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
         const auto * vocab = llama_model_get_vocab(model_.get());
         for (std::size_t position = 0; position < tokens.size(); position += kBatchSize) {
-            if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto count = std::min(kBatchSize, tokens.size() - position);
             decode(context.get(), batch.get(), tokens.data() + position, count, position, position + count == tokens.size());
         }
@@ -347,14 +408,14 @@ private:
         std::size_t validBytes = 0;
         auto lastEmission = std::chrono::steady_clock::time_point{};
         for (std::size_t generated = 0; generated < outputLimit; ++generated) {
-            if (cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
             const auto token = llama_sampler_sample(sampler.get(), context.get(), -1);
             if (llama_vocab_is_eog(vocab, token) || token == stopTag_ || token == bos_) {
                 if (validBytes != output.size()) { throw std::runtime_error("Unable to read the end of the translation."); }
                 return {EngineEvent::Kind::Complete, request.id, std::move(output), false, request.direction};
             }
             output += tokenPiece(vocab, token);
-            validBytes = utf8Prefix(output, nullptr, validBytes);
+            validBytes = detail::utf8Prefix(output, nullptr, validBytes);
             const auto now = std::chrono::steady_clock::now();
             if (validBytes != emittedBytes && (emittedBytes == 0 ||
                 now - lastEmission >= std::chrono::milliseconds(33))) {
@@ -369,14 +430,15 @@ private:
         return {EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction};
     }
 
-    void fail(const std::optional<Request> & request, std::uint64_t cancellation, const char * message) {
-        if (!model_) {
+    void fail(FailureStage stage, const std::optional<Request> & request,
+              std::uint64_t cancellation, const char * message) {
+        if (stage == FailureStage::Load) {
             unload();
-            emit(cancellation_.load() != cancellation ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
+            emit(instructions_.loadCancelled(cancellation) ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
                  0, message);
         }
         if (request) {
-            if (cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
+            if (instructions_.cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
             else { emit(EngineEvent::Kind::Error, request->id, message); }
         }
     }
@@ -385,17 +447,10 @@ private:
         using Clock = std::chrono::steady_clock;
         auto idleDeadline = Clock::time_point::max();
         for (;;) {
-            std::optional<Request> request;
-            std::vector<std::uint64_t> dropped;
-            std::uint64_t cancellation = 0;
-            bool release = false;
-            bool warmUp = false;
+            WorkerInstructions::Work work;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                const auto hasWork = [this] {
-                    return stopping_ || pendingWarmUp_ || pendingRequest_ || pendingRelease_ ||
-                        !droppedRequests_.empty();
-                };
+                const auto hasWork = [this] { return instructions_.hasWork(); };
                 if (model_) {
                     if (!changed_.wait_until(lock, idleDeadline, hasWork)) {
                         lock.unlock();
@@ -405,27 +460,29 @@ private:
                 } else {
                     changed_.wait(lock, hasWork);
                 }
-                if (stopping_) { break; }
-                dropped.swap(droppedRequests_);
-                release = pendingRelease_;
-                pendingRelease_ = false;
-                request = std::move(pendingRequest_);
-                pendingRequest_.reset();
-                warmUp = pendingWarmUp_;
-                pendingWarmUp_ = false;
-                cancellation = cancellation_.load();
+                if (instructions_.stopped()) { break; }
+                work = instructions_.take();
             }
-            for (const auto id : dropped) { emit(EngineEvent::Kind::Cancelled, id); }
-            if (!request && release) {
+            for (const auto id : work.dropped) { emit(EngineEvent::Kind::Cancelled, id); }
+            if (std::holds_alternative<WorkerInstructions::Release>(work.next)) {
                 unload();
                 continue;
             }
-            if (!request && (model_ || !warmUp)) { continue; }
+            auto * translation = std::get_if<WorkerInstructions::Translation>(&work.next);
+            if (!translation && (model_ ||
+                !std::holds_alternative<WorkerInstructions::WarmUp>(work.next))) { continue; }
+            std::optional<Request> request;
+            if (translation) { request = std::move(translation->request); }
+            const bool release = translation && translation->afterwards ==
+                WorkerInstructions::Translation::Afterwards::Release;
+            const auto cancellation = work.cancellation;
+            auto failureStage = FailureStage::Load;
             try {
-                if (request && cancelled(request->id)) {
+                if (request && instructions_.cancelled(request->id)) {
                     emit(EngineEvent::Kind::Cancelled, request->id);
                 } else if (load(cancellation)) {
                     if (request) {
+                        failureStage = FailureStage::Request;
                         auto result = translate(*request);
                         emit(result.kind, result.requestId, std::move(result.text), result.truncated, result.direction);
                     }
@@ -433,9 +490,9 @@ private:
                     emit(EngineEvent::Kind::Cancelled, request->id);
                 }
             } catch (const std::exception & error) {
-                fail(request, cancellation, error.what());
+                fail(failureStage, request, cancellation, error.what());
             } catch (...) {
-                fail(request, cancellation, kUnexpectedError);
+                fail(failureStage, request, cancellation, kUnexpectedError);
             }
             if (release) { unload(); }
             else if (model_) { idleDeadline = Clock::now() + idleTimeout_; }
@@ -448,13 +505,7 @@ private:
     const std::chrono::milliseconds idleTimeout_;
     std::mutex mutex_;
     std::condition_variable changed_;
-    std::atomic<bool> stopping_{false};
-    std::atomic<std::uint64_t> revision_{0};
-    std::atomic<std::uint64_t> cancellation_{0};
-    bool pendingWarmUp_ = false;
-    bool pendingRelease_ = false;
-    std::optional<Request> pendingRequest_;
-    std::vector<std::uint64_t> droppedRequests_;
+    WorkerInstructions instructions_;
     Model model_{nullptr, llama_model_free};
     llama_token bos_ = LLAMA_TOKEN_NULL;
     llama_token stopTag_ = LLAMA_TOKEN_NULL;

@@ -13,10 +13,11 @@ Production code and test registrations are unchanged.
 | `short_input_tests.cpp` | Retain boundaries; delete private prompt-string comparisons | `c6ee8a2`: short English excludes a sixth word, unsupported scripts, numbers-only input and malformed text; punctuation/connectors must not conceal extra words. | All 39 count cases remain. Public-engine short translation regressions live in `engine_smoke`; exact prompt wording/serialization is a tuning choice. |
 | `engine_smoke.cpp` | Retain; extend semantic regression | `c6ee8a2`: short words/invitations must keep their meaning. `1905a01`: automatic/forced direction. `9612858`: bounded prompt allocation, oversized paste rejection/recovery. `f134100`: lazy load, warm-up, idle reload and cancellation. | Real `TranslationEngine::translate`: `ephemeral`, added `You're welcome to join.`, idiom completion/direction, ordinary six-word input, both translation directions, context independence, invalid UTF-8, oversized inputs, recovery, sliding-window streaming, cancellation and idle reload. |
 | `engine_lifecycle.cpp` | Retain | `f134100`, `65fbca4`: no work before first use, missing-model errors, independent prewarm failure, retry, cancelled prewarm leaves Loading, unused shutdown stays quiet. | Existing public callbacks/quiet checks remain. A translation failure and a prewarm failure have different owners, so neither is redundant. |
-| `shortcut_preferences_tests.mm` | Retain | Persistence, restore, rejection without value/notification changes, corrupt data recovery, duplicate repair and keyboard adapter flags. `028460a`: ignore another app's legacy preferences. | Existing save/reload/error/notification and Fn/Caps Lock boundary checks remain. Public defaults comparisons verify application/restoration of defaults. |
+| `shortcut_preferences_tests.mm` | Retain | Persistence, restore, rejection without value/notification changes, atomic fallback for invalid saved settings, duplicate rejection and keyboard adapter flags. `028460a`: ignore another app's legacy preferences. | First launch and valid v1 load/save, invalid types/rows/versions/duplicates preserving the entire defaults domain, explicit edits after fallback, and Fn/Caps Lock boundary checks. Public defaults comparisons verify saved values. |
 | `shortcut_monitor_tests.mm` | Add native command routing regression | Custom global bindings must preserve native editing/Close while Bawan owns keyboard input; Settings must pass new events through. | Production monitor event routing with real CGEvents and a visible key nonactivating panel, single/double custom bindings, held-key draining, Option-T inside the translator, and custom/passive bindings outside it. Hosted AppKit can reactivate the app, so inactive-app input is not dynamically established. No installed event tap or physical-key delivery is claimed. |
 | `panel_smoke.mm` | Retain regressions; rewrite geometry expectations | `766a002`, `351138d`, `d7bafc5`: wrapping, final-line following and preserving reading position. `1905a01`: reverse direction. `41142ca`: normal window ordering. Accepted geometry is in `design-qa.md`. | Existing real controls, key events, clipboard, callbacks, scrolling and window-order checks remain. Source edits clear completed output, disable stale Copy/Swap, reset direction and preserve Undo/Redo. `CheckBounds` independently expects an 80pt header and 72pt mascot. |
 | `settings_smoke.mm` | Merge refresh assertions into navigation; rewrite geometry | `048a938`, `8e42eff`: recording, release protection and permissions. `4c37cc4`: preserve Undo/Redo across navigation. `d7bafc5`: preserve position/reveal full errors. | Reopen Settings after an external permission change, refresh the fake monitor's cached availability, then assert visible ready labels/help state. Existing recording, failures, focus, Undo/Redo, scrolling, login actions and color-role checks remain. Independent geometry also pins 28pt controls/13pt type. |
+| `progress_smoke.mm` | Add progress motion regression | Issue #50: respect Reduce Motion and stop invisible work without caller lifecycle management. | Real hosted windows and rendered presentation pixels cover motion during event tracking, static centered unknown progress, live display-option changes, hidden ancestors/reparenting, window detach/order/close/reopen, explicit stop, determinate switching and resize. Light/dark bitmap checks retain fill ratios, colors and 8pt geometry. Reduce Motion is substituted only in this test process; system preferences are untouched. |
 | `mascot_smoke.mm` | Retain; mark motion checks for later rewrite | `41142ca` and `design-qa.md`: finite playback, interruption/reset, Reduce Motion, fixed hit area and bounded shared bitmap. | Existing coverage remains. Motion-name/private-layer assertions alone do not establish visible movement; replacing them requires real AppKit presentation/rendering checks. They were not deleted without that replacement. |
 | `app_delegate_smoke.mm` | Retain; mark private-state checks for later rewrite | `f134100`: latest pending selection, close cancellation, cold/prewarm errors expose Retry and end busy state, stale events cannot overwrite model setup. | Existing actual delegate/error/menu scenarios remain. Real source edits cancel queued/active requests; late Text/Complete events cannot restore stale output or finish a newer request. Private generation/state assertions should eventually be replaced by stronger callback/UI observations on macOS. |
 | `engine_profile.cpp` | Retain as a benchmark | `f134100` and whole-app resource acceptance in `design-qa.md`. | CPU/RSS/footprint and repeated translation/reload measurements serve a different purpose from functional smoke checks. Linux RSS does not establish macOS footprint or AppKit resource behavior. |
@@ -53,6 +54,39 @@ The model-backed smoke is a separate executable, not one of the CTests. Use the
 official model revision `1cf96ae02133958a20074bfdfab76517bb737d00`, SHA256
 `70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6`.
 
+`engine_lifecycle` also accepts that model path as an optional argument:
+
+```sh
+./build/engine_lifecycle /path/to/plamo-3-translate-0.8b-Q4_K_M.gguf
+```
+
+Its default CTest cases hold the worker at the public Loading callback to
+overlap latest-wins translations, warm-up, release, cancellation and shutdown.
+They compare complete callback sequences, including exactly-once request
+terminals, cancellation recovery and silent shutdown. With a model path, two
+cases queue release before or after the latest pending translation.
+They require one reused load, the correct request ID and direction, one
+Complete after each displaced request's Cancelled, and Idle only after
+completion, promptly rather than after the 60-second idle timeout.
+
+The default cases also capture stderr from standard and nonstandard callback
+exceptions. They require the event kind, request ID and bounded, escaped error
+detail, then retry and compare the entire event sequence to detect recursive or
+duplicate delivery. Cold translation load failures must report both the global
+error (ID 0) and that request's error; warm-up failures report only the global
+error, with the original error details preserved. With a model path, a further
+case rejects invalid UTF-8 with only a request error and successfully translates
+the next request using the same loaded model.
+
+The held-Loading shutdown case proves that shutdown waits for an executing
+callback, then completes without delivering queued events after it resumes.
+This is a join/lifetime guarantee, not a wall-clock shutdown bound: cancellation
+is observed at model-load progress callbacks, between 128-token prompt batches
+and between generated tokens. Backend initialization, model I/O/mapping,
+tokenization, context allocation, an individual inference call, cleanup and
+the callback itself still have to return. The production worker remains joined
+so its engine and backend resources stay alive throughout that work.
+
 On an Apple Silicon Mac, build the native suite instead:
 
 ```sh
@@ -73,9 +107,52 @@ chmod +x .git/hooks/pre-push
 ```
 
 Run the model-backed command separately there as well. The native CTests cover
-preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the four
+preferences, monitor routing, panel, Settings, mascot and app delegate in addition to the five
 portable checks. CI was intentionally removed in `babb935`; native validation
 must not be assumed to happen automatically after opening a PR.
+
+## Issue #46: progress and UTF-8 regressions
+
+`short_input_tests` defines a 1–5 word Latin-script heuristic, not a language
+detector. It accepts ASCII and Latin-1 letters (excluding ×/÷), Latin Extended-A/B
+and Latin Extended Additional. U+0300–036F accents may follow a Latin letter or
+another attached accent. ASCII digits join words, but numbers alone do not qualify.
+The letter ranges follow the Unicode charts for
+[Latin-1](https://www.unicode.org/charts/PDF/U0080.pdf),
+[Extended-A](https://www.unicode.org/charts/PDF/U0100.pdf),
+[Extended-B](https://www.unicode.org/charts/PDF/U0180.pdf) and
+[Extended Additional](https://www.unicode.org/charts/PDF/U1E00.pdf).
+
+Printable ASCII, Unicode spaces, U+2010–2027/U+2030–205E typography, and the
+explicit Latin-1/common symbol set in `ShortInput.h` separate words. Apostrophes
+and hyphens join only adjacent alphanumerics; repeated connectors break words.
+Thus `café-au-lait` counts as one, while bullets, quotes and multiplication signs
+cannot conceal a sixth word. Japanese (including halfwidth kana and supplementary
+kanji), other scripts, emoji, controls/format characters, detached accents and
+invalid/incomplete UTF-8 return zero. All previous exclusions remain except the
+intentional acceptance of accented Latin text and the expanded separator set.
+
+`utf8_tests` exercises the production decoder and prefix used by TranslationEngine:
+valid scalar boundaries, invalid leads/continuations, overlong encodings,
+surrogates, out-of-range values, and impossible partial tails. Every byte cut of
+mixed 1–4 byte text must end at the last complete scalar; resumed and single-byte
+token streams must preserve the complete text and Japanese detection. Potentially
+valid incomplete output waits for another token; incomplete input is rejected.
+`engine_smoke` additionally checks accented short translations, public input
+rejection without output, and recovery.
+
+Native `model_setup_state`, `settings_navigation` and `onboarding` checks cover
+known 0/fraction/1 progress, unknown engine loading as `std::nullopt`, and restored
+progress after loading ends. These require macOS; a portable build cannot verify
+the Objective-C++ signatures or the AppKit indicator behavior.
+
+Verified for #46 on Linux x86_64/GCC 14.2: Release build with
+`BAWAN_WARNINGS_AS_ERRORS=ON`, all five portable CTests, and the full real-model
+`engine_smoke` passed using the pinned model/revision/SHA256 above. Accented cases
+produced `カフェ` and `カフェで会いましょう。`. Direct builds of `short_input_tests`
+(82 cases) and `utf8_tests` also passed ASan/UBSan. The new short-input tests fail
+against unchanged main at `café`. Native build, model progress/Settings/onboarding
+tests, AppKit rendering and Metal inference remain unverified on this host.
 
 ## Shared-control appearance regression (#42)
 

@@ -722,16 +722,29 @@ static void RunSmoke(void) {
     [modelSetup performClick:nil];
     Require(modelSetups == 1, @"The model setup action must reach its owner");
     [settings setModelPhase:BawanModelSetupPreparing message:@"Verifying the saved model…" progress:0.4];
-    Require(!modelProgress.hidden && std::abs(modelProgress.doubleValue - 0.4) < 0.001 && modelSetup.hidden &&
+    Require(!modelProgress.hidden && !modelProgress.indeterminate &&
+        std::abs(modelProgress.doubleValue - 0.4) < 0.001 && modelSetup.hidden &&
         [modelMessage.stringValue containsString:@"Verifying"],
         @"Model preparation must show progress and its current message without allowing duplicate setup");
     [settings setModelPhase:BawanModelSetupPreparing message:@"Checking the local model…"
         progress:std::numeric_limits<double>::quiet_NaN()];
     Require(modelProgress.indeterminate && std::isfinite(modelProgress.doubleValue),
         @"Unknown model progress must remain a finite indeterminate presentation");
-    [settings setModelPhase:BawanModelSetupPreparing message:@"Checking the local model…" progress:-1];
-    Require(modelProgress.indeterminate && modelProgress.doubleValue == 0,
-        @"A negative progress sentinel must not become a negative percentage");
+    BawanModelState loadingModel;
+    loadingModel.beginPreparing();
+    loadingModel.fileReady([NSURL fileURLWithPath:@"/__bawan_tests__/model.gguf"]);
+    loadingModel.engineLoading();
+    [settings setModelPhase:loadingModel.phase() message:loadingModel.message() progress:loadingModel.progress()];
+    Require(!modelProgress.hidden && modelProgress.indeterminate && modelProgress.doubleValue == 0 &&
+        [modelMessage.stringValue isEqualToString:BawanModelLoadingStatus],
+        @"Engine loading must show indeterminate progress from the model state");
+    loadingModel.stopLoading();
+    [settings setModelPhase:loadingModel.phase() message:loadingModel.message() progress:loadingModel.progress()];
+    Require(modelProgress.hidden && !modelProgress.indeterminate && modelProgress.doubleValue == 1,
+        @"Stopping an engine load must restore completed progress and hide the indicator");
+    [settings setModelPhase:BawanModelSetupPreparing message:@"Downloading the model… 0%" progress:0];
+    Require(!modelProgress.hidden && !modelProgress.indeterminate && modelProgress.doubleValue == 0,
+        @"Known zero progress must remain determinate after an engine load");
     [settings setModelPhase:BawanModelSetupFailed message:@"The model could not be verified. Please try again." progress:0];
     Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Retry Model Setup"] && !modelMessage.hidden &&
         [modelStatus.stringValue isEqualToString:@"Needs attention"],
