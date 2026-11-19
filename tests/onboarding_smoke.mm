@@ -180,6 +180,9 @@ static void RunSmoke(void) {
     onboarding.onModelLicense = ^{ ++licenses; };
     onboarding.onFinish = ^{ ++finishes; };
     NSScrollView *scroll = (NSScrollView *)FindView(onboarding.view, @"onboarding-scroll");
+    Require(scroll && scroll.scrollerStyle == NSScroller.preferredScrollerStyle,
+        @"Onboarding must start with the system-preferred scroller style");
+    Require(!scroll.autohidesScrollers, @"Onboarding must not autohide its scrollers");
     scroll.scrollerStyle = NSScrollerStyleLegacy;
     @try {
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
