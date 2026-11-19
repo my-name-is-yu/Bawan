@@ -114,7 +114,8 @@ static void CheckBounds(NSWindow *window) {
                 NSStringFromRect(bounds), NSStringFromRect(container.bounds)]);
     }
     Require(document.bounds.size.width <= scroll.contentView.bounds.size.width + 1,
-        @"Onboarding must remain readable without horizontal scrolling at minimum size");
+        [NSString stringWithFormat:@"Onboarding must remain readable without horizontal scrolling: document=%@ viewport=%@",
+            NSStringFromRect(document.bounds), NSStringFromRect(scroll.contentView.bounds)]);
     NSView *footer = FindView(root, @"onboarding-footer");
     for (NSString *identifier in @[@"onboarding-primary", @"onboarding-model-license", @"onboarding-model-control"]) {
         NSView *button = FindView(root, identifier);
@@ -175,6 +176,8 @@ static void RunSmoke(void) {
     onboarding.onModelSetup = ^{ ++setups; };
     onboarding.onModelLicense = ^{ ++licenses; };
     onboarding.onFinish = ^{ ++finishes; };
+    NSScrollView *scroll = (NSScrollView *)FindView(onboarding.view, @"onboarding-scroll");
+    scroll.scrollerStyle = NSScrollerStyleLegacy;
     @try {
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
         ServiceQueuedAppEvents(window);
@@ -228,6 +231,9 @@ static void RunSmoke(void) {
             @"The model step must explain the download and offer only Download and Model License");
         CheckBounds(window);
         Capture(window, @"needs-download");
+        const CGFloat legacyGutter = NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame);
+        Require(scroll.scrollerStyle == NSScrollerStyleLegacy && legacyGutter > 0,
+            @"The model step must reserve a legacy scrollbar gutter even when it fits");
         // The centered dog animates like the masthead medallion.
         BawanMascotView *hero = (BawanMascotView *)FindView(root, @"onboarding-hero-mascot");
         Require([hero isKindOfClass:BawanMascotView.class] && IsShown(hero),
@@ -282,6 +288,9 @@ static void RunSmoke(void) {
             [note.stringValue isEqualToString:@"Download paused · 37%"],
             @"Pausing must keep shortcut setup and continuation available beside Resume and saved progress");
         CheckBounds(window);
+        Require(NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame) == legacyGutter,
+            @"Onboarding must keep the legacy viewport width when download progress changes");
+        Capture(window, @"paused");
         [modelControl performClick:nil];
         Require(setups == 4 && finishes == 1, @"Footer Resume must reach the model owner");
         [onboarding setModelPhase:BawanModelSetupPreparing message:@"Download complete. Verifying SHA256…" progress:1];
@@ -494,7 +503,6 @@ static void RunSmoke(void) {
         [onboarding refresh];
         [onboarding focusInitialControl];
         NSResponder *focused = window.firstResponder;
-        NSScrollView *scroll = (NSScrollView *)FindView(root, @"onboarding-scroll");
         Require(focused == root && scroll.contentView.bounds.origin.y == 0,
             @"Onboarding must open at the top with its ring-less surface focused");
 

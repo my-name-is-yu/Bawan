@@ -103,6 +103,8 @@ struct ShortcutRow {
     _scroll = scroll;
     scroll.borderType = NSNoBorder;
     BawanConfigurePaperScrollView(scroll);
+    scroll.autohidesScrollers = NO;
+    scroll.scrollerStyle = NSScroller.preferredScrollerStyle;
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
     BawanSetupDocument *document = [[BawanSetupDocument alloc] init];
