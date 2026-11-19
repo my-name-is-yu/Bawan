@@ -1320,7 +1320,7 @@ static void CheckPageRelease(void) {
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectModelStore:store];
     [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
     SetAvailableModel(delegate);
@@ -1361,6 +1361,7 @@ static void CheckPageRelease(void) {
         }
         Require(onboarding != nil && panel.currentPage == BawanPanelPageSettings,
             @"Settings opened from onboarding must keep the onboarding it returns to");
+        [delegate modelStoreDidChange:ModelFailed{ModelIssue::DiskFull}];
         @autoreleasepool {
             [window cancelOperation:nil];
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
@@ -1371,6 +1372,10 @@ static void CheckPageRelease(void) {
         }
         Require(monitor.configurationActive == window.keyWindow,
             @"Releasing Settings must not disarm the onboarding page that replaced it");
+        NSTextField *coveredMessage = (NSTextField *)FindView(window.contentView, @"onboarding-model-message");
+        Require([coveredMessage.stringValue isEqualToString:BawanModelIssueText(ModelIssue::DiskFull)],
+            @"The onboarding page Settings covered must show model changes made meanwhile");
+        SetAvailableModel(delegate);
         Require(settings == nil, @"Leaving Settings for onboarding must release Settings");
         @autoreleasepool {
             [window close];
