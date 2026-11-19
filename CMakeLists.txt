@@ -86,7 +86,7 @@ if(APPLE AND (BAWAN_BUILD_APP OR BAWAN_BUILD_TESTS))
         add_library(${target} STATIC
             src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm
             src/BawanAppearance.mm src/BawanMascotView.mm
-            src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm
+            src/ShortcutMonitor.mm src/SelectionReader.mm src/SelectionResult.mm src/ShortcutPreferences.mm
             src/SetupUI.mm src/OnboardingViewController.mm)
         target_include_directories(${target} PUBLIC src)
         target_link_libraries(${target} PUBLIC bawan_gesture

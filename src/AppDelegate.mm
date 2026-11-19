@@ -102,19 +102,14 @@ static NSString *StringFromUTF8(const std::string &text) {
     };
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
-    _shortcut.onSelectionText = ^(NSString *text) {
+    _shortcut.onSelection = ^(SelectionResult *result) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner handleSelectionText:text];
-    };
-    _shortcut.onSelectionProblem = ^(NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        [owner handleShortcutProblem:message];
-    };
-    _shortcut.onSelectionTrial = ^(NSString *text) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner handleSelectionTrialText:text];
+        switch (result.kind) {
+            case SelectionResultKindText: [owner handleSelectionText:result.text]; break;
+            case SelectionResultKindTrial: [owner handleSelectionTrialText:result.text]; break;
+            case SelectionResultKindProblem: [owner handleShortcutProblem:result.text]; break;
+        }
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;

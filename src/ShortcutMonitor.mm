@@ -1,4 +1,5 @@
 #import "ShortcutMonitor.h"
+#import "ShortcutMonitor+Testing.h"
 #import "SelectionReader.h"
 #include "ShortcutMonitorState.h"
 #import <AppKit/AppKit.h>
@@ -30,7 +31,6 @@ constexpr unsigned panelIndex = static_cast<unsigned>(bawan::ShortcutAction::Ope
     NSMutableArray<id> *_workspaceObservers;
     id _preferencesObserver;
 }
-- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
 - (void)cancelPending;
 - (void)configureGestures;
@@ -56,6 +56,12 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
 }
 
 @implementation ShortcutMonitor
+@synthesize onSelection = _onSelection;
+
+- (void)setOnSelection:(void (^)(SelectionResult *))onSelection {
+    _onSelection = [onSelection copy];
+    _selectionReader.onResult = _onSelection;
+}
 
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences {
     return [self initWithPreferences:preferences selectionReader:[SelectionReader new]];
@@ -66,15 +72,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (!self) return nil;
     _preferences = preferences;
     _selectionReader = selectionReader;
-    __weak ShortcutMonitor *weakSelf = self;
-    _selectionReader.onText = ^(NSString *text) {
-        ShortcutMonitor *self = weakSelf;
-        if (self.onSelectionText) self.onSelectionText(text);
-    };
-    _selectionReader.onProblem = ^(NSString *message) {
-        ShortcutMonitor *self = weakSelf;
-        if (self.onSelectionProblem) self.onSelectionProblem(message);
-    };
+    _selectionReader.onResult = _onSelection;
     _availability.fill(ShortcutAvailabilityOff);
     [self loadBindings];
     return self;
@@ -392,7 +390,8 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
                     if (!self || !view || generation != self->_actionGeneration ||
                         [self activeSelectionTrialView] != view ||
                         !NSEqualRanges(view.selectedRange, selected) || ![view.string isEqualToString:source]) return;
-                    if (self.onSelectionTrial) self.onSelectionTrial(source);
+                    if (self.onSelection) self.onSelection([[SelectionResult alloc]
+                        initWithKind:SelectionResultKindTrial text:source]);
                 });
             } else if (passive) {
                 [_selectionReader readSelection];

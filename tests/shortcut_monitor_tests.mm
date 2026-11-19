@@ -1,4 +1,5 @@
 #import "ShortcutMonitor.h"
+#import "ShortcutMonitor+Testing.h"
 #import "SelectionReader.h"
 #import <CoreGraphics/CoreGraphics.h>
 
@@ -6,7 +7,6 @@
 #include <iostream>
 
 @interface ShortcutMonitor (EventRoutingTests)
-- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
 @end
 @interface RoutingMonitor : ShortcutMonitor
@@ -108,29 +108,25 @@ static void postWorkspaceNotification(NSNotificationName name) {
 
 static void testSelectionCallbacks() {
     RoutingFixture fixture;
-    fixture.reader.onText(@"No listener");
-    fixture.reader.onProblem(@"No listener");
+    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@"No listener"]);
+    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@"No listener"]);
     __block NSString *selectedText;
     __block NSString *problem;
-    fixture.monitor.onSelectionText = ^(NSString *text) {
-        require(NSThread.isMainThread, "selection text callback runs on the main thread");
-        selectedText = text;
+    fixture.monitor.onSelection = ^(SelectionResult *result) {
+        require(NSThread.isMainThread, "selection callback runs on the main thread");
+        if (result.kind == SelectionResultKindText) selectedText = result.text;
+        else if (result.kind == SelectionResultKindProblem) problem = result.text;
     };
-    fixture.monitor.onSelectionProblem = ^(NSString *message) {
-        require(NSThread.isMainThread, "selection problem callback runs on the main thread");
-        problem = message;
-    };
-    fixture.reader.onText(@"Selected sentence");
-    fixture.reader.onProblem(@"Copy failed");
+    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@"Selected sentence"]);
+    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@"Copy failed"]);
     require([selectedText isEqualToString:@"Selected sentence"], "reader text reaches the monitor callback");
     require([problem isEqualToString:@"Copy failed"], "reader problem reaches the monitor callback");
-    fixture.reader.onText(@"");
-    fixture.reader.onProblem(@"");
+    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@""]);
+    fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@""]);
     require([selectedText isEqualToString:@""] && [problem isEqualToString:@""], "callbacks preserve empty payloads");
-    fixture.monitor.onSelectionText = nil;
-    fixture.monitor.onSelectionProblem = nil;
-    fixture.reader.onText(@"No listener");
-    fixture.reader.onProblem(@"No listener");
+    fixture.monitor.onSelection = nil;
+    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindText text:@"No listener"]);
+    if (fixture.reader.onResult) fixture.reader.onResult([[SelectionResult alloc] initWithKind:SelectionResultKindProblem text:@"No listener"]);
 }
 
 static void testHeldKeyReconfiguration() {
@@ -359,7 +355,11 @@ static void testSelectionTrial(NSPanel *panel) {
     RoutingMonitor *monitor = fixture.monitor;
     __block unsigned copies = 0;
     __block NSString *copiedText = nil;
-    monitor.onSelectionTrial = ^(NSString *text) { ++copies; copiedText = text; };
+    monitor.onSelection = ^(SelectionResult *result) {
+        require(result.kind == SelectionResultKindTrial, "selection trial emits a trial result");
+        ++copies;
+        copiedText = result.text;
+    };
     // Only the focused, fully selected onboarding sample may use selection shortcuts
     // during configuration. The production recognizer handles both passive and custom bindings.
     NSTextView *sample = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 150)];

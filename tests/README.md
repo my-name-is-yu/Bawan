@@ -101,7 +101,7 @@ permissions, physical key delivery, visible windows and the system clipboard:
 
 ```sh
 clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
-  tests/selection_reader_tests.mm src/SelectionReader.mm \
+  tests/selection_reader_tests.mm src/SelectionReader.mm src/SelectionResult.mm \
   -framework AppKit -framework CoreGraphics -o /tmp/bawan-selection-reader-tests
 /tmp/bawan-selection-reader-tests
 ```
@@ -309,7 +309,7 @@ without llama.cpp:
 ```sh
 clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
   tests/shortcut_monitor_tests.mm src/ShortcutBinding.cpp \
-  src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm \
+  src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm src/SelectionResult.mm \
   -framework AppKit -framework CoreGraphics -framework ApplicationServices \
   -framework Carbon -o /tmp/bawan-shortcut-monitor-tests
 /tmp/bawan-shortcut-monitor-tests

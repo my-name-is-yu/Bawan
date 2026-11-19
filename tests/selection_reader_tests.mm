@@ -101,8 +101,11 @@ struct Fixture {
     Fixture() {
         NSMutableArray<NSString *> *receivedTexts = texts;
         NSMutableArray<NSString *> *receivedProblems = problems;
-        reader.onText = ^(NSString *text) { [receivedTexts addObject:text]; };
-        reader.onProblem = ^(NSString *message) { [receivedProblems addObject:message]; };
+        reader.onResult = ^(SelectionResult *result) {
+            if (result.kind == SelectionResultKindText) [receivedTexts addObject:result.text];
+            else if (result.kind == SelectionResultKindProblem) [receivedProblems addObject:result.text];
+            else require(false, "reader does not emit trial results");
+        };
     }
     void begin(BOOL passive = YES) {
         [reader beginCopyFromApplication:environment.application passive:passive];
@@ -335,8 +338,9 @@ static void testReentrantReads() {
         FakeSelectionEnvironment *environment = f.environment;
         __weak SelectionReader *weakReader = reader;
         NSMutableArray<NSString *> *texts = f.texts;
-        reader.onText = ^(NSString *text) {
-            [texts addObject:text];
+        reader.onResult = ^(SelectionResult *result) {
+            require(result.kind == SelectionResultKindText, "reentrant completion returns text");
+            [texts addObject:result.text];
             if (texts.count == 1) {
                 SelectionReader *reader = weakReader;
                 [reader beginCopyFromApplication:environment.application passive:YES];
@@ -352,7 +356,7 @@ static void testReentrantReads() {
         require(texts.count == 2 && [texts[0] isEqualToString:@"first selection"] &&
                 [texts[1] isEqualToString:@"next selection"] && f.problems.count == 0,
                 "completion clears its own session before the client starts another read");
-        reader.onText = nil;
+        reader.onResult = nil;
     }
 }
 
