@@ -19,6 +19,7 @@
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
 - (void)connectTranslationPanel:(TranslationPanel *)panel;
+- (void)connectModelStore:(ModelStore *)store;
 - (void)updateStatus;
 - (void)updateShortcutItem;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
@@ -135,7 +136,7 @@
 }
 - (void)prepare {
     ++_preparations;
-    [self emit:{ModelStoreChecking}];
+    [self emit:ModelVerifying{ModelFileKind::Saved}];
 }
 - (void)revalidate {
     ++_revalidations;
@@ -143,20 +144,15 @@
 }
 - (void)pause {
     ++_pauses;
-    [self emit:{ModelStorePaused, 0.4, @"Download paused · 40%", nil, true}];
+    [self emit:ModelPaused{0.4, true}];
 }
 - (void)resume {
     ++_resumes;
-    [self emit:{ModelStoreDownloading, 0.4, @"Downloading the model… 40%"}];
+    [self emit:ModelDownloading{0.4, ModelDownloadStage::Receiving}];
 }
 - (void)cancel {}
 @end
 
-static void UseModelStore(AppDelegate *delegate, ModelStore *store) {
-    [delegate setValue:store forKey:@"modelStore"];
-    __weak AppDelegate *weakDelegate = delegate;
-    store.onChange = ^(const ModelStoreSnapshot &snapshot) { [weakDelegate modelStoreDidChange:snapshot]; };
-}
 
 @interface SetupSmokeMonitor : ShortcutMonitor
 @property(nonatomic) NSUInteger permissionRequests;
@@ -239,7 +235,7 @@ static void WaitFor(Predicate predicate, NSString *message) {
 }
 
 static void SetAvailableModel(AppDelegate *delegate) {
-    [delegate modelStoreDidChange:{ModelStoreReady, 1, nil, [NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"]}];
+    [delegate modelStoreDidChange:ModelReady{[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"]}];
 }
 
 static void RequireModelFailure(AppDelegate *delegate) {
@@ -365,7 +361,7 @@ static void CheckColdRequestAndRetry(AppDelegate *delegate) {
     NSMenuItem *retry = [delegate valueForKey:@"retryItem"];
     Require(!Flag(delegate, @"busy") && !Flag(delegate, @"modelFailed") &&
         !Flag(delegate, @"hasVerifiedModelFile") && [delegate valueForKey:@"modelURL"] == nil &&
-        [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the model…"] && retry.hidden,
+        [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the saved model…"] && retry.hidden,
         @"Old engine events must not overwrite model setup after Retry");
 }
 
@@ -518,20 +514,21 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
     __block NSUInteger errors = 0;
     __block NSURL *lastReadyURL = nil;
     __block NSString *lastError = nil;
-    store.onChange = ^(const ModelStoreSnapshot &snapshot) {
-        if (snapshot.state == ModelStoreReady) {
+    void (^observe)(const ModelStoreSnapshot &) = ^(const ModelStoreSnapshot &snapshot) {
+        if (auto *done = std::get_if<ModelReady>(&snapshot)) {
             ++ready;
-            lastReadyURL = snapshot.fileURL;
-        } else if (snapshot.state == ModelStoreFailed) {
+            lastReadyURL = done->url;
+        } else if (auto *failed = std::get_if<ModelFailed>(&snapshot)) {
             ++errors;
-            lastError = snapshot.message;
+            lastError = BawanModelFailureText(*failed);
         }
     };
     @try {
         Require([files createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil],
             @"The model retry fixture directory must be created");
         Require([valid writeToURL:model atomically:YES], @"The valid model fixture must be written");
-        [delegate setValue:store forKey:@"modelStore"];
+        [delegate connectModelStore:store];
+        store.onChange = observe;
         [store prepare];
         WaitFor(^BOOL { return ready || errors; }, @"Initial fixture verification did not complete");
         Require(ready == 1 && errors == 0 && [lastReadyURL isEqual:model],
@@ -571,7 +568,7 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
         Require(ready == 3 && errors == 2, @"Retry must accept the restored valid model");
     } @finally {
         [store cancel];
-        [delegate setValue:previousStore forKey:@"modelStore"];
+        [delegate connectModelStore:previousStore];
         [files removeItemAtURL:files.supportDirectory error:nil];
     }
 }
@@ -599,7 +596,7 @@ static void CheckFirstRunSelection(void) {
         [delegate setValue:defaults forKey:@"defaults"];
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
-        UseModelStore(delegate, store);
+        [delegate connectModelStore:store];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         @try {
@@ -782,7 +779,7 @@ static void CheckSelectionTrial(void) {
         [delegate setValue:defaults forKey:@"defaults"];
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
-        UseModelStore(delegate, store);
+        [delegate connectModelStore:store];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         __weak AppDelegate *weakDelegate = delegate;
@@ -1110,7 +1107,7 @@ static void CheckFirstRunIntegration(void) {
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    UseModelStore(delegate, store);
+    [delegate connectModelStore:store];
     [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
     __block NSUInteger translations = 0;
@@ -1205,7 +1202,7 @@ static void CheckFirstRunIntegration(void) {
         Require(store.preparations == 2 && delegate.licenseViews == 2,
             @"Reopening accepted but unfinished setup must resume preparation without showing the notice again");
 
-        [delegate modelStoreDidChange:{ModelStoreFailed, 0, @"The model could not be verified. Try again."}];
+        [delegate modelStoreDidChange:ModelFailed{ModelCheckFailed{ModelCheckIssue::HashMismatch, ModelFileKind::Saved}}];
         Require(primary.enabled && [primary.title localizedCaseInsensitiveContainsString:@"retry"],
             @"A preparation failure must return to the model step with Retry");
         [primary performClick:nil];
@@ -1270,7 +1267,7 @@ static void CheckFirstRunIntegration(void) {
             @"Escape from ready guidance must finish first use without optional shortcut permissions");
         [defaults setBool:NO forKey:@"firstLaunchShown"];
         [delegate beginModelSetup];
-        [delegate modelStoreDidChange:{ModelStoreDownloading, 0.4, @"Downloading the model… 40%"}];
+        [delegate modelStoreDidChange:ModelDownloading{0.4, ModelDownloadStage::Receiving}];
         [delegate showOnboarding];
         NSButton *later = (NSButton *)FindView(window.contentView, @"onboarding-primary");
         Require([later.title hasPrefix:@"Set Up Later"], @"An unset shortcut must offer Set Up Later");
@@ -1294,7 +1291,7 @@ static void CheckFirstRunIntegration(void) {
         [existingUser setValue:defaults forKey:@"defaults"];
         [existingUser setValue:preferences forKey:@"shortcutPreferences"];
         [existingUser setValue:monitor forKey:@"shortcut"];
-        UseModelStore(existingUser, existingStore);
+        [existingUser connectModelStore:existingStore];
         [existingUser setValue:existingPanel forKey:@"translationPanel"];
         [existingUser buildMenus];
         [existingUser startInitialSetup];
@@ -1400,7 +1397,7 @@ static void CheckModelLicenseSheet(void) {
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    UseModelStore(delegate, store);
+    [delegate connectModelStore:store];
     [delegate setValue:panel forKey:@"translationPanel"];
     [delegate buildMenus];
     @try {
@@ -1450,14 +1447,14 @@ static void CheckDownloadActions(void) {
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    UseModelStore(delegate, store);
+    [delegate connectModelStore:store];
     [delegate setValue:panel forKey:@"translationPanel"];
     [delegate buildNativeMenus];
     @try {
         [delegate startInitialSetup];
         Require(store.preparations == 1 && delegate.licenseViews == 0,
             @"Accepted model setup must start once before exercising transfer controls");
-        [delegate modelStoreDidChange:{ModelStoreDownloading, 0.4, @"Downloading the model… 40%"}];
+        [delegate modelStoreDidChange:ModelDownloading{0.4, ModelDownloadStage::Receiving}];
         NSMenuItem *action = [delegate valueForKey:@"retryItem"];
         NSWindow *window = panel.window;
         NSButton *footerControl = (NSButton *)FindView(window.contentView, @"onboarding-model-control");
@@ -1468,7 +1465,7 @@ static void CheckDownloadActions(void) {
             @"The menu's Pause selector must reach its delegate");
         Require(store.pauses == 1 && store.resumes == 0 && !action.hidden &&
             [action.title isEqualToString:@"Resume Download"] && [footerControl.title isEqualToString:@"Resume Download"] &&
-            [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Download paused · 40%"],
+            [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Model download paused. Resume to continue."],
             @"Pausing from the menu must preserve progress and update both controls to Resume");
         [footerControl performClick:nil];
         Require(store.resumes == 1 && store.preparations == 1 && store.revalidations == 0 &&
@@ -1486,24 +1483,24 @@ static void CheckDownloadActions(void) {
         Require(store.resumes == 2 && [settingsAction.title isEqualToString:@"Pause Download"],
             @"Settings Resume must route to the same active transfer and update its next action");
 
-        [delegate modelStoreDidChange:{ModelStoreFailed, 0.4, @"Connection lost. Resume the download.", nil, true}];
+        [delegate modelStoreDidChange:ModelFailed{ModelInterrupted{@"Connection lost."}, 0.4}];
         Require(Flag(delegate, @"modelFailed") && [action.title isEqualToString:@"Resume Download"] &&
             [settingsAction.title isEqualToString:@"Resume Download"],
             @"A failed transfer with retained bytes must offer Resume in Settings and the menu");
-        Require([[delegate valueForKey:@"modelStatus"] isEqualToString:@"Connection lost. Resume the download."],
+        Require([[delegate valueForKey:@"modelStatus"] isEqualToString:@"Model download interrupted. Connection lost. Resume to continue the download."],
             @"A transfer failure must show its own message");
         [delegate showOnboarding];
         NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
         NSTextField *failure = (NSTextField *)FindView(window.contentView, @"onboarding-model-message");
         Require([primary.title hasPrefix:@"Resume Download"] &&
-            [failure.stringValue isEqualToString:@"Connection lost. Resume the download."],
+            [failure.stringValue isEqualToString:@"Model download interrupted. Connection lost. Resume to continue the download."],
             @"Onboarding must show the failed transfer's error and make Resume its primary action");
         [primary performClick:nil];
         Require(store.resumes == 3 && !Flag(delegate, @"modelFailed") &&
             [primary.title hasPrefix:@"Set Up Later"] && delegate.licenseViews == 0,
             @"Resuming a transfer failure must clear the failure and return to optional setup without new consent");
 
-        [delegate modelStoreDidChange:{ModelStoreVerifying, 1, @"Download complete. Verifying SHA256…"}];
+        [delegate modelStoreDidChange:ModelVerifying{ModelFileKind::Download}];
         Require(action.hidden && footerControl.hiddenOrHasHiddenAncestor &&
             !Flag(delegate, @"hasVerifiedModelFile") &&
             [[delegate valueForKey:@"modelStatus"] containsString:@"SHA256"],
@@ -1514,7 +1511,7 @@ static void CheckDownloadActions(void) {
         [delegate openSettings:nil];
         Require(settingsAction.hidden, @"Settings must hide the transfer action during verification");
 
-        [delegate modelStoreDidChange:{ModelStoreFailed, 0, @"The resumed model failed SHA256 verification. Download it again."}];
+        [delegate modelStoreDidChange:ModelFailed{ModelCheckFailed{ModelCheckIssue::HashMismatch, ModelFileKind::Download}}];
         Require([action.title isEqualToString:@"Retry Model Setup"] && !action.hidden &&
             [settingsAction.title isEqualToString:@"Retry Model Setup"],
             @"Verification failure without retained bytes must offer a fresh Retry instead of Resume");
@@ -1598,7 +1595,7 @@ int main(int argc, const char *argv[]) {
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
         AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
         [delegate setValue:defaults forKey:@"defaults"];
-        UseModelStore(delegate, [[SetupSmokeStore alloc] init]);
+        [delegate connectModelStore:[[SetupSmokeStore alloc] init]];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];

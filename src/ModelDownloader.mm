@@ -1,5 +1,6 @@
 #import "ModelDownloader.h"
 #include "ModelDownload.h"
+#include "ModelVerification.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -8,6 +9,8 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+enum class PartialDownloadLockResult { Acquired, Busy, Failed };
 
 class PartialDownloadLock {
 public:
@@ -18,19 +21,19 @@ public:
 
     PartialDownloadLockResult acquire(NSURL *url) {
         const int fd = open(url.fileSystemRepresentation, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
-        if (fd < 0) return PartialDownloadLockFailed;
+        if (fd < 0) return PartialDownloadLockResult::Failed;
         struct stat info {};
         if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
             close(fd);
-            return PartialDownloadLockFailed;
+            return PartialDownloadLockResult::Failed;
         }
         if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
             const int error = errno;
             close(fd);
-            return error == EWOULDBLOCK ? PartialDownloadLockBusy : PartialDownloadLockFailed;
+            return error == EWOULDBLOCK ? PartialDownloadLockResult::Busy : PartialDownloadLockResult::Failed;
         }
         fd_ = fd;
-        return PartialDownloadLockAcquired;
+        return PartialDownloadLockResult::Acquired;
     }
 
     void release() {
@@ -72,11 +75,13 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
 }
 
 @interface ModelDownloader () <NSURLSessionDataDelegate> {
-    __weak id<ModelDownloaderDelegate> _delegate;
+    ModelDownloadHandler _handler;
     NSURLSession *_session;
     NSURLSessionDataTask *_task;
     NSURL *_partialURL;
+    NSURL *_destinationURL;
     NSURL *_metadataURL;
+    NSFileManager *_files;
     NSURL *_downloadURL;
     NSURLSessionConfiguration *_configuration;
     int64_t _expectedSize;
@@ -93,14 +98,15 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
 
 @implementation ModelDownloader
 
-- (instancetype)initWithPartialURL:(NSURL *)partialURL downloadURL:(NSURL *)downloadURL
-                      expectedSize:(int64_t)expectedSize SHA256:(NSString *)expectedSHA256
-              sessionConfiguration:(NSURLSessionConfiguration *)configuration
-                          delegate:(id<ModelDownloaderDelegate>)delegate {
+- (instancetype)initWithPartialURL:(NSURL *)partialURL destinationURL:(NSURL *)destinationURL
+                       downloadURL:(NSURL *)downloadURL expectedSize:(int64_t)expectedSize
+                            SHA256:(NSString *)expectedSHA256 fileManager:(NSFileManager *)files
+              sessionConfiguration:(NSURLSessionConfiguration *)configuration {
     self = [super init];
     if (self) {
-        _delegate = delegate;
         _partialURL = partialURL;
+        _destinationURL = destinationURL;
+        _files = files;
         _metadataURL = [partialURL URLByAppendingPathExtension:@"plist"];
         _downloadURL = downloadURL;
         _configuration = configuration;
@@ -115,17 +121,40 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
     if (_partialFile) std::fclose(_partialFile);
 }
 
-- (NSURL *)partialURL { return _partialURL; }
-- (int64_t)receivedBytes { return _receivedBytes; }
-- (BOOL)isComplete { return _receivedBytes == _expectedSize; }
+- (double)fraction { return static_cast<double>(_receivedBytes) / _expectedSize; }
 
-- (BOOL)canResume {
+- (bool)resumable {
     return _receivedBytes > 0 && _receivedBytes <= _expectedSize &&
         (_receivedBytes == _expectedSize || bawan::isStrongModelETag(_etag.UTF8String ?: ""));
 }
 
-- (PartialDownloadLockResult)lockPartial {
-    return _lock.acquire([_partialURL URLByAppendingPathExtension:@"lock"]);
+- (std::optional<double>)resumeProgress {
+    if (![self resumable]) return std::nullopt;
+    return [self fraction];
+}
+
+- (void)emit:(const ModelDownloadEvent &)event {
+    ModelDownloadHandler handler = _handler;
+    if (handler) handler(event);
+}
+
+- (ModelDownloadOpening)open {
+    const PartialDownloadLockResult lock = _lock.acquire([_partialURL URLByAppendingPathExtension:@"lock"]);
+    const SavedModelPath destination = CheckSavedModelPath(_destinationURL);
+    if (destination != SavedModelPath::Absent) {
+        [self stop];
+        if (auto issue = SavedModelPathIssue(destination)) return ModelFailed{*issue};
+        return ModelDestinationPresent{};
+    }
+    if (lock != PartialDownloadLockResult::Acquired)
+        return ModelFailed{lock == PartialDownloadLockResult::Busy ? ModelIssue::AnotherInstancePreparing
+                                                                   : ModelIssue::LockUnavailable};
+    if (![self loadPartial]) {
+        [self stop];
+        return ModelFailed{ModelIssue::OldPartialUnremovable};
+    }
+    if (_receivedBytes == _expectedSize) return ModelDownloaded{_partialURL};
+    return ModelNeedsTransfer{};
 }
 
 - (void)stopTransfer {
@@ -144,7 +173,32 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
     _lock.release();
 }
 
-- (BOOL)discardPartial {
+- (ModelPaused)pause {
+    [self stop];
+    return {[self fraction], [self resumable]};
+}
+
+- (std::optional<ModelIssue>)discard {
+    [self stop];
+    if ([self removePartial]) return std::nullopt;
+    return ModelIssue::InvalidPartialUnremovable;
+}
+
+- (std::optional<ModelFailed>)install {
+    std::optional<ModelFailed> failure;
+    if ([_files moveItemAtURL:_partialURL toURL:_destinationURL error:nil]) {
+        RemovePartialFile(_metadataURL);
+        _receivedBytes = 0;
+        _etag = nil;
+    } else {
+        failure = ModelFailed{SavedModelPathIssue(CheckSavedModelPath(_destinationURL)).value_or(ModelIssue::InstallFailed),
+                              [self resumeProgress]};
+    }
+    [self stop];
+    return failure;
+}
+
+- (BOOL)removePartial {
     const bool removedPartial = RemovePartialFile(_partialURL);
     const bool removedMetadata = RemovePartialFile(_metadataURL);
     _receivedBytes = 0;
@@ -152,35 +206,34 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
     return removedPartial && removedMetadata;
 }
 
-- (void)forgetInstalledPartial {
-    RemovePartialFile(_metadataURL);
-    _receivedBytes = 0;
-    _etag = nil;
-}
-
 - (BOOL)loadPartial {
     _receivedBytes = 0;
     _etag = nil;
     struct stat info {};
     if (lstat(_partialURL.fileSystemRepresentation, &info) != 0 || !S_ISREG(info.st_mode) ||
-        info.st_size <= 0 || info.st_size > _expectedSize) return [self discardPartial];
+        info.st_size <= 0 || info.st_size > _expectedSize) return [self removePartial];
     NSDictionary *saved = ReadPartialMetadata(_metadataURL);
     if (![saved[@"url"] isEqual:_downloadURL.absoluteString] ||
         ![saved[@"size"] isKindOfClass:NSNumber.class] ||
         [saved[@"size"] longLongValue] != _expectedSize ||
         ![saved[@"sha256"] isEqual:_expectedSHA256] ||
-        ![saved[@"etag"] isKindOfClass:NSString.class]) return [self discardPartial];
+        ![saved[@"etag"] isKindOfClass:NSString.class]) return [self removePartial];
     NSString *etag = saved[@"etag"];
     // A full file can be rehashed even without a validator. A prefix needs a
     // strong validator so If-Range cannot join bytes from different versions.
     if (info.st_size < _expectedSize && !bawan::isStrongModelETag(etag.UTF8String ?: ""))
-        return [self discardPartial];
+        return [self removePartial];
     _receivedBytes = info.st_size;
     _etag = etag;
     return YES;
 }
 
-- (void)start {
+- (ModelDownloading)startWithHandler:(ModelDownloadHandler)handler {
+    _handler = [handler copy];
+    return [self beginTransfer];
+}
+
+- (ModelDownloading)beginTransfer {
     NSURLSessionConfiguration *configuration = [_configuration copy];
     configuration.URLCache = nil;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
@@ -196,18 +249,15 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
     }
     _session = [NSURLSession sessionWithConfiguration:configuration delegate:self
                                       delegateQueue:NSOperationQueue.mainQueue];
-    NSURLSessionDataTask *task = [_session dataTaskWithRequest:request];
-    _task = task;
-    [_delegate modelDownloader:self didProgress:static_cast<double>(_receivedBytes) / _expectedSize
-                       message:_requestOffset ? @"Resuming the model download…" : @"Downloading the model…"];
-    if (_task == task) [task resume];
+    _task = [_session dataTaskWithRequest:request];
+    [_task resume];
+    return {[self fraction], _requestOffset ? ModelDownloadStage::Resuming : ModelDownloadStage::Starting};
 }
 
-- (void)failTransfer:(NSString *)message discard:(BOOL)discard {
-    [self stopTransfer];
-    if (discard && ![self discardPartial])
-        message = @"Unable to remove the invalid partial download. Check the folder permissions and try again.";
-    [_delegate modelDownloader:self didFailWithMessage:message];
+- (void)fail:(ModelFailure)failure discard:(BOOL)discard {
+    [self stop];
+    if (discard && ![self removePartial]) failure = ModelIssue::InvalidPartialUnremovable;
+    [self emit:ModelFailed{failure, [self resumeProgress]}];
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
@@ -219,8 +269,7 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
     }
     if (![request.URL.scheme.lowercaseString isEqualToString:@"https"]) {
         completionHandler(nil);
-        [self failTransfer:@"The server redirected the model download to an insecure address. Please try again."
-                  discard:NO];
+        [self fail:ModelIssue::InsecureRedirect discard:NO];
         return;
     }
     NSMutableURLRequest *redirect = [request mutableCopy];
@@ -245,23 +294,20 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
     if (decision == bawan::DownloadResponse::RetryFromStart && !_retriedRange) {
         completionHandler(NSURLSessionResponseCancel);
         [self stopTransfer];
-        if (![self discardPartial]) {
-            [_delegate modelDownloader:self
-                didFailWithMessage:@"Unable to restart the partial download. Check the folder permissions and try again."];
+        if (![self removePartial]) {
+            [self fail:ModelIssue::PartialRestartFailed discard:NO];
             return;
         }
         _retriedRange = YES;
-        [self start];
+        [self emit:[self beginTransfer]];
         return;
     }
     if (decision == bawan::DownloadResponse::Reject || decision == bawan::DownloadResponse::RetryFromStart ||
         (encoding.length && [encoding caseInsensitiveCompare:@"identity"] != NSOrderedSame)) {
         completionHandler(NSURLSessionResponseCancel);
         const BOOL incompatibleRange = http.statusCode == 200 || http.statusCode == 206 || http.statusCode == 416;
-        NSString *message = incompatibleRange ? @"The server returned an incompatible model download. The partial download was discarded. Please try again."
-            : [NSString stringWithFormat:@"Model download failed (HTTP %ld). %@", (long)http.statusCode,
-                self.canResume ? @"Resume to continue the download." : @"Please try again."];
-        [self failTransfer:message discard:incompatibleRange];
+        if (incompatibleRange) [self fail:ModelIssue::IncompatibleResponse discard:YES];
+        else [self fail:ModelHTTPFailed{static_cast<long>(http.statusCode)} discard:NO];
         return;
     }
     const BOOL restart = decision == bawan::DownloadResponse::Restart || _requestOffset == 0;
@@ -273,15 +319,14 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
         info.st_size != (restart ? 0 : _requestOffset)) {
         if (descriptor >= 0) close(descriptor);
         completionHandler(NSURLSessionResponseCancel);
-        [self failTransfer:@"Unable to open the partial download. Check disk space and folder permissions, then try again."
-                  discard:YES];
+        [self fail:ModelIssue::PartialUnopenable discard:YES];
         return;
     }
     _partialFile = fdopen(descriptor, restart ? "wb" : "ab");
     if (!_partialFile) {
         close(descriptor);
         completionHandler(NSURLSessionResponseCancel);
-        [self failTransfer:@"Unable to save the model download. Please try again." discard:YES];
+        [self fail:ModelIssue::DownloadUnsaved discard:YES];
         return;
     }
     _receivedBytes = restart ? 0 : _requestOffset;
@@ -293,37 +338,32 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
             format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
         if (!saved || ![saved writeToURL:_metadataURL options:NSDataWritingAtomic error:nil]) {
             completionHandler(NSURLSessionResponseCancel);
-            [self failTransfer:@"Unable to save download progress. Check disk space and folder permissions, then try again."
-                      discard:YES];
+            [self fail:ModelIssue::ProgressUnsaved discard:YES];
             return;
         }
     }
     completionHandler(NSURLSessionResponseAllow);
     if (restart && _requestOffset) {
         _lastReportedFraction = -1;
-        [_delegate modelDownloader:self didProgress:0
-                           message:@"The server restarted the download from the beginning."];
+        [self emit:ModelDownloading{0, ModelDownloadStage::Restarted}];
     }
 }
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
     if (session != _session || dataTask != _task || !_partialFile || data.length == 0) return;
     if (data.length > static_cast<uint64_t>(_expectedSize - _receivedBytes)) {
-        [self failTransfer:@"The model download has an incorrect size. The partial download was discarded. Please try again."
-                  discard:YES];
+        [self fail:ModelIssue::DownloadWrongSize discard:YES];
         return;
     }
     if (std::fwrite(data.bytes, 1, data.length, _partialFile) != data.length || std::fflush(_partialFile) != 0) {
-        [self failTransfer:@"Unable to save the model download. Check free disk space and try again."
-                  discard:NO];
+        [self fail:ModelIssue::DiskFull discard:NO];
         return;
     }
     _receivedBytes += data.length;
-    const double fraction = static_cast<double>(_receivedBytes) / _expectedSize;
+    const double fraction = [self fraction];
     if (fraction - _lastReportedFraction >= 0.01 || fraction == 1) {
         _lastReportedFraction = fraction;
-        [_delegate modelDownloader:self didProgress:fraction
-            message:[NSString stringWithFormat:@"Downloading the model… %.0f%%", fraction * 100]];
+        [self emit:ModelDownloading{fraction, ModelDownloadStage::Receiving}];
     }
 }
 
@@ -337,13 +377,11 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
         _partialFile = nullptr;
     }
     if (error || _receivedBytes != _expectedSize) {
-        NSString *message = [NSString stringWithFormat:@"Model download interrupted. %@ %@",
-            error.localizedDescription ?: @"The server sent an incomplete file.",
-            self.canResume ? @"Resume to continue the download." : @"Please try again."];
-        [_delegate modelDownloader:self didFailWithMessage:message];
+        _lock.release();
+        [self emit:ModelFailed{ModelInterrupted{error.localizedDescription}, [self resumeProgress]}];
         return;
     }
-    [_delegate modelDownloaderDidFinish:self];
+    [self emit:ModelDownloaded{_partialURL}];
 }
 
 @end

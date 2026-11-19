@@ -1,10 +1,13 @@
 #import "ModelStore.h"
+#import "ModelSetupState.h"
 
 #include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <variant>
+#include <vector>
 
 @interface ModelStore (DownloadFixture)
 - (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
@@ -108,6 +111,16 @@ static void WaitFor(const std::function<bool()> &condition, const char *message)
     Require(condition(), message);
 }
 
+template <class State> static bool Is(const ModelStoreSnapshot &snapshot) {
+    return std::holds_alternative<State>(snapshot);
+}
+
+static bool Resumable(const ModelStoreSnapshot &snapshot) {
+    if (auto *paused = std::get_if<ModelPaused>(&snapshot)) return paused->resumable;
+    if (auto *failed = std::get_if<ModelFailed>(&snapshot)) return failed->resumeProgress.has_value();
+    return false;
+}
+
 static NSString *const FixtureSHA256 = @"32e5e24230b47f8db398a288c8a7ca84723ba83d0099fceeaecdec1976d25c30";
 static NSString *const FixtureFilename = @"plamo-3-translate-0.8b-Q4_K_M.gguf";
 
@@ -124,6 +137,7 @@ struct Fixture {
     NSString *error = nil;
     NSURL *readyURL = nil;
     double progress = 0;
+    std::vector<ModelStoreSnapshot> snapshots;
     bool callbacksOnMain = true;
     const bool ownsSupportDirectory;
 
@@ -155,13 +169,15 @@ struct Fixture {
     }
     void observe(const ModelStoreSnapshot &snapshot) {
         callbacksOnMain &= NSThread.isMainThread;
-        progress = snapshot.progress;
-        if (snapshot.state == ModelStoreReady) {
+        snapshots.push_back(snapshot);
+        if (auto *downloading = std::get_if<ModelDownloading>(&snapshot)) progress = downloading->progress;
+        else if (auto *paused = std::get_if<ModelPaused>(&snapshot)) progress = paused->progress;
+        else if (auto *done = std::get_if<ModelReady>(&snapshot)) {
             ++ready;
-            readyURL = snapshot.fileURL;
-        } else if (snapshot.state == ModelStoreFailed) {
+            readyURL = done->url;
+        } else if (auto *failed = std::get_if<ModelFailed>(&snapshot)) {
             ++errors;
-            error = snapshot.message;
+            error = BawanModelFailureText(*failed);
         }
     }
     NSData *prefix() const { return [body subdataWithRange:NSMakeRange(0, 7)]; }
@@ -190,7 +206,7 @@ struct Fixture {
     void awaitReady() const {
         WaitFor([&] { return ready || errors; }, "Model download did not reach Ready or Error");
         Require(ready == 1 && errors == 0, "Valid downloaded bytes must pass SHA256 and report Ready");
-        Require(store.snapshot.state == ModelStoreReady && [readyURL isEqual:model], "Ready must expose the final model URL");
+        Require(Is<ModelReady>(store.snapshot) && [readyURL isEqual:model], "Ready must expose the final model URL");
         Require([[NSData dataWithContentsOfURL:model] isEqual:body], "Final model bytes must equal the complete fixture");
         Require(![files fileExistsAtPath:partial.path] && ![files fileExistsAtPath:sidecar.path],
                 "Verified download must remove partial and metadata");
@@ -198,7 +214,7 @@ struct Fixture {
     }
     void awaitPrefix() const {
         WaitFor([&] { return progress > 0 || errors; }, "Held response prefix was not persisted");
-        Require(!errors && store.snapshot.state == ModelStoreDownloading, "Held response must still be downloading");
+        Require(!errors && Is<ModelDownloading>(store.snapshot), "Held response must still be downloading");
     }
 };
 
@@ -217,12 +233,55 @@ static void CheckPauseAndResume() {
     [f.store prepare];
     f.awaitPrefix();
     [f.store pause];
-    Require(f.store.snapshot.state == ModelStorePaused && f.store.snapshot.resumable, "Pause must expose a resumable paused state");
+    Require(Is<ModelPaused>(f.store.snapshot) && Resumable(f.store.snapshot), "Pause must expose a resumable paused state");
     Require([[NSData dataWithContentsOfURL:f.partial] isEqual:f.prefix()], "Pause must preserve every reported byte");
     const double paused = f.progress;
     Require(paused > 0 && paused < 1, "Pause must retain the acquired fraction");
     [f.store resume];
     f.awaitReady();
+    RequireResumeRequest();
+}
+
+static void CheckNoProgressAfterPause() {
+    Fixture f;
+    [DownloadFixtureProtocol setResponses:@[f.response(200, f.prefix(), nil, true)]];
+    [f.store prepare];
+    f.awaitPrefix();
+    [f.store pause];
+    const size_t published = f.snapshots.size();
+    [DownloadFixtureProtocol failActiveRequest];
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    Require(f.snapshots.size() == published && Is<ModelPaused>(f.store.snapshot) && !f.errors,
+            "A paused download must not publish later transfer events");
+}
+
+static void CheckCancelFromObserverStopsPreparation() {
+    Fixture f;
+    [DownloadFixtureProtocol setResponses:@[f.response(200, f.prefix(), nil, true)]];
+    Fixture *fixture = &f;
+    f.store.onChange = ^(const ModelStoreSnapshot &snapshot) {
+        fixture->observe(snapshot);
+        if (Is<ModelDownloading>(snapshot)) [fixture->store cancel];
+    };
+    [f.store prepare];
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    Require(f.snapshots.size() == 2 && Is<ModelDownloading>(f.snapshots[0]) && Is<ModelIdle>(f.snapshots[1]) &&
+            Is<ModelIdle>(f.store.snapshot),
+            "Cancelling from onChange must stop the preparation that published the snapshot");
+}
+
+static void CheckSupersededPreparationIsSilent() {
+    Fixture f;
+    [DownloadFixtureProtocol setResponses:@[f.response(200, f.prefix(), nil, true), f.continuation()]];
+    [f.store prepare];
+    f.awaitPrefix();
+    [f.store prepare];
+    f.awaitReady();
+    for (size_t i = 1; i < f.snapshots.size(); ++i) {
+        if (auto *downloading = std::get_if<ModelDownloading>(&f.snapshots[i]))
+            Require(downloading->stage != ModelDownloadStage::Starting,
+                    "The superseded transfer must not publish after the new preparation starts");
+    }
     RequireResumeRequest();
 }
 
@@ -240,7 +299,7 @@ static void CheckConcurrentDownloadsPreserveProgress() {
             "Concurrent preparation did not report failure or restart the transfer");
     Require([[NSData dataWithContentsOfURL:first.partial] isEqual:first.prefix()],
             "A second instance must not truncate the active model download");
-    Require(second.errors == 1 && second.store.snapshot.state == ModelStoreFailed &&
+    Require(second.errors == 1 && Is<ModelFailed>(second.store.snapshot) &&
             DownloadFixtureProtocol.requests.count == 1,
             "A second instance must report that the model download is busy without contacting the server");
 
@@ -271,7 +330,7 @@ static void CheckNetworkFailure() {
     f.awaitPrefix();
     [DownloadFixtureProtocol failActiveRequest];
     WaitFor([&] { return f.errors != 0; }, "Connection loss must report an error");
-    Require(f.store.snapshot.state == ModelStoreFailed && f.store.snapshot.resumable, "Connection loss must retain a resumable prefix");
+    Require(Is<ModelFailed>(f.store.snapshot) && Resumable(f.store.snapshot), "Connection loss must retain a resumable prefix");
     Require(!f.ready && [[NSData dataWithContentsOfURL:f.partial] isEqual:f.prefix()],
             "Connection loss must never expose an unverified model");
     f.errors = 0;
@@ -343,7 +402,7 @@ static void CheckInsecureRedirectPreservesPartial() {
     WaitFor([&] { return f.ready || f.errors; }, "Rejected redirect must finish with an error");
     Require(f.errors == 1 && !f.ready && DownloadFixtureProtocol.requests.count == 1,
             "A resume must not follow a redirect to HTTP");
-    Require(f.store.snapshot.resumable && [[NSData dataWithContentsOfURL:f.partial] isEqual:f.prefix()],
+    Require(Resumable(f.store.snapshot) && [[NSData dataWithContentsOfURL:f.partial] isEqual:f.prefix()],
             "Rejecting a redirect must preserve the existing prefix");
 }
 
@@ -363,7 +422,7 @@ static void CheckSavedModelDirectoryCollision() {
     WaitFor([&] { return f.ready || f.errors; }, "Saved model path collision did not finish");
     Require([[NSData dataWithContentsOfURL:marker] isEqual:f.prefix()],
             "Verification must preserve the directory at the saved model path and its contents");
-    Require(f.errors == 1 && !f.ready && f.store.snapshot.state == ModelStoreFailed &&
+    Require(f.errors == 1 && !f.ready && Is<ModelFailed>(f.store.snapshot) &&
             [f.error containsString:@"occupied"] && DownloadFixtureProtocol.requests.count == 0,
             "Report the occupied model path before contacting the server");
 }
@@ -417,7 +476,7 @@ static void CheckInstallCollisionPreservesVerifiedDownload() {
     __block NSURL *marker = nil;
     f.store.onChange = ^(const ModelStoreSnapshot &snapshot) {
         fixture->observe(snapshot);
-        if (snapshot.state == ModelStoreVerifying && !marker) marker = CreateSavedModelDirectory(*fixture);
+        if (Is<ModelVerifying>(snapshot) && !marker) marker = CreateSavedModelDirectory(*fixture);
     };
     [DownloadFixtureProtocol setResponses:@[f.response(200, f.body)]];
     [f.store prepare];
@@ -520,7 +579,7 @@ static void CheckInterruptedWithoutValidator() {
         [f.store prepare];
         f.awaitPrefix();
         [f.store pause];
-        Require(f.store.snapshot.state == ModelStorePaused, "A download without a strong ETag must still pause");
+        Require(Is<ModelPaused>(f.store.snapshot), "A download without a strong ETag must still pause");
         [f.store resume];
         f.awaitReady();
         Require(DownloadFixtureProtocol.requests.count == 2 &&
@@ -544,7 +603,7 @@ static void CheckRejectedRangeResponses() {
         Require(!f.ready || [[NSData dataWithContentsOfURL:f.model] isEqual:f.body],
                 "Mismatched range boundaries/ETag must never publish mixed bytes");
         if (f.errors) {
-            Require(f.store.snapshot.state == ModelStoreFailed, "Rejected range must expose an error state");
+            Require(Is<ModelFailed>(f.store.snapshot), "Rejected range must expose an error state");
             f.errors = 0;
             [f.store prepare];
         }
@@ -576,7 +635,7 @@ static void CheckRepeatedRangeFailure() {
                                             f.response(416, [NSData data])]];
     [f.store prepare];
     WaitFor([&] { return f.ready || f.errors; }, "Repeated HTTP 416 did not terminate");
-    Require(!f.ready && f.errors == 1 && !f.store.snapshot.resumable &&
+    Require(!f.ready && f.errors == 1 && !Resumable(f.store.snapshot) &&
             DownloadFixtureProtocol.requests.count == 2,
             "HTTP 416 recovery must stop after one fresh retry and discard its prefix");
 }
@@ -599,7 +658,7 @@ static void CheckResumedHashFailure() {
     [DownloadFixtureProtocol setResponses:@[f.continuation(wrongSuffix), f.response(200, f.body)]];
     [f.store prepare];
     WaitFor([&] { return f.ready || f.errors; }, "Resumed hash verification did not terminate");
-    Require(f.errors == 1 && f.ready == 0 && f.store.snapshot.state == ModelStoreFailed && !f.store.snapshot.resumable,
+    Require(f.errors == 1 && f.ready == 0 && Is<ModelFailed>(f.store.snapshot) && !Resumable(f.store.snapshot),
             "A resumed hash mismatch must report failure and clear resume availability");
     Require([f.error containsString:@"SHA256"] &&
         ([f.error localizedCaseInsensitiveContainsString:@"try again"] ||
@@ -624,6 +683,9 @@ int main() {
             CheckCorruptSavedModelCanBeReplaced();
             CheckInstallCollisionPreservesVerifiedDownload();
             CheckPauseAndResume();
+            CheckNoProgressAfterPause();
+            CheckCancelFromObserverStopsPreparation();
+            CheckSupersededPreparationIsSilent();
             CheckConcurrentDownloadsPreserveProgress();
             CheckProcessRestart();
             CheckNetworkFailure();

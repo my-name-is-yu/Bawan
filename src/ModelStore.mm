@@ -17,7 +17,7 @@ static const off_t ModelSize = 573126848;
 static const char ModelSHA256[] =
     "70891ec70dc7ab4205745a38307867c2881b99239f20327927633abfe4bc9ec6";
 
-@interface ModelStore () <ModelDownloaderDelegate> {
+@interface ModelStore () {
     std::atomic<uint64_t> _generation;
     ModelDownloader *_downloader;
     NSURL *_modelURL;
@@ -79,32 +79,26 @@ static const char ModelSHA256[] =
     if (self.onChange) self.onChange(_snapshot);
 }
 
-- (void)stop {
-    ++_generation;
+- (uint64_t)restart {
     [_downloader stop];
+    return ++_generation;
 }
 
 - (void)cancel {
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
-    [self stop];
-    [self publish:{} generation:_generation.load()];
+    [self publish:ModelIdle{} generation:[self restart]];
 }
 
 - (void)pause {
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
-    if (_snapshot.state != ModelStoreDownloading) return;
-    [self stop];
-    const bool resumable = _downloader.canResume;
-    [self publish:{ModelStorePaused, static_cast<double>(_downloader.receivedBytes) / _expectedSize,
-                   resumable ? @"Model download paused. Resume to continue."
-                             : @"Model download paused. Resume to restart the download.",
-                   nil, resumable}
-       generation:_generation.load()];
+    if (!std::holds_alternative<ModelDownloading>(_snapshot)) return;
+    [self publish:[_downloader pause] generation:++_generation];
 }
 
 - (void)resume {
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
-    if (_snapshot.state == ModelStorePaused || _snapshot.state == ModelStoreFailed) [self prepare];
+    if (std::holds_alternative<ModelPaused>(_snapshot) || std::holds_alternative<ModelFailed>(_snapshot))
+        [self prepare];
 }
 
 - (void)prepare { [self prepareTrustingVerifiedModel:YES]; }
@@ -112,138 +106,94 @@ static const char ModelSHA256[] =
 
 - (void)prepareTrustingVerifiedModel:(BOOL)trustStamp {
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
-    [self stop];
-    const uint64_t generation = _generation.load();
+    const uint64_t generation = [self restart];
     _downloader = nil;
-    [self publish:{ModelStoreChecking} generation:generation];
-    if (_generation.load() != generation) return;
-    NSError *error = nil;
+    [self publish:[self beginPreparation:trustStamp generation:generation] generation:generation];
+}
+
+- (ModelStoreSnapshot)beginPreparation:(BOOL)trustStamp generation:(uint64_t)generation {
     NSURL *support = [_files URLForDirectory:NSApplicationSupportDirectory
-                                   inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:&error];
+                                   inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:nil];
     NSURL *directory = [support URLByAppendingPathComponent:@"local.bawan.Bawan" isDirectory:YES];
-    if (!support || ![_files createDirectoryAtURL:directory withIntermediateDirectories:YES
-                                      attributes:nil error:&error]) {
-        [self reportError:@"Unable to create the model folder." generation:generation];
-        return;
-    }
+    if (!support || ![_files createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil])
+        return ModelFailed{ModelIssue::FolderUnavailable};
     _modelURL = [directory URLByAppendingPathComponent:ModelFilename];
+    const SavedModelPath saved = CheckSavedModelPath(_modelURL);
+    if (auto issue = SavedModelPathIssue(saved)) return ModelFailed{*issue};
+    if (saved == SavedModelPath::Present) return [self verifySavedModel:trustStamp generation:generation];
+
     _downloader = [[ModelDownloader alloc]
         initWithPartialURL:[directory URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", ModelFilename]]
-               downloadURL:_downloadURL expectedSize:_expectedSize SHA256:_expectedSHA256
-      sessionConfiguration:_configuration delegate:self];
-    bool hasSavedModel;
-    NSString *pathError = CheckSavedModelPath(_modelURL, &hasSavedModel);
-    if (pathError) {
-        [self reportError:pathError generation:generation];
-        return;
+            destinationURL:_modelURL downloadURL:_downloadURL expectedSize:_expectedSize SHA256:_expectedSHA256
+               fileManager:_files sessionConfiguration:_configuration];
+    const ModelDownloadOpening opening = [_downloader open];
+    if (auto *failed = std::get_if<ModelFailed>(&opening)) return *failed;
+    if (auto *downloaded = std::get_if<ModelDownloaded>(&opening))
+        return [self verifyDownload:downloaded->url generation:generation];
+    if (std::holds_alternative<ModelDestinationPresent>(opening)) {
+        _downloader = nil;
+        return [self verifySavedModel:trustStamp generation:generation];
     }
-    if (!hasSavedModel) {
-        const PartialDownloadLockResult lock = [_downloader lockPartial];
-        pathError = CheckSavedModelPath(_modelURL, &hasSavedModel);
-        if (pathError) {
-            [self reportError:pathError generation:generation];
-            return;
-        }
-        if (lock != PartialDownloadLockAcquired && !hasSavedModel) {
-            [self reportError:lock == PartialDownloadLockBusy
-                ? @"Another Bawan instance is preparing the model. Pause it or wait for it to finish, then try again."
-                : @"Unable to lock the model download. Check the folder permissions and try again."
-                generation:generation];
-            return;
-        }
-    }
-    if (hasSavedModel) {
-        [self publish:{ModelStoreVerifying, 0, @"Checking the saved model…"} generation:generation];
+    __weak ModelStore *weakSelf = self;
+    return [_downloader startWithHandler:^(const ModelDownloadEvent &event) {
+        [weakSelf downloadDidChange:event generation:generation];
+    }];
+}
+
+- (void)downloadDidChange:(const ModelDownloadEvent &)event generation:(uint64_t)generation {
+    if (auto *downloaded = std::get_if<ModelDownloaded>(&event)) {
         if (_generation.load() == generation)
-            [self verifyURL:_modelURL downloaded:NO trustStamp:trustStamp generation:generation];
-        return;
+            [self publish:[self verifyDownload:downloaded->url generation:generation] generation:generation];
+    } else if (auto *downloading = std::get_if<ModelDownloading>(&event)) {
+        [self publish:*downloading generation:generation];
+    } else {
+        [self publish:std::get<ModelFailed>(event) generation:generation];
     }
-    if (![_downloader loadPartial]) {
-        [self reportError:@"Unable to remove the old partial download. Check for conflicting items or folder permissions and try again."
-              generation:generation];
-        return;
-    }
-    if (_downloader.complete) {
-        [self finishDownload:generation];
-        return;
-    }
-    [_downloader start];
 }
 
-- (void)reportError:(NSString *)message generation:(uint64_t)generation {
-    if (_generation.load() != generation) return;
-    [_downloader stop];
-    const bool resumable = _downloader.canResume;
-    [self publish:{ModelStoreFailed, resumable ? _snapshot.progress : 0, message, nil, resumable}
-       generation:generation];
+- (ModelStoreSnapshot)verifySavedModel:(BOOL)trustStamp generation:(uint64_t)generation {
+    NSURL *url = _modelURL;
+    [self verify:url trustStamp:trustStamp generation:generation then:^ModelStoreSnapshot(const VerificationResult &result) {
+        switch (result.outcome) {
+            case VerificationOutcome::Valid: return ModelReady{url};
+            case VerificationOutcome::Occupied: return ModelFailed{ModelIssue::PathOccupied};
+            case VerificationOutcome::Invalid:
+                if (auto issue = RemoveInvalidSavedModel(url, result.file)) return ModelFailed{*issue};
+                break;
+            case VerificationOutcome::Unchecked:
+            case VerificationOutcome::Cancelled: break;
+        }
+        return ModelFailed{ModelCheckFailed{result.issue, ModelFileKind::Saved}};
+    }];
+    return ModelVerifying{ModelFileKind::Saved};
 }
 
-- (void)finishDownload:(uint64_t)generation {
-    [self publish:{ModelStoreVerifying, 1, @"Download complete. Verifying SHA256…"} generation:generation];
-    if (_generation.load() == generation)
-        [self verifyURL:_downloader.partialURL downloaded:YES trustStamp:NO generation:generation];
-}
-
-- (void)verifyURL:(NSURL *)url downloaded:(BOOL)downloaded trustStamp:(BOOL)trustStamp
-        generation:(uint64_t)generation {
-    NSURL *destination = _modelURL;
+- (ModelStoreSnapshot)verifyDownload:(NSURL *)url generation:(uint64_t)generation {
     ModelDownloader *downloader = _downloader;
+    NSURL *destination = _modelURL;
+    [self verify:url trustStamp:NO generation:generation then:^ModelStoreSnapshot(const VerificationResult &result) {
+        if (result.outcome == VerificationOutcome::Valid) {
+            if (auto failed = [downloader install]) return *failed;
+            return ModelReady{destination};
+        }
+        if (auto issue = [downloader discard]) return ModelFailed{*issue};
+        return ModelFailed{ModelCheckFailed{result.issue, ModelFileKind::Download}};
+    }];
+    return ModelVerifying{ModelFileKind::Download};
+}
+
+- (void)verify:(NSURL *)url trustStamp:(BOOL)trustStamp generation:(uint64_t)generation
+          then:(ModelStoreSnapshot (^)(const VerificationResult &result))finish {
     dispatch_async(_verificationQueue, ^{
         @autoreleasepool {
-            NSString *reason = nil;
-            struct stat verified {};
-            const Verification result = VerifyModel(url, self->_generation, generation,
-                self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp, verified, &reason);
+            const VerificationResult result = VerifyModel(url, self->_generation, generation,
+                self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp);
+            if (result.outcome == VerificationOutcome::Cancelled) return;
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (self->_generation.load() != generation || result == Verification::Cancelled) return;
-                if (result == Verification::Collision && !downloaded) {
-                    [self reportError:ModelPathCollision generation:generation];
-                    return;
-                }
-                if (result != Verification::Valid) {
-                    NSString *failureReason = reason ?: @"Model verification failed.";
-                    if (downloaded) {
-                        if (![downloader discardPartial])
-                            failureReason = @"Unable to remove the invalid partial download. Check the folder permissions.";
-                        else
-                            failureReason = [failureReason stringByAppendingString:@" The partial download was discarded."];
-                    } else if (result == Verification::Invalid) {
-                        NSString *cleanupError = RemoveInvalidSavedModel(url, verified);
-                        if (cleanupError) {
-                            [self reportError:cleanupError generation:generation];
-                            return;
-                        }
-                    }
-                    [self reportError:[failureReason stringByAppendingString:@" Please try again to download the model."]
-                           generation:generation];
-                    return;
-                }
-                if (downloaded) {
-                    if (![self->_files moveItemAtURL:url toURL:destination error:nil]) {
-                        NSString *pathError = CheckSavedModelPath(destination);
-                        [self reportError:pathError ?: @"Unable to save the verified model. Check the folder permissions and try again."
-                               generation:generation];
-                        return;
-                    }
-                    [downloader forgetInstalledPartial];
-                }
-                [downloader stop];
-                [self publish:{ModelStoreReady, 1, nil, destination} generation:generation];
+                if (self->_generation.load() == generation) [self publish:finish(result) generation:generation];
             });
         }
     });
-}
-
-- (void)modelDownloader:(ModelDownloader *)downloader didProgress:(double)fraction message:(NSString *)message {
-    [self publish:{ModelStoreDownloading, fraction, message} generation:_generation.load()];
-}
-
-- (void)modelDownloader:(ModelDownloader *)downloader didFailWithMessage:(NSString *)message {
-    [self reportError:message generation:_generation.load()];
-}
-
-- (void)modelDownloaderDidFinish:(ModelDownloader *)downloader {
-    [self finishDownload:_generation.load()];
 }
 
 @end

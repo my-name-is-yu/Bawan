@@ -1,44 +1,34 @@
 #import <Foundation/Foundation.h>
 
+#include "ModelStoreSnapshot.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
-@class ModelDownloader;
-
-typedef NS_ENUM(NSInteger, PartialDownloadLockResult) {
-    PartialDownloadLockAcquired,
-    PartialDownloadLockBusy,
-    PartialDownloadLockFailed
+struct ModelDownloaded {
+    NSURL *url;
 };
+struct ModelDestinationPresent {};
+struct ModelNeedsTransfer {};
 
-// Use on the main thread. Messages arrive there, synchronously from the downloader's
-// own methods, and the delegate may stop the downloader from any of them.
-@protocol ModelDownloaderDelegate <NSObject>
-- (void)modelDownloader:(ModelDownloader *)downloader didProgress:(double)fraction message:(NSString *)message;
-- (void)modelDownloader:(ModelDownloader *)downloader didFailWithMessage:(NSString *)message;
-- (void)modelDownloaderDidFinish:(ModelDownloader *)downloader;
-@end
+using ModelDownloadOpening = std::variant<ModelFailed, ModelDestinationPresent, ModelDownloaded, ModelNeedsTransfer>;
+using ModelDownloadEvent = std::variant<ModelDownloading, ModelDownloaded, ModelFailed>;
+typedef void (^ModelDownloadHandler)(const ModelDownloadEvent &event);
 
+// Owns the partial file next to the destination: its lock, resume metadata,
+// transfer and installation. Use on the main thread; events arrive there too.
 @interface ModelDownloader : NSObject
-@property(nonatomic, readonly) NSURL *partialURL;
-@property(nonatomic, readonly) int64_t receivedBytes;
-@property(nonatomic, readonly) BOOL canResume;
-@property(nonatomic, readonly, getter=isComplete) BOOL complete;
-
-- (instancetype)initWithPartialURL:(NSURL *)partialURL downloadURL:(NSURL *)downloadURL
-                      expectedSize:(int64_t)expectedSize SHA256:(NSString *)expectedSHA256
-              sessionConfiguration:(NSURLSessionConfiguration *)configuration
-                          delegate:(id<ModelDownloaderDelegate>)delegate NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithPartialURL:(NSURL *)partialURL destinationURL:(NSURL *)destinationURL
+                       downloadURL:(NSURL *)downloadURL expectedSize:(int64_t)expectedSize
+                            SHA256:(NSString *)expectedSHA256 fileManager:(NSFileManager *)files
+              sessionConfiguration:(NSURLSessionConfiguration *)configuration NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
-- (PartialDownloadLockResult)lockPartial;
-// Adopts a saved partial whose metadata matches this download, otherwise removes it.
-// Returns NO when the partial cannot be removed.
-- (BOOL)loadPartial;
-- (void)start;
-// Stops the transfer and releases the lock. Received bytes stay on disk.
+- (ModelDownloadOpening)open;
+- (ModelDownloading)startWithHandler:(ModelDownloadHandler)handler;
+- (ModelPaused)pause;
 - (void)stop;
-- (BOOL)discardPartial;
-- (void)forgetInstalledPartial;
+- (std::optional<ModelFailed>)install;
+- (std::optional<ModelIssue>)discard;
 @end
 
 NS_ASSUME_NONNULL_END

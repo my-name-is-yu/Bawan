@@ -1,29 +1,11 @@
 #import <Foundation/Foundation.h>
 
+#include "ModelStoreSnapshot.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
-typedef NS_ENUM(NSInteger, ModelStoreState) {
-    ModelStoreIdle,
-    ModelStoreChecking,
-    ModelStoreDownloading,
-    ModelStorePaused,
-    ModelStoreVerifying,
-    ModelStoreReady,
-    ModelStoreFailed
-};
-
-struct ModelStoreSnapshot {
-    ModelStoreState state = ModelStoreIdle;
-    double progress = 0;
-    NSString *_Nullable message = nil;
-    // Set only when Ready.
-    NSURL *_Nullable fileURL = nil;
-    // Paused or Failed with bytes a resume can keep.
-    bool resumable = false;
-};
-
-// Use on the main thread. onChange arrives there too, once per snapshot of the
-// current preparation; hashing runs on a utility queue.
+// Use on the main thread. Each call publishes its resulting snapshot before it
+// returns; later snapshots of the same preparation also arrive on the main thread.
 @interface ModelStore : NSObject
 @property(nonatomic, readonly) ModelStoreSnapshot snapshot;
 @property(nonatomic, copy, nullable) void (^onChange)(const ModelStoreSnapshot &snapshot);

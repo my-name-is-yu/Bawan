@@ -81,11 +81,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_source_set_event_handler(_memoryPressure, ^{ [weakSelf releaseEngineMemory]; });
     dispatch_resume(_memoryPressure);
 
-    _modelStore = [[ModelStore alloc] init];
-    _modelStore.onChange = ^(const ModelStoreSnapshot &snapshot) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelStoreDidChange:snapshot];
-    };
+    [self connectModelStore:[[ModelStore alloc] init]];
 
     SelectionReader *selectionReader = [SelectionReader new];
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences selectionReader:selectionReader];
@@ -156,8 +152,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)modelStoreDidChange:(const ModelStoreSnapshot &)snapshot {
     _model.fileChanged(snapshot);
-    if (snapshot.state == ModelStoreReady) [self modelFileDidBecomeReady];
-    else if (snapshot.state == ModelStoreFailed) [self modelFileDidFail];
+    if (std::holds_alternative<ModelReady>(snapshot)) [self modelFileDidBecomeReady];
+    else if (std::holds_alternative<ModelFailed>(snapshot)) [self modelFileDidFail];
     [self updateStatus];
 }
 
@@ -237,7 +233,6 @@ static NSString *StringFromUTF8(const std::string &text) {
         };
         _onboardingViewController = onboarding;
     }
-    [self pushModelStateToPage:onboarding];
     if (_practiceOutput &&
         _practiceBinding != [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]) {
         _practiceOutput = nil;
@@ -288,16 +283,21 @@ static NSString *StringFromUTF8(const std::string &text) {
     panel.onCancel = ^{ [weakSelf cancelTranslation]; };
     panel.onClose = ^{ [weakSelf cancelTranslation]; };
     panel.onSettings = ^{ [weakSelf openSettings:nil]; };
+    [self showModelSetupOnPanel];
 }
 
-- (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
-    [page setModelPhase:_model.phase() message:_model.message() progress:_model.progress()];
+- (void)connectModelStore:(ModelStore *)store {
+    _modelStore = store;
+    __weak AppDelegate *weakSelf = self;
+    store.onChange = ^(const ModelStoreSnapshot &snapshot) {
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner modelStoreDidChange:snapshot];
+    };
 }
 
-// Hidden pages are brought up to date when they are shown.
-- (void)refreshSetupPages {
-    [self pushModelStateToPage:_onboardingViewController];
-    [self pushModelStateToPage:_settingsViewController];
+- (void)showModelSetupOnPanel {
+    const BawanModelSetupView view = _model.view();
+    [_translationPanel setModelPhase:view.phase message:view.message progress:view.progress];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -421,7 +421,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateStatus {
-    [self refreshSetupPages];
+    [self showModelSetupOnPanel];
     _modelItem.title = _model.message();
     BOOL failed = [self modelFailed];
     BOOL available = [self hasVerifiedModelFile];
@@ -772,7 +772,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
-    [self pushModelStateToPage:_settingsViewController];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
