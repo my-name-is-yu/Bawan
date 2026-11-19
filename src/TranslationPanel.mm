@@ -293,11 +293,15 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (void)showForSelection:(NSString *)text {
     [self showTranslation];
+    [self setSelection:text];
+    [self showWithoutChangingInput];
+}
+
+- (void)setSelection:(NSString *)text {
     _inputDirection = bawan::Direction::Automatic;
     _source.string = text;
     [_source.undoManager removeAllActions];
     [self setOutput:@"" direction:bawan::Direction::Automatic];
-    [self showWithoutChangingInput];
 }
 
 - (void)showWithoutChangingInput {
