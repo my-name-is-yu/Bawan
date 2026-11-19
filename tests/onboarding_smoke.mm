@@ -180,7 +180,8 @@ static void RunSmoke(void) {
         Settle(window);
         Require(IsShown(modelStep) && !IsShown(shortcutStep) && IsShown(primary) && IsShown(license) &&
             [primary.title hasPrefix:@"Download Model"] &&
-            [primary isKindOfClass:BawanActionButton.class] && ((BawanActionButton *)primary).primary &&
+            [primary isKindOfClass:BawanActionButton.class] &&
+            ((BawanActionButton *)primary).style == BawanActionButtonStylePrimary &&
             [modelMessage.stringValue containsString:@"license"] && [modelMessage.stringValue containsString:@"573 MB"],
             @"The model step must explain the download and offer only Download and Model License");
         CheckBounds(window);

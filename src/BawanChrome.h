@@ -25,10 +25,16 @@ static constexpr CGFloat BawanFooterSecondaryWidth = 176;
 @property(nonatomic) BOOL acceptsKeyFocus;
 @end
 
+typedef NS_ENUM(NSInteger, BawanActionButtonStyle) {
+    BawanActionButtonStyleSecondary,
+    BawanActionButtonStylePrimary,
+    BawanActionButtonStyleGold,
+    BawanActionButtonStylePlain
+};
+
 @interface BawanActionButton : BawanBorderlessButton
-@property(nonatomic) BOOL primary;
-@property(nonatomic) BOOL gold;
-@property(nonatomic) BOOL plain;
+// An explicit contentTintColor (including nil for native tint) takes priority over style.
+@property(nonatomic) BawanActionButtonStyle style;
 @property(nonatomic) BOOL pressFeedback;
 - (void)resetPressFeedback;
 @end
@@ -47,7 +53,7 @@ struct BawanChromeFooter {
 BawanSurfaceView *BawanMakeWindowSurface(NSString *identifier, NSRect frame);
 BawanSurfaceView *BawanAddSurface(NSView *parent, NSString *identifier, BawanColorRole role);
 BawanActionButton *BawanAddActionButton(NSView *_Nullable parent, NSString *identifier, NSString *title,
-                                        id _Nullable target, SEL _Nullable action, BOOL primary);
+                                        id _Nullable target, SEL _Nullable action, BawanActionButtonStyle style);
 
 // The masthead with the centered medallion, pinned to the top of root.
 BawanChromeHeader BawanAddHeader(NSView *root, NSString *identifier, NSString *mascotIdentifier);

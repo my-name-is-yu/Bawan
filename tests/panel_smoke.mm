@@ -1,5 +1,7 @@
 #import "TranslationPanel.h"
 #import "BawanAppearance.h"
+#import "BawanChrome.h"
+#import "BawanMascotView.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include <cmath>
@@ -45,6 +47,72 @@ static void Settle(NSWindow *window) {
     [window.contentView layoutSubtreeIfNeeded];
     [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     [window.contentView layoutSubtreeIfNeeded];
+}
+
+static void CheckFooterHintLayout(void) {
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 120)
+        styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    window.releasedWhenClosed = NO;
+    @try {
+        NSUInteger fixture = 0;
+        for (NSArray<NSNumber *> *widths in @[@[@48, @96], @[@128, @52], @[@72, @0],
+                                              @[@0, @104], @[@0, @0]]) {
+            BawanSurfaceView *root = BawanMakeWindowSurface(@"hint-fixture", NSMakeRect(0, 0, 720, 120));
+            window.contentView = root;
+            NSView *footer = BawanAddFooter(root, @"fixture-footer").footer;
+            NSView *leading = nil, *trailing = nil;
+            for (NSUInteger side = 0; side < 2; ++side) {
+                CGFloat width = widths[side].doubleValue;
+                if (width == 0) continue;
+                NSView *neighbor = [[NSView alloc] init];
+                neighbor.translatesAutoresizingMaskIntoConstraints = NO;
+                [footer addSubview:neighbor];
+                [NSLayoutConstraint activateConstraints:@[
+                    [neighbor.widthAnchor constraintEqualToConstant:width],
+                    [neighbor.heightAnchor constraintEqualToConstant:40],
+                    [neighbor.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor],
+                    side == 0 ? [neighbor.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:24] :
+                                [neighbor.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor constant:-24]
+                ]];
+                if (side == 0) leading = neighbor;
+                else trailing = neighbor;
+            }
+            NSTextField *hint = BawanAddFooterHint(footer, @"fixture-hint", @"Ready", leading, trailing);
+            for (NSNumber *width in @[@720, @640, @360]) {
+                [window setContentSize:NSMakeSize(width.doubleValue, 120)];
+                for (NSString *text in @[@"Ready", @"A much longer footer message must stay centered and fit between its neighbors even when the window is narrow.",
+                                         @"VeryLongUnbrokenFooterMessageThatMustNotOverlapEitherNeighborOrEscapeTheFooter"]) {
+                    hint.stringValue = text;
+                    Settle(window);
+                    NSRect frame = hint.frame;
+                    NSRect alignment = [hint alignmentRectForFrame:frame];
+                    CGFloat left = leading ? NSMaxX(leading.frame) + 12 : 24;
+                    CGFloat right = trailing ? NSMinX(trailing.frame) - 12 : NSWidth(footer.bounds) - 24;
+                    // Anchors constrain the label's alignment rect, excluding its horizontal padding.
+                    // Include the half-point tie produced when AppKit rounds an odd-sized label.
+                    Require(!hint.hasAmbiguousLayout && NSWidth(alignment) > 0 && NSHeight(alignment) > 0 &&
+                        std::abs(NSMidX(alignment) - NSMidX(footer.bounds)) <= 0.5 &&
+                        std::abs(NSMidY(alignment) - NSMidY(footer.bounds)) <= 0.5 &&
+                        NSMinX(alignment) >= left - 0.5 && NSMaxX(alignment) <= right + 0.5 &&
+                        NSContainsRect(NSInsetRect(footer.bounds, -0.5, -0.5), frame),
+                        [NSString stringWithFormat:@"Footer hint must stay centered, inside the footer and clear of arbitrary neighbors: "
+                            @"width=%@ neighbors=%@ frame=%@ alignment=%@ footer=%@", width, widths,
+                            NSStringFromRect(frame), NSStringFromRect(alignment), NSStringFromRect(footer.bounds)]);
+                    Require(!hint.editable && !hint.selectable && hint.maximumNumberOfLines == 2,
+                        @"The footer hint must remain a bounded decorative note");
+                }
+            }
+            NSBitmapImageRep *bitmap = [root bitmapImageRepForCachingDisplayInRect:root.bounds];
+            Require(bitmap != nil, @"Could not capture the narrow footer fixture");
+            [root cacheDisplayInRect:root.bounds toBitmapImageRep:bitmap];
+            NSString *path = [NSString stringWithFormat:@"panel-smoke/footer-hint-%lu.png",
+                static_cast<unsigned long>(fixture++)];
+            Require([[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+                writeToFile:path atomically:YES], @"Could not save the narrow footer fixture");
+        }
+    } @finally {
+        [window close];
+    }
 }
 
 static void CheckFrameDragging(NSWindow *window) {
@@ -560,6 +628,7 @@ static void RunSmoke(void) {
       @"They do not verify OS window chrome, popup interaction, focus in other apps,\n"
       @"real inference, or actual-app CPU/memory regression. Those checks remain separate.\n"
        writeToFile:@"panel-smoke/README.txt" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    CheckFooterHintLayout();
 
     NSString *english = @"The meeting has been moved to next Monday.\nPlease review the updated document.";
     NSString *japanese = @"会議は来週の月曜日に変更されました。\n更新された資料を確認してください。";
@@ -599,8 +668,8 @@ static void RunSmoke(void) {
         Require(standardButton != nil && !standardButton.hidden,
                 @"Native window controls must remain visible");
     }
-    NSImageView *mascot = (NSImageView *)Control(window, @"mascot", NSImageView.class);
-    Require(mascot.image != nil && BawanMascotImage() != nil && BawanPaperImage() != nil,
+    BawanMascotView *mascot = (BawanMascotView *)Control(window, @"mascot", BawanMascotView.class);
+    Require(!mascot.accessibilityElement && BawanMascotImage() != nil && BawanPaperImage() != nil,
             @"Native captures must load the real mascot and paper assets");
     NSTextField *status = (NSTextField *)Control(window, @"status", NSTextField.class);
     NSTextField *footerHint = (NSTextField *)Control(window, @"shortcut-hint", NSTextField.class);

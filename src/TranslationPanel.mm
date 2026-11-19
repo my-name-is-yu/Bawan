@@ -201,8 +201,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     BawanSurfaceView *dividerTop = BawanAddSurface(content, @"pane-divider-top", BawanBorder);
     BawanSurfaceView *dividerBottom = BawanAddSurface(content, @"pane-divider-bottom", BawanBorder);
 
-    _swap = BawanAddActionButton(content, @"swap", @"", self, @selector(swapText:), NO);
-    _swap.gold = YES;
+    _swap = BawanAddActionButton(content, @"swap", @"", self, @selector(swapText:), BawanActionButtonStyleGold);
     _swap.contentTintColor = BawanColor(BawanGoldText);
     _swap.image = BawanSymbol(@"arrow.right.arrow.left", @"", 17);
     _swap.imagePosition = NSImageOnly;

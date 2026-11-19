@@ -6,7 +6,9 @@
 #import <QuartzCore/CATransaction.h>
 
 namespace {
-void DrawButton(NSRect frame, BOOL primary, BOOL gold, BOOL highlighted, BOOL enabled) {
+void DrawButton(NSRect frame, BawanActionButtonStyle style, BOOL highlighted, BOOL enabled) {
+    BOOL primary = style == BawanActionButtonStylePrimary;
+    BOOL gold = style == BawanActionButtonStyleGold;
     NSColor *fill = primary ? BawanPrimaryButtonFill(highlighted) : BawanColor(gold ? BawanGold : BawanBackground);
     if (enabled && highlighted && !primary) fill = [fill blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
     NSRect face = NSInsetRect(frame, 1, 1);
@@ -59,6 +61,27 @@ BAWAN_BORDERLESS_CONTROL_METHODS([self bawanFocusRingPath])
 
 @implementation BawanActionButton {
     BOOL _trackingPointer;
+    BOOL _hasContentTintOverride;
+    NSColor *_contentTintOverride;
+}
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _hasContentTintOverride = NO;
+        _contentTintOverride = nil;
+        [self updateContentTint];
+    }
+    return self;
+}
+- (void)updateContentTint {
+    NSColor *foreground = self.style == BawanActionButtonStylePrimary ? BawanAccentForegroundColor() :
+        BawanColor(self.style == BawanActionButtonStyleGold ? BawanGoldText : BawanText);
+    [super setContentTintColor:_hasContentTintOverride ? _contentTintOverride : foreground];
+}
+- (void)setContentTintColor:(NSColor *)contentTintColor {
+    _hasContentTintOverride = YES;
+    _contentTintOverride = contentTintColor;
+    [self updateContentTint];
 }
 - (void)resetPressFeedback {
     _trackingPointer = NO;
@@ -117,15 +140,15 @@ BAWAN_BORDERLESS_CONTROL_METHODS([self bawanFocusRingPath])
     }
     return [super sendAction:action to:target];
 }
-- (void)setPrimary:(BOOL)primary {
-    _primary = primary;
-    self.contentTintColor = primary ? BawanAccentForegroundColor() : BawanColor(BawanText);
+- (void)setStyle:(BawanActionButtonStyle)style {
+    _style = style;
+    [self updateContentTint];
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
     BOOL highlighted = self.cell.highlighted;
-    if (!self.plain) {
-        DrawButton(self.bounds, self.primary, self.gold, highlighted, self.enabled);
+    if (self.style != BawanActionButtonStylePlain) {
+        DrawButton(self.bounds, self.style, highlighted, self.enabled);
     } else if (highlighted) {
         [[BawanColor(BawanHeaderText) colorWithAlphaComponent:0.12] setFill];
         [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:6 yRadius:6] fill];
@@ -162,14 +185,14 @@ BawanSurfaceView *BawanAddSurface(NSView *parent, NSString *identifier, BawanCol
 }
 
 BawanActionButton *BawanAddActionButton(NSView *parent, NSString *identifier, NSString *title,
-                                        id target, SEL action, BOOL primary) {
+                                        id target, SEL action, BawanActionButtonStyle style) {
     BawanActionButton *button = [[BawanActionButton alloc] initWithFrame:NSZeroRect];
     button.identifier = identifier;
     [button setButtonType:NSButtonTypeMomentaryPushIn];
     button.bordered = NO;
     button.title = title;
     button.font = BawanLabelFont(14);
-    button.primary = primary;
+    button.style = style;
     button.target = target;
     button.action = action;
     button.translatesAutoresizingMaskIntoConstraints = NO;
@@ -201,8 +224,7 @@ BawanChromeHeader BawanAddHeader(NSView *root, NSString *identifier, NSString *m
 
 BawanActionButton *BawanAddHeaderButton(NSView *header, NSString *identifier, NSString *symbol,
                                         NSString *label, id target, SEL action) {
-    BawanActionButton *button = BawanAddActionButton(header, identifier, @"", target, action, NO);
-    button.plain = YES;
+    BawanActionButton *button = BawanAddActionButton(header, identifier, @"", target, action, BawanActionButtonStylePlain);
     button.image = BawanSymbol(symbol, label, 20);
     button.contentTintColor = BawanColor(BawanHeaderText);
     button.imagePosition = NSImageOnly;
@@ -234,8 +256,9 @@ BawanChromeFooter BawanAddFooter(NSView *root, NSString *identifier) {
 }
 
 static BawanActionButton *FooterButton(NSView *footer, NSString *identifier, NSString *title,
-                                       id target, SEL action, BOOL primary) {
-    BawanActionButton *button = BawanAddActionButton(footer, identifier, title, target, action, primary);
+                                       id target, SEL action, BawanActionButtonStyle style) {
+    BawanActionButton *button = BawanAddActionButton(footer, identifier, title, target, action, style);
+    BOOL primary = style == BawanActionButtonStylePrimary;
     button.wantsLayer = YES;
     button.pressFeedback = YES;
     ActivateConstraints(@[
@@ -249,11 +272,11 @@ static BawanActionButton *FooterButton(NSView *footer, NSString *identifier, NSS
 }
 
 BawanActionButton *BawanAddFooterPrimary(NSView *footer, NSString *identifier, NSString *title, id target, SEL action) {
-    return FooterButton(footer, identifier, title, target, action, YES);
+    return FooterButton(footer, identifier, title, target, action, BawanActionButtonStylePrimary);
 }
 
 BawanActionButton *BawanAddFooterSecondary(NSView *footer, NSString *identifier, NSString *title, id target, SEL action) {
-    return FooterButton(footer, identifier, title, target, action, NO);
+    return FooterButton(footer, identifier, title, target, action, BawanActionButtonStyleSecondary);
 }
 
 NSTextField *BawanAddFooterHint(NSView *footer, NSString *identifier, NSString *text,
@@ -265,12 +288,11 @@ NSTextField *BawanAddFooterHint(NSView *footer, NSString *identifier, NSString *
     hint.maximumNumberOfLines = 2;
     [footer addSubview:hint];
     ActivateConstraints(@[
-        leading ? [hint.leadingAnchor constraintEqualToAnchor:leading.trailingAnchor constant:12] :
-                  [hint.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:BawanChromeInset],
-        // Without a trailing button, mirror the leading inset so the note stays centered.
-        trailing ? [hint.trailingAnchor constraintEqualToAnchor:trailing.leadingAnchor constant:-12] :
-                   [hint.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor
-                       constant:-(leading ? BawanChromeInset + BawanFooterPrimaryWidth + 12 : BawanChromeInset)],
+        [hint.centerXAnchor constraintEqualToAnchor:footer.centerXAnchor],
+        leading ? [hint.leadingAnchor constraintGreaterThanOrEqualToAnchor:leading.trailingAnchor constant:12] :
+                  [hint.leadingAnchor constraintGreaterThanOrEqualToAnchor:footer.leadingAnchor constant:BawanChromeInset],
+        trailing ? [hint.trailingAnchor constraintLessThanOrEqualToAnchor:trailing.leadingAnchor constant:-12] :
+                   [hint.trailingAnchor constraintLessThanOrEqualToAnchor:footer.trailingAnchor constant:-BawanChromeInset],
         [hint.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor]
     ]);
     return hint;
