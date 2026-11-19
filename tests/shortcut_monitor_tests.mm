@@ -402,13 +402,12 @@ static void testSelectionTrial(NSPanel *panel) {
     __block NSString *copiedText = nil;
     monitor.onSelection = ^(const SelectionEvent &event) {
         require(std::holds_alternative<SelectionTrial>(event), "selection trial emits a trial result");
-        std::visit([&](const auto &value) {
+        copiedText = std::visit([](const auto &value) -> NSString * {
             using Value = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<Value, SelectionTrial>) {
-                ++copies;
-                copiedText = value.text;
-            }
+            if constexpr (std::is_same_v<Value, SelectionTrial>) return value.text;
+            else return nil;
         }, event);
+        ++copies;
     };
     NSTextView *sample = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 150)];
     sample.string = @"Try translating this sentence.";
