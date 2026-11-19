@@ -40,7 +40,6 @@ jobs:
         with:
           key: macos
       - name: Use overlay scrollers
-        # Runners have no trackpad, so AppKit falls back to legacy scrollers.
         run: defaults write -g AppleShowScrollBars WhenScrolling
       - name: Check
         env:
