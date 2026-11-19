@@ -211,7 +211,7 @@ struct ShortcutRow {
 
 - (BOOL)showingModelStep { return IsModelStep(_modelPhase); }
 
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
     BOOL changed = _modelPhase != phase;
     BOOL wasModelStep = [self showingModelStep];
     _modelPhase = phase;

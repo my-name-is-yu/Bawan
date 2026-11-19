@@ -3,7 +3,7 @@
 #import "ShortcutMonitor.h"
 
 @protocol BawanModelSetupDisplay <NSObject>
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress;
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress;
 @end
 
 // Copy and color for the model's setup phase, shared by onboarding and Settings.

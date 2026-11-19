@@ -1,61 +1,75 @@
 #pragma once
 
+#include "Utf8.h"
+
 #include <cstddef>
 #include <string_view>
 
 namespace bawan {
+namespace detail {
 
-// Zero means this is outside the short-English policy. Count words, not model
-// tokens; unsupported scripts must not accidentally count as ASCII fragments.
+// Latin-1 letters (excluding multiplication/division), Extended-A/B and
+// Extended Additional cover accents and ligatures used in Latin-script text.
+inline bool shortInputLetter(char32_t c) {
+    return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') ||
+        (c >= 0x00C0 && c <= 0x00D6) || (c >= 0x00D8 && c <= 0x00F6) ||
+        (c >= 0x00F8 && c <= 0x024F) || (c >= 0x1E00 && c <= 0x1EFF);
+}
+
+inline bool shortInputAlphanumeric(char32_t c) {
+    return shortInputLetter(c) || (c >= U'0' && c <= U'9');
+}
+
+inline bool shortInputSeparator(char32_t c) {
+    // Printable ASCII, Unicode spaces, typographic punctuation, and common
+    // Latin-1/currency symbols separate words. Format controls are excluded.
+    return (c >= 0x20 && c <= 0x7E) || (c >= U'\t' && c <= U'\r') ||
+        c == 0x00A0 || c == 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
+        c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000 ||
+        (c >= 0x2010 && c <= 0x2027) || (c >= 0x2030 && c <= 0x205E) ||
+        (c >= 0x00A1 && c <= 0x00A9) || (c >= 0x00AB && c <= 0x00AC) ||
+        (c >= 0x00AE && c <= 0x00B1) || c == 0x00B4 ||
+        (c >= 0x00B6 && c <= 0x00B8) || c == 0x00BB || c == 0x00BF ||
+        c == 0x00D7 || c == 0x00F7 || c == 0x20AC || c == 0x2122;
+}
+
+}
+
+// A 1–5 word Latin-script heuristic, not language identification. Japanese and
+// other scripts, emoji, controls, malformed UTF-8 and numbers alone return zero.
+// Apostrophes/hyphens join adjacent alphanumerics; every other separator breaks
+// words. Combining accents U+0300–036F must follow a Latin letter or its accents.
 inline std::size_t shortEnglishWordCount(std::string_view text) {
-    const auto letter = [](unsigned char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-    };
-    const auto alphanumeric = [&](unsigned char c) {
-        return letter(c) || (c >= '0' && c <= '9');
-    };
     std::size_t words = 0;
     bool inWord = false;
     bool hasLetter = false;
-    for (std::size_t position = 0; position < text.size();) {
-        const auto c = static_cast<unsigned char>(text[position]);
-        if (alphanumeric(c)) {
-            if (!inWord && ++words > 5) return 0;
-            inWord = true;
-            hasLetter = hasLetter || letter(c);
-            ++position;
-            continue;
-        }
-        std::size_t width = 1;
-        bool connector = c == '\'' || c == '-';
-        if (c >= 0x80) {
-            const auto matches = [&](std::string_view character) {
-                return text.compare(position, character.size(), character) == 0;
-            };
-            if (matches(u8"‘") || matches(u8"’") || matches(u8"‐") || matches(u8"‑")) {
-                width = 3;
-                connector = true;
-            } else if (matches(u8"\u00a0")) {
-                width = 2;
-            } else if (matches(u8"“") || matches(u8"”") || matches(u8"–") ||
-                       matches(u8"—") || matches(u8"…") || matches(u8"\u2028") ||
-                       matches(u8"\u2029") || matches(u8"\u202f") ||
-                       matches(u8"\u205f") || matches(u8"\u3000")) {
-                width = 3;
-            } else if (position + 2 < text.size() && c == 0xE2 &&
-                       static_cast<unsigned char>(text[position + 1]) == 0x80 &&
-                       static_cast<unsigned char>(text[position + 2]) >= 0x80 &&
-                       static_cast<unsigned char>(text[position + 2]) <= 0x8A) {
-                width = 3; // U+2000 through U+200A: typographic spaces.
-            } else {
-                return 0;
+    bool afterLetter = false;
+    try {
+        for (std::size_t position = 0; position < text.size();) {
+            const auto character = detail::decodeUtf8(text, position);
+            if (!character) return 0;
+            const auto c = *character;
+            if (detail::shortInputAlphanumeric(c)) {
+                if (!inWord && ++words > 5) return 0;
+                inWord = true;
+                afterLetter = detail::shortInputLetter(c);
+                hasLetter = hasLetter || afterLetter;
+                continue;
             }
-        } else if ((c < 0x20 && (c < '\t' || c > '\r')) || c == 0x7F) {
-            return 0;
+            if (c >= 0x0300 && c <= 0x036F) {
+                if (!afterLetter) return 0;
+                continue;
+            }
+            if (!detail::shortInputSeparator(c)) return 0;
+            const bool connector = c == U'\'' || c == U'-' ||
+                c == 0x2018 || c == 0x2019 || c == 0x2010 || c == 0x2011;
+            auto nextPosition = position;
+            const auto next = connector && inWord ? detail::decodeUtf8(text, nextPosition) : std::nullopt;
+            inWord = next && detail::shortInputAlphanumeric(*next);
+            afterLetter = false;
         }
-        inWord = connector && inWord && position + width < text.size() &&
-            alphanumeric(static_cast<unsigned char>(text[position + width]));
-        position += width;
+    } catch (const std::runtime_error &) {
+        return 0;
     }
     return hasLetter ? words : 0;
 }

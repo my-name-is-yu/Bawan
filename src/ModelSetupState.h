@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 
+#include <optional>
+
 // What the setup pages show for the model, derived from BawanModelState.
 typedef NS_ENUM(NSInteger, BawanModelSetupPhase) {
     BawanModelSetupNeedsDownload,
@@ -73,10 +75,12 @@ public:
         return BawanModelSetupReady;
     }
 
-    // A fraction in [0, 1] during transfer/checking, retained while paused or resumable.
-    // Negative while an engine load has no measurable progress.
-    double progress() const {
-        if (file_ == File::Present) return engine_ == Engine::Loading ? -1 : 1;
+    // Transfer progress is retained while paused or resumable. Engine loads have no measurable progress.
+    std::optional<double> progress() const {
+        if (file_ == File::Present) {
+            if (engine_ == Engine::Loading) return std::nullopt;
+            return 1;
+        }
         return progress_;
     }
 
