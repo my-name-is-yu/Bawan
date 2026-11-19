@@ -70,17 +70,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
     [self buildMenus];
-    _translationPanel = [[TranslationPanel alloc] init];
+    [self connectTranslationPanel:[[TranslationPanel alloc] init]];
     __weak AppDelegate *weakSelf = self;
-    _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
-        [weakSelf translateText:text direction:direction];
-    };
-    _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
-    _translationPanel.onClose = ^{
-        [weakSelf cancelTranslation];
-        [weakSelf releaseClosedPages];
-    };
-    _translationPanel.onSettings = ^{ [weakSelf openSettings:nil]; };
 
     _memoryPressure = dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
         DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL, dispatch_get_main_queue());
@@ -302,6 +293,20 @@ static NSString *StringFromUTF8(const std::string &text) {
         return;
     }
     [self enterTranslatorFromOnboarding];
+}
+
+- (void)connectTranslationPanel:(TranslationPanel *)panel {
+    _translationPanel = panel;
+    __weak AppDelegate *weakSelf = self;
+    panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
+        [weakSelf translateText:text direction:direction];
+    };
+    panel.onCancel = ^{ [weakSelf cancelTranslation]; };
+    panel.onClose = ^{
+        [weakSelf cancelTranslation];
+        [weakSelf releaseClosedPages];
+    };
+    panel.onSettings = ^{ [weakSelf openSettings:nil]; };
 }
 
 - (void)releaseClosedPages {

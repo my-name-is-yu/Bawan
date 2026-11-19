@@ -18,6 +18,7 @@
 
 @interface AppDelegate (SmokeTest)
 - (void)buildMenus;
+- (void)connectTranslationPanel:(TranslationPanel *)panel;
 - (void)updateStatus;
 - (void)updateShortcutItem;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
@@ -592,11 +593,8 @@ static void CheckFirstRunSelection(void) {
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
         [delegate setValue:store forKey:@"modelStore"];
-        [delegate setValue:panel forKey:@"translationPanel"];
+        [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
-        __weak AppDelegate *weakDelegate = delegate;
-        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
         @try {
             [delegate startInitialSetup];
             NSWindow *window = panel.window;
@@ -778,11 +776,9 @@ static void CheckSelectionTrial(void) {
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
         [delegate setValue:store forKey:@"modelStore"];
-        [delegate setValue:panel forKey:@"translationPanel"];
+        [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         __weak AppDelegate *weakDelegate = delegate;
-        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
         if (checkRefreshes) {
             refreshOnboarding.onFinish = ^{ [weakDelegate finishOnboardingFromShortcuts]; };
             monitor.onAvailabilityChanged = ^{ [weakDelegate updateShortcutItem]; };
@@ -1079,11 +1075,8 @@ static void CheckFirstRunIntegration(void) {
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
     [delegate setValue:store forKey:@"modelStore"];
-    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
-    __weak SetupSmokeDelegate *weakDelegate = delegate;
-    panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-    panel.onClose = ^{ [weakDelegate cancelTranslation]; };
     __block NSUInteger translations = 0;
     panel.onTranslate = ^(NSString *, bawan::Direction) { ++translations; };
     SetupSmokeDelegate *existingUser = nil;
@@ -1505,13 +1498,7 @@ int main(int argc, const char *argv[]) {
         AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
         [delegate setValue:defaults forKey:@"defaults"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
-        [delegate setValue:panel forKey:@"translationPanel"];
-        __weak AppDelegate *weakDelegate = delegate;
-        panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
-            [weakDelegate translateText:text direction:direction];
-        };
-        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
+        [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         [delegate updateStatus];
         int result = EXIT_SUCCESS;
