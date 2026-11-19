@@ -58,6 +58,7 @@ FetchContent_Declare(llama
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(llama)
 
+# Directory-scoped so they reach only the Bawan targets declared below, not llama.cpp.
 if(BAWAN_WARNINGS_AS_ERRORS)
     add_compile_options(-Werror)
 endif()
@@ -79,6 +80,8 @@ target_compile_options(bawan_gesture PRIVATE -Wall -Wextra -Wpedantic)
 set(BAWAN_UI_RESOURCES resources/BawanMascot.png resources/PaperGrain.png)
 
 if(APPLE AND (BAWAN_BUILD_APP OR BAWAN_BUILD_TESTS))
+    # Separate app/test archives keep compile-time resource paths consistent,
+    # including the inline image helpers in BawanAppearance.h.
     function(add_bawan_ui target)
         add_library(${target} STATIC
             src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm

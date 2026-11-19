@@ -231,6 +231,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     }];
 }
 
+// A first setup prepares the model; any later request revalidates it from scratch.
 - (void)prepareModel {
     if (!_model.setupNotStarted()) {
         [self retryModel:nil];
@@ -258,6 +259,8 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
+// The shortcut step's button: leave for the translator even while the model is
+// still downloading. The translator shows preparation and translates once ready.
 - (void)finishOnboardingFromShortcuts {
     if (!_model.canFinishSetup()) return;
     [self enterTranslatorFromOnboarding];
@@ -269,6 +272,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [self markOnboardingComplete];
     if (_onboardingViewController.selectionTrialComplete) {
+        // Accepting the successful practice result explicitly replaces the old selection.
         _pendingText = nil;
         _busy = NO;
         NSString *text = _onboardingViewController.selectionTrialText;
@@ -281,6 +285,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (![self submitPendingTranslationIfReady]) [self updateStatus];
 }
 
+// Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
 - (void)finishOnboarding {
     if (!_model.canEnterTranslator()) {
         [_translationPanel close];
@@ -293,6 +298,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [page setModelPhase:_model.phase() message:_model.message() progress:_model.progress()];
 }
 
+// Hidden pages are brought up to date when they are shown.
 - (void)refreshSetupPages {
     switch (_translationPanel.currentPage) {
         case BawanPanelPageOnboarding: [self pushModelStateToPage:_onboardingViewController]; break;
@@ -333,6 +339,8 @@ static NSString *StringFromUTF8(const std::string &text) {
     return alert;
 }
 
+// Attach to the visible panel as a sheet so model progress keeps updating;
+// fall back to an app-modal alert when the license is opened from the menu.
 - (void)presentModelLicenseAlert:(NSAlert *)alert completion:(void (^)(NSModalResponse response))completion {
     [NSApp activateIgnoringOtherApps:YES];
     NSWindow *window = _translationPanel.window;
