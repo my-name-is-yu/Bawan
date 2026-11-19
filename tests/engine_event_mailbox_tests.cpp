@@ -16,7 +16,7 @@ static Progress progress(std::uint64_t id, std::string text) {
 
 static void requireProgress(const EngineEvent &event, std::uint64_t id, const std::string &text) {
     const auto *snapshot = std::get_if<Progress>(&event);
-    require(snapshot && snapshot->requestId == id && snapshot->text == text &&
+    require(snapshot && snapshot->requestId == id && snapshot->textSoFar == text &&
             snapshot->direction == Direction::EnglishToJapanese);
 }
 

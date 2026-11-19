@@ -585,7 +585,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self](const Lifecycle &state) { [self handleEngineLifecycle:state]; },
         [self](const Progress &progress) {
             if ([self acceptsEngineRequest:progress.requestId] && !_selectionTrialAttempt) {
-                [_translationPanel setOutput:StringFromUTF8(progress.text) direction:progress.direction];
+                [_translationPanel setOutput:StringFromUTF8(progress.textSoFar) direction:progress.direction];
             }
         },
         [self](const Finished &finished) { [self handleEngineFinished:finished]; },
@@ -732,7 +732,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)retryModel:(id)sender {
     [self cancelTranslation];
-    [_engineHost reset];
+    [_engineHost stopAndDiscardEvents];
     _model.beginPreparing();
     [self updateStatus];
     [_modelStore revalidate];
@@ -806,7 +806,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         dispatch_source_cancel(_memoryPressure);
         _memoryPressure = nil;
     }
-    [_engineHost reset];
+    [_engineHost stopAndDiscardEvents];
     [NSStatusBar.systemStatusBar removeStatusItem:_statusItem];
 }
 @end

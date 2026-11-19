@@ -13,6 +13,7 @@
 }
 
 - (instancetype)initWithEventHandler:(void (^)(const bawan::EngineEvent &))handler {
+    dispatch_assert_queue(dispatch_get_main_queue());
     self = [super init];
     if (self) _handler = [handler copy];
     return self;
@@ -27,6 +28,7 @@
 }
 
 - (void)ensureEngineForModelURL:(NSURL *)modelURL {
+    dispatch_assert_queue(dispatch_get_main_queue());
     if (_engine) return;
     auto mailbox = std::make_shared<bawan::EngineEventMailbox>();
     __weak EngineHost *weakSelf = self;
@@ -53,14 +55,17 @@
 }
 
 - (void)cancel {
+    dispatch_assert_queue(dispatch_get_main_queue());
     if (_engine) _engine->cancel();
 }
 
 - (void)releaseMemory {
+    dispatch_assert_queue(dispatch_get_main_queue());
     if (_engine) _engine->releaseMemory();
 }
 
-- (void)reset {
+- (void)stopAndDiscardEvents {
+    dispatch_assert_queue(dispatch_get_main_queue());
     _mailbox.reset();
     _engine.reset();
 }

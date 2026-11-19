@@ -20,7 +20,6 @@ namespace bawan {
 // Terminal callbacks run after that context is released; Idle follows unloading.
 class TranslationEngine final {
 public:
-    // Progress carries the full valid UTF-8 output so far, not a delta.
     using Callback = std::function<void(EngineEvent)>;
 
     TranslationEngine(std::string modelPath, Callback callback,

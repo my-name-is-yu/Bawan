@@ -257,7 +257,7 @@ static void CheckEngineHostReset() {
         Require(NSThread.isMainThread, @"EngineHost must deliver on the main thread");
         events.push_back(event);
         if (events.size() == 1) {
-            [weakHost reset];
+            [weakHost stopAndDiscardEvents];
             replacementId = [weakHost translate:"Replacement" direction:direction modelURL:missing];
         }
     }];
@@ -275,7 +275,7 @@ static void CheckEngineHostReset() {
     const auto *finished = std::get_if<Finished>(&events[4]);
     Require(finished && finished->requestId == replacementId && std::holds_alternative<Error>(finished->outcome),
         @"Only the replacement request may reach a terminal outcome after reset");
-    [host reset];
+    [host stopAndDiscardEvents];
 }
 
 static void SetAvailableModel(AppDelegate *delegate) {

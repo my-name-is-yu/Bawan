@@ -26,7 +26,7 @@ using Lifecycle = std::variant<Loading, Ready, Idle, LoadCancelled, Failed>;
 
 struct Progress {
     RequestId requestId;
-    std::string text;
+    std::string textSoFar;
     Direction direction;
 };
 

@@ -6,9 +6,6 @@
 #include <vector>
 
 namespace bawan {
-// Worker-to-UI handoff. Progress contains a full snapshot, not a delta, so only
-// the newest consecutive snapshot for a request needs to wait for the UI.
-// Lifecycle/terminal events remain ordered and are never coalesced.
 class EngineEventMailbox final {
 public:
     // True means the caller must schedule one drain on the UI queue.

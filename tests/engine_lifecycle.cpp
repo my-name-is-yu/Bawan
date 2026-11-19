@@ -53,7 +53,7 @@ Observation observe(const bawan::EngineEvent &event) {
 void requireOutput(const bawan::EngineEvent &event, std::uint64_t id) {
     constexpr auto expectedDirection = bawan::Direction::EnglishToJapanese;
     if (const auto *progress = std::get_if<Progress>(&event)) {
-        if (progress->requestId == id && progress->direction == expectedDirection && !progress->text.empty()) return;
+        if (progress->requestId == id && progress->direction == expectedDirection && !progress->textSoFar.empty()) return;
     } else if (const auto *complete = outcome<Complete>(event)) {
         if (std::get<Finished>(event).requestId == id && complete->direction == expectedDirection &&
             !complete->text.empty()) return;
