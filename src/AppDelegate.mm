@@ -181,6 +181,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)modelFileDidBecomeReady:(NSURL *)fileURL {
+    [_engineHost startWithModelURL:fileURL];
     _model.fileReady(fileURL);
     if (_pendingTrialText && [_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt]) {
         [self translateText:_pendingTrialText direction:bawan::Direction::Automatic trialAttempt:_selectionTrialAttempt];
@@ -507,7 +508,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)warmUpEngine {
     if (_terminating) return;
     _warmUpWhenAvailable = ![self hasVerifiedModelFile];
-    if (NSURL *modelURL = _model.url()) [_engineHost warmUpForModelURL:modelURL];
+    if (!_warmUpWhenAvailable) [_engineHost warmUp];
 }
 
 - (void)queueTranslation:(NSString *)text direction:(bawan::Direction)direction {
@@ -560,7 +561,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     const char *utf8 = text.UTF8String;
     if (!utf8) return;
     _activeRequestId = [_engineHost translate:std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding])
-                                  direction:direction modelURL:_model.url()];
+                                  direction:direction];
     _busy = YES;
     if (!attempt) {
         [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
@@ -569,66 +570,47 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
-    if (_memoryProbeDirectory.length) {
-        using namespace bawan::engine;
-        if (const auto *state = std::get_if<Lifecycle>(&event)) {
-            if (std::holds_alternative<Idle>(*state)) [self memoryProbeWrite:@"idle" name:@"engine"];
-            else if (std::holds_alternative<Failed>(*state) || std::holds_alternative<LoadCancelled>(*state))
-                [self memoryProbeWrite:@"error" name:@"engine"];
-        } else if (const auto *finished = std::get_if<Finished>(&event)) {
-            [self memoryProbeWrite:std::holds_alternative<Complete>(finished->outcome) ? @"complete" : @"error"
-                              name:@"engine"];
-        }
+    using namespace bawan::engine;
+    const auto metadata = describe(event);
+    if (_memoryProbeDirectory.length && metadata.probeValue) {
+        [self memoryProbeWrite:@(metadata.probeValue) name:@"engine"];
     }
-    using namespace bawan::engine;
-    std::visit(Visitor{
-        [self](const Lifecycle &state) { [self handleEngineLifecycle:state]; },
-        [self](const Progress &progress) {
-            if ([self acceptsEngineRequest:progress.requestId] && !_selectionTrialAttempt) {
-                [_translationPanel setOutput:StringFromUTF8(progress.textSoFar) direction:progress.direction];
-            }
-        },
-        [self](const Finished &finished) { [self handleEngineFinished:finished]; },
-    }, event);
-}
-
-- (void)handleEngineLifecycle:(const bawan::engine::Lifecycle &)state {
-    using namespace bawan::engine;
-    std::visit(Visitor{
-        [self](Loading) { _model.engineLoading(); [self updateStatus]; },
-        [self](Ready) { _model.engineIdle(); [self updateStatus]; },
-        [](Idle) {},
-        [self](LoadCancelled) { _model.engineIdle(); [self updateStatus]; },
-        [self](const Failed &failure) { _model.engineFailed(StringFromUTF8(failure.message)); [self updateStatus]; },
-    }, state);
-}
-
-- (BOOL)acceptsEngineRequest:(bawan::engine::RequestId)requestId {
-    if (requestId != _activeRequestId) return NO;
-    if (_selectionTrialAttempt && ![_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt]) {
-        [self cancelTranslationKeepingPendingSelection:YES];
-        return NO;
+    if (const auto *state = std::get_if<Lifecycle>(&event)) {
+        std::visit(Visitor{
+            [self](Loading) { _model.engineLoading(); [self updateStatus]; },
+            [self](Ready) { _model.engineIdle(); [self updateStatus]; },
+            [](Idle) {},
+            [self](LoadCancelled) { _model.engineIdle(); [self updateStatus]; },
+            [self](const Failed &failure) { _model.engineFailed(StringFromUTF8(failure.message)); [self updateStatus]; },
+        }, *state);
+        return;
     }
-    return YES;
-}
-
-- (void)handleEngineFinished:(const bawan::engine::Finished &)finished {
-    using namespace bawan::engine;
-    if (![self acceptsEngineRequest:finished.requestId]) return;
-    _activeRequestId = 0;
+    if (metadata.requestId != _activeRequestId) return;
     if (const NSUInteger attempt = _selectionTrialAttempt) {
-        _busy = _pendingText != nil;
-        _selectionTrialAttempt = 0;
-        const auto *complete = std::get_if<Complete>(&finished.outcome);
-        NSString *output = complete && !complete->truncated ?
-            [[NSString alloc] initWithBytes:complete->text.data() length:complete->text.size()
-                                  encoding:NSUTF8StringEncoding] : nil;
-        [_onboardingViewController finishSelectionTrial:attempt output:output
-            direction:complete ? complete->direction : bawan::Direction::Automatic];
-        [self updateStatus];
+        if (![_onboardingViewController isSelectionTrialCurrent:attempt]) {
+            [self cancelTranslationKeepingPendingSelection:YES];
+            return;
+        }
+        if (const auto *finished = std::get_if<Finished>(&event)) {
+            _busy = _pendingText != nil;
+            _activeRequestId = 0;
+            _selectionTrialAttempt = 0;
+            const auto *complete = std::get_if<Complete>(&finished->outcome);
+            NSString *output = complete && !complete->truncated ?
+                [[NSString alloc] initWithBytes:complete->text.data() length:complete->text.size()
+                                      encoding:NSUTF8StringEncoding] : nil;
+            [_onboardingViewController finishSelectionTrial:attempt output:output
+                direction:complete ? complete->direction : bawan::Direction::Automatic];
+            [self updateStatus];
+        }
+        return;
+    }
+    if (const auto *progress = std::get_if<Progress>(&event)) {
+        [_translationPanel setOutput:StringFromUTF8(progress->textSoFar) direction:progress->direction];
         return;
     }
     _busy = NO;
+    _activeRequestId = 0;
     std::visit(Visitor{
         [self](const Complete &complete) {
             [_translationPanel setOutput:StringFromUTF8(complete.text) direction:complete.direction];
@@ -643,7 +625,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self](const Error &error) {
             [self showStatus:StringFromUTF8(error.message) kind:BawanStatusError owner:StatusOwner::TranslationOutcome];
         },
-    }, finished.outcome);
+    }, std::get<Finished>(event).outcome);
 }
 
 - (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection {
