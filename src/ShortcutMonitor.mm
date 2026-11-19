@@ -213,7 +213,9 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     const bool accessibilityAllowed = AXIsProcessTrusted();
     const bool hadPassiveTap = _passiveTap != nullptr;
     const bool hadActiveTap = _activeTap != nullptr;
-    if (!_activeTap || !CGEventTapIsEnabled(_activeTap)) {
+    const bool passiveTapInterrupted = hadPassiveTap && !CGEventTapIsEnabled(_passiveTap);
+    const bool activeTapInterrupted = hadActiveTap && !CGEventTapIsEnabled(_activeTap);
+    if (!hadActiveTap || activeTapInterrupted) {
         // Key-up may have happened while a timed-out tap was disabled. Keep
         // swallowing held keys, but never swallow a future unrelated press.
         _keys.reconcile([](unsigned key) {
@@ -236,7 +238,10 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
         [self removeTapActive:YES];
         if (!accessibilityAllowed) _keys.reset();
     }
-    if (hadPassiveTap != (_passiveTap != nullptr) || hadActiveTap != (_activeTap != nullptr)) {
+    // A tap can resume in place after missing a release. Discard its
+    // gesture state while preserving ownership of keys still held.
+    if (passiveTapInterrupted || activeTapInterrupted ||
+        hadPassiveTap != (_passiveTap != nullptr) || hadActiveTap != (_activeTap != nullptr)) {
         [self cancelPending];
         [self configureGestures];
     }
