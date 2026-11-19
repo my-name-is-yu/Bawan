@@ -1,7 +1,9 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
-void BawanConfigurePaperScrollView(NSScrollView *scroll);
+enum class BawanPaperScrollPolicy { OverlayAutohide, SystemStableGutter };
+
+void BawanConfigurePaperScrollView(NSScrollView *scroll, BawanPaperScrollPolicy policy);
 
 static constexpr CGFloat BawanHeaderHeight = 80;
 static constexpr CGFloat BawanBrandMarkSize = 72;

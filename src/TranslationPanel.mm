@@ -105,7 +105,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     // autoresize adds the initial document width and silently clips long lines.
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     scroll.borderType = NSNoBorder;
-    BawanConfigurePaperScrollView(scroll);
+    BawanConfigurePaperScrollView(scroll, BawanPaperScrollPolicy::OverlayAutohide);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     BawanTextView *text = [[BawanTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     text.identifier = identifier;

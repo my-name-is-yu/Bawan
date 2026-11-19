@@ -111,7 +111,7 @@ struct SettingsShortcutRow {
     scroll.identifier = @"settings-scroll";
     _scroll = scroll;
     scroll.borderType = NSNoBorder;
-    BawanConfigurePaperScrollView(scroll);
+    BawanConfigurePaperScrollView(scroll, BawanPaperScrollPolicy::OverlayAutohide);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
     BawanSetupDocument *document = [[BawanSetupDocument alloc] initWithFrame:NSZeroRect];

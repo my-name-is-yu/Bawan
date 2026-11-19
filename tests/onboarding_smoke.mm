@@ -165,6 +165,14 @@ static void ServiceQueuedAppEvents(NSWindow *window) {
 }
 
 static void RunSmoke(void) {
+    NSDictionary *arguments = [NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain];
+    NSString *scrollBarMode = arguments[@"AppleShowScrollBars"];
+    const NSScrollerStyle preferredStyle = NSScroller.preferredScrollerStyle;
+    if ([scrollBarMode isEqualToString:@"Always"]) {
+        Require(preferredStyle == NSScrollerStyleLegacy, @"AppKit must select legacy scrollers for Always");
+    } else if ([scrollBarMode isEqualToString:@"WhenScrolling"]) {
+        Require(preferredStyle == NSScrollerStyleOverlay, @"AppKit must select overlay scrollers for WhenScrolling");
+    }
     NSString *suite = [@"local.bawan.OnboardingSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
@@ -180,10 +188,9 @@ static void RunSmoke(void) {
     onboarding.onModelLicense = ^{ ++licenses; };
     onboarding.onFinish = ^{ ++finishes; };
     NSScrollView *scroll = (NSScrollView *)FindView(onboarding.view, @"onboarding-scroll");
-    Require(scroll && scroll.scrollerStyle == NSScroller.preferredScrollerStyle,
+    Require(scroll && scroll.scrollerStyle == preferredStyle,
         @"Onboarding must start with the system-preferred scroller style");
     Require(!scroll.autohidesScrollers, @"Onboarding must not autohide its scrollers");
-    scroll.scrollerStyle = NSScrollerStyleLegacy;
     @try {
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
         ServiceQueuedAppEvents(window);
@@ -226,6 +233,7 @@ static void RunSmoke(void) {
         Require(monitor.permissionRequests == 0,
             @"Creating, refreshing and activating onboarding must not request OS permissions");
 
+        [window setContentSize:NSMakeSize(640, 420)];
         [onboarding setModelPhase:BawanModelSetupNeedsDownload message:@"" progress:0];
         Settle(window);
         Require(IsShown(modelStep) && !IsShown(shortcutStep) && IsShown(primary) && IsShown(license) &&
@@ -236,9 +244,9 @@ static void RunSmoke(void) {
             @"The model step must explain the download and offer only Download and Model License");
         CheckBounds(window);
         Capture(window, @"needs-download");
-        const CGFloat legacyGutter = NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame);
-        Require(scroll.scrollerStyle == NSScrollerStyleLegacy && legacyGutter > 0,
-            @"The model step must reserve a legacy scrollbar gutter even when it fits");
+        const CGFloat modelGutter = NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame);
+        Require(preferredStyle == NSScrollerStyleLegacy ? modelGutter > 0 : modelGutter == 0,
+            @"The model step must reserve a scrollbar gutter only in legacy mode");
         BawanMascotView *hero = (BawanMascotView *)FindView(root, @"onboarding-hero-mascot");
         Require([hero isKindOfClass:BawanMascotView.class] && IsShown(hero),
             @"The model step must center the animated mascot");
@@ -261,7 +269,6 @@ static void RunSmoke(void) {
         Require(setups == 2, @"⌘Return on the model step must start the download");
 
         // Step 2: preparation moves on to the shortcut while the model downloads.
-        // The footer repeats ModelStore's own words, so checking and verifying never read as downloading.
         [onboarding setModelPhase:BawanModelSetupPreparing message:@"Checking the saved model…" progress:0];
         Settle(window);
         Require([note.stringValue isEqualToString:@"Checking the saved model…"] && !IsShown(license) && !IsShown(modelControl),
@@ -279,6 +286,8 @@ static void RunSmoke(void) {
         Require(!IsShown(trial) && monitor.selectionTrialView == nil,
             @"The practice sentence must be hidden while selection permission is missing");
         CheckBounds(window);
+        Require(NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame) == modelGutter,
+            @"Starting a download must preserve the onboarding viewport width");
         Capture(window, @"preparing");
         [primary performClick:nil];
         Require(finishes == 1, @"Set Up Later must leave onboarding even while the model is still downloading");
@@ -292,9 +301,10 @@ static void RunSmoke(void) {
             [note.stringValue isEqualToString:@"Download paused · 37%"],
             @"Pausing must keep shortcut setup and continuation available beside Resume and saved progress");
         CheckBounds(window);
-        Require(NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame) == legacyGutter,
-            @"Onboarding must keep the legacy viewport width when download progress changes");
+        Require(NSWidth(scroll.frame) - NSWidth(scroll.contentView.frame) == modelGutter,
+            @"Pausing a download must preserve the onboarding viewport width");
         Capture(window, @"paused");
+        [window setContentSize:NSMakeSize(720, 500)];
         [modelControl performClick:nil];
         Require(setups == 4 && finishes == 1, @"Footer Resume must reach the model owner");
         [onboarding setModelPhase:BawanModelSetupPreparing message:@"Download complete. Verifying SHA256…" progress:1];

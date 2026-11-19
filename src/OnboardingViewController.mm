@@ -99,9 +99,7 @@ struct ShortcutRow {
     scroll.identifier = @"onboarding-scroll";
     _scroll = scroll;
     scroll.borderType = NSNoBorder;
-    BawanConfigurePaperScrollView(scroll);
-    scroll.autohidesScrollers = NO;
-    scroll.scrollerStyle = NSScroller.preferredScrollerStyle;
+    BawanConfigurePaperScrollView(scroll, BawanPaperScrollPolicy::SystemStableGutter);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
     BawanSetupDocument *document = [[BawanSetupDocument alloc] init];
