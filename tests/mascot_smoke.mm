@@ -64,6 +64,22 @@ static void ServiceAppKit(NSTimeInterval duration) {
     } while (deadline.timeIntervalSinceNow > 0);
 }
 
+static void RequireHitArea(BawanMascotView *view) {
+    NSView *parent = view.superview;
+    Require(parent != nil, @"Hit testing requires an attached mascot");
+    NSRect bounds = view.bounds;
+    for (NSValue *value in @[
+        [NSValue valueWithPoint:NSMakePoint(NSMidX(bounds), NSMidY(bounds))],
+        [NSValue valueWithPoint:NSMakePoint(NSMinX(bounds) + 0.5, NSMinY(bounds) + 0.5)],
+        [NSValue valueWithPoint:NSMakePoint(NSMaxX(bounds) - 0.5, NSMaxY(bounds) - 0.5)]
+    ]) {
+        NSPoint point = [view convertPoint:value.pointValue toView:parent];
+        Require([view hitTest:point] == view, @"The mascot's full fixed view bounds must accept pointer input");
+    }
+    NSPoint outside = [view convertPoint:NSMakePoint(NSMaxX(bounds) + 1, NSMidY(bounds)) toView:parent];
+    Require([view hitTest:outside] == nil, @"Mascot animation must not extend the pointer hit area");
+}
+
 static void RequireReset(BawanMascotView *view, NSString *stage) {
     if (AnimationCount(view.layer) > 0) {
         std::cerr << "Unremoved hover animation " << stage.UTF8String << '\n';
@@ -119,13 +135,20 @@ static void CapturePresentation(BawanMascotView *view, NSString *motion) {
 static void RunSmoke(void) {
     Require([NSFileManager.defaultManager createDirectoryAtPath:@"mascot-smoke"
         withIntermediateDirectories:YES attributes:nil error:nil], @"Cannot create mascot capture directory");
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 184, 96)
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 320, 144)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
     window.releasedWhenClosed = NO;
     BawanMascotView *first = [[BawanMascotView alloc] initWithFrame:NSMakeRect(8, 8, BawanBrandMarkSize, BawanBrandMarkSize)];
     BawanMascotView *second = [[BawanMascotView alloc] initWithFrame:NSMakeRect(100, 8, BawanBrandMarkSize, BawanBrandMarkSize)];
+    BawanMascotView *plain = [[BawanMascotView alloc] initPlainWithPointSize:120];
+    plain.translatesAutoresizingMaskIntoConstraints = NO;
     [window.contentView addSubview:first];
     [window.contentView addSubview:second];
+    [window.contentView addSubview:plain];
+    [NSLayoutConstraint activateConstraints:@[
+        [plain.leadingAnchor constraintEqualToAnchor:window.contentView.leadingAnchor constant:188],
+        [plain.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:8]
+    ]];
     [window makeKeyAndOrderFront:nil];
     [window.contentView layoutSubtreeIfNeeded];
     [window displayIfNeeded];
@@ -150,8 +173,20 @@ static void RunSmoke(void) {
     Require([first acceptsFirstMouse:clicked] && ![first mouseDownCanMoveWindow],
         @"A mascot click must work in an inactive window without dragging it");
 
-    Require(first.image != nil && first.image == second.image && first.image == BawanMascotImage(),
-        @"Both mascot views must share the cached display-sized image");
+    Require(![first isKindOfClass:NSImageView.class] && ![first respondsToSelector:@selector(setImage:)],
+        @"A layer-drawn mascot must expose a view API without an ineffective image setter");
+    Require(NSEqualSizes(first.intrinsicContentSize, NSMakeSize(72, 72)) &&
+        NSEqualSizes(plain.intrinsicContentSize, NSMakeSize(120, 120)) &&
+        NSEqualSizes(plain.frame.size, NSMakeSize(120, 120)),
+        @"Medallion and plain mascots must retain their intrinsic sizes for Auto Layout");
+    BawanMascotView *otherSize = [[BawanMascotView alloc] initPlainWithPointSize:96];
+    Require(NSEqualSizes(otherSize.intrinsicContentSize, NSMakeSize(96, 96)),
+        @"A plain mascot must derive its intrinsic size from the requested point size");
+    Require(!first.accessibilityElement && !plain.accessibilityElement &&
+        !first.acceptsFirstResponder && !plain.acceptsFirstResponder,
+        @"Decorative mascots must remain outside keyboard and accessibility navigation");
+    RequireHitArea(first);
+    RequireHitArea(plain);
     CALayer *face = NamedLayer(first.layer, @"bawan.mascot.face");
     CALayer *otherFace = NamedLayer(second.layer, @"bawan.mascot.face");
     Require(face != nil && face.contents != nil && face.contents == otherFace.contents,
@@ -207,6 +242,7 @@ static void RunSmoke(void) {
             [CATransaction flush];
             ServiceAppKit(0.12);
             CapturePresentation(first, motion);
+            RequireHitArea(first);
             NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.5];
             while (AnimationCount(first.layer) > 0 && deadline.timeIntervalSinceNow > 0) ServiceAppKit(0.01);
             RequireReset(first, @"after a hover finishes");
@@ -246,8 +282,7 @@ static void RunSmoke(void) {
         RequireReset(first, @"after hovering finishes while the pointer stays inside");
         [first mouseDown:clicked];
         RequireFinite(NamedLayer(first.layer, @"bawan.mascot.dog"));
-        Require(first.image == second.image &&
-            NamedLayer(first.layer, @"bawan.mascot.face").contents == sharedContents &&
+        Require(NamedLayer(first.layer, @"bawan.mascot.face").contents == sharedContents &&
             NSEqualRects(first.frame, fixedFrame) && CGRectEqualToRect(first.layer.bounds, fixedBounds) &&
             CGPointEqualToPoint(first.layer.position, fixedPosition) && first.layer.animationKeys.count == 0,
             @"Clicking from inside must reuse the image and keep the medallion fixed");
@@ -281,6 +316,14 @@ static void RunSmoke(void) {
         [first removeFromSuperview];
         RequireReset(first, @"after detaching the view");
     }
+    [plain mouseDown:clicked];
+    if (reducedMotion) RequireReset(plain, @"after clicking the plain mascot with OS Reduce Motion enabled");
+    else RequireFinite(NamedLayer(plain.layer, @"bawan.mascot.dog"));
+    RequireHitArea(plain);
+    Require(NSEqualSizes(plain.frame.size, NSMakeSize(120, 120)),
+        @"Plain mascot playback must preserve its intrinsic layout and hit area");
+    [plain resetHoverAnimation];
+    RequireReset(plain, @"after cancelling plain mascot playback");
     [window close];
     std::cout << "mascot_smoke_complete=true\nshared_decoded_pixel_bytes=" << pixelBytes
         << "\nreduce_motion_enabled=" << static_cast<bool>(reducedMotion)

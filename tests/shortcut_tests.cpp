@@ -1,4 +1,5 @@
 #include "ShortcutBinding.h"
+#include "ShortcutMonitorState.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -87,8 +88,8 @@ static void testDoublePress() {
             require(result.firstPress && !result.triggered && result.consumed == mode.consumed,
                     "first tap arms without triggering, preserving active/passive delivery");
             result = gesture.handle(matching(Kind::KeyUp, 150));
-            require(result.released && !result.triggered && result.consumed == mode.consumed,
-                    "key release is reported without triggering or changing delivery");
+            require(!result.triggered && result.consumed == mode.consumed,
+                    "key release preserves active/passive event delivery without triggering");
             result = gesture.handle(matching(Kind::KeyDown, timing.second));
             require(result.triggered == timing.triggers && result.firstPress == !timing.triggers &&
                     result.consumed == mode.consumed,
@@ -134,7 +135,7 @@ static void testDoublePress() {
             gesture.configure(mode.binding, mode.consumed);
             gesture.handle(matching(Kind::KeyDown, 100));
             result = gesture.handle(matching(Kind::KeyUp, 150, switchOnRelease ? 20 : 10));
-            require(result.released && result.consumed == mode.consumed,
+            require(result.consumed == mode.consumed,
                     "an application switch cannot leak an intercepted key-up or consume passive copy");
             require(gesture.handle(matching(Kind::KeyDown, 250, 20)).firstPress,
                     "an application switch disarms the old pair, during or after release");
@@ -204,8 +205,8 @@ static void testSinglePress() {
     require(result.triggered && result.consumed, "arbitrary single chord fires on first down");
     require(!gesture.handle(event(Kind::KeyDown, 200, 40, binding.modifiers, 10, true)).triggered,
             "single chord fires once while held");
-    require(gesture.handle(event(Kind::KeyUp, 250, 40, binding.modifiers)).released,
-            "single chord reports release for deferred copying");
+    require(gesture.handle(event(Kind::KeyUp, 250, 40, binding.modifiers)).consumed,
+            "single chord retains ownership of its release");
     require(gesture.handle(event(Kind::KeyDown, 300, 40, binding.modifiers)).triggered,
             "single chord is available after release");
     binding.enabled = false;
@@ -214,11 +215,108 @@ static void testSinglePress() {
     require(!result.triggered && !result.consumed, "disabled shortcut restores normal typing");
 }
 
+static void testMonitorTransitions() {
+    using Transition = ShortcutMonitorState::Transition;
+    for (const bool suspended : {false, true}) {
+        for (const bool configuration : {false, true}) {
+            ShortcutMonitorState state;
+            if (suspended) state.transition(Transition::Suspend);
+            if (configuration) state.transition(Transition::EnterConfiguration);
+            require(!state.running() && !state.awake(), "stopped monitor cannot run");
+            state.transition(Transition::Wake);
+            require(!state.started(), "a wake notification cannot start a stopped monitor");
+            state.transition(Transition::Start);
+            require(state.running() == (!suspended && !configuration),
+                    "start preserves suspension and recording independently");
+            require(state.observing() == !suspended,
+                    "Settings keeps permission availability live while bypassing actions");
+            state.transition(Transition::Sleep);
+            state.transition(Transition::Start);
+            require(!state.awake() && !state.observing(), "repeated start cannot wake a sleeping monitor");
+            state.transition(Transition::Resume);
+            state.transition(Transition::LeaveConfiguration);
+            require(!state.running(), "clearing both inhibitors cannot wake a sleeping monitor");
+            if (suspended) state.transition(Transition::Suspend);
+            if (configuration) state.transition(Transition::EnterConfiguration);
+            state.transition(Transition::Wake);
+            require(state.running() == (!suspended && !configuration), "wake preserves both inhibitors");
+            state.transition(Transition::Stop);
+            state.transition(Transition::Start);
+            require(state.suspended() == suspended && state.configurationActive() == configuration,
+                    "stop/start retains independent inhibitors");
+            state.transition(Transition::Resume);
+            require(state.running() == !configuration, "resuming cannot clear recording");
+            state.transition(Transition::LeaveConfiguration);
+            require(state.running(), "clearing the last inhibitor restores running");
+        }
+    }
+}
+
+static void testReconfiguredKeyOwnership() {
+    ShortcutKeyOwnership keys;
+    ShortcutGesture gesture;
+    auto binding = defaultShortcuts()[1];
+    for (const bool sameKey : {false, true}) {
+        keys.reset();
+        binding.keyCode = 17;
+        binding.pressCount = 2;
+        gesture.configure(binding, true);
+        require(gesture.handle(event(Kind::KeyDown, 100)).consumed, "old binding captures its first down");
+        keys.capture(17);
+        keys.awaitCopyRelease(17);
+        keys.reconfigure();
+        binding.keyCode = sameKey ? 17 : 40;
+        binding.pressCount = 1;
+        gesture.configure(binding, true);
+        auto owned = keys.handle(Kind::KeyDown, 17);
+        require(owned.consumed && owned.drainingDown && !owned.copyReleased,
+                "reconfiguration drains the held key without allowing a new gesture");
+        owned = keys.handle(Kind::KeyUp, 17);
+        require(owned.consumed && !owned.copyReleased, "old release drains without completing cancelled copying");
+        gesture.handle(event(Kind::KeyUp, 150));
+        require(!keys.handle(Kind::KeyUp, 17).consumed && !keys.draining(),
+                "an intercepted release is owned exactly once");
+        for (unsigned press = 0; press < 3; ++press) {
+            const auto down = event(Kind::KeyDown, 200 + press * 100, binding.keyCode);
+            require(!keys.handle(down.kind, down.keyCode).drainingDown, "fresh configured key is available");
+            const auto result = gesture.handle(down);
+            require(result.triggered && result.consumed, "each fresh single press triggers after reconfiguration");
+            keys.capture(binding.keyCode);
+            require(!gesture.handle(event(Kind::KeyDown, 220 + press * 100, binding.keyCode, Option, 10, true)).triggered,
+                    "held repeats cannot dispatch a second action");
+            require(keys.handle(Kind::KeyUp, binding.keyCode).consumed, "fresh action owns its release");
+            gesture.handle(event(Kind::KeyUp, 250 + press * 100, binding.keyCode));
+        }
+    }
+    keys.capture(17);
+    keys.awaitCopyRelease(17);
+    require(!keys.handle(Kind::KeyUp, 40).copyReleased, "unrelated release cannot begin copying");
+    require(!keys.handle(Kind::FlagsChanged, 17).consumed, "modifier changes do not release an intercepted key");
+    require(keys.handle(Kind::KeyUp, 17).copyReleased, "matching release begins deferred copying");
+    require(!keys.handle(Kind::KeyUp, 17).copyReleased, "deferred copying starts only once");
+    keys.awaitCopyRelease(17);
+    require(keys.handle(Kind::KeyDown, 40).copyInterrupted, "another down cancels deferred copying");
+    require(!keys.handle(Kind::KeyUp, 17).copyReleased, "interrupted copy cannot complete on late release");
+    keys.capture(17);
+    keys.capture(40);
+    keys.reconfigure();
+    keys.reconcile([](unsigned key) { return key == 40; });
+    require(!keys.handle(Kind::KeyDown, 17).consumed, "a missed physical release cannot consume the next unrelated press");
+    require(keys.handle(Kind::KeyUp, 40).consumed, "reconciliation preserves a physically held key");
+    keys.capture(17);
+    keys.awaitCopyRelease(17);
+    keys.reset();
+    require(!keys.draining() && !keys.handle(Kind::KeyUp, 17).copyReleased,
+            "stop, sleep and permission loss discard ownership and deferred copy together");
+}
+
 int main() {
     testBindings();
     testNativeWindowCommands();
     testDoublePress();
     testModifierRelease();
     testSinglePress();
+    testMonitorTransitions();
+    testReconfiguredKeyOwnership();
     std::cout << "Shortcut binding and gesture tests passed\n";
 }

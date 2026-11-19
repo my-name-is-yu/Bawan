@@ -2,6 +2,7 @@
 #import "ModelStore.h"
 #import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
+#import "SelectionReader.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
 #import "OnboardingViewController.h"
@@ -10,6 +11,8 @@
 #include "TranslationEngine.h"
 #include "EngineEventMailbox.h"
 #include <memory>
+
+enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning };
 
 @interface AppDelegate () <NSMenuDelegate> {
     NSStatusItem *_statusItem;
@@ -33,7 +36,7 @@
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
-    BOOL _showingModelStatus;
+    StatusOwner _statusOwner;
     BawanModelState _model;
 }
 @end
@@ -92,19 +95,17 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
-    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
-    _shortcut.onText = ^(NSString *text) {
+    SelectionReader *selectionReader = [SelectionReader new];
+    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences selectionReader:selectionReader];
+    selectionReader.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner handleSelectionText:text];
     };
-    _shortcut.onProblem = ^(NSString *message) {
+    selectionReader.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner updateShortcutItem];
-        [owner->_translationPanel showWithoutChangingInput];
-        [owner showTranslationStatus:message kind:BawanStatusWarning];
-        owner->_statusItem.button.toolTip = message;
+        [owner handleShortcutProblem:message];
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
@@ -228,8 +229,11 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 // Hidden pages are brought up to date when they are shown.
 - (void)refreshSetupPages {
-    if (_onboardingViewController.view.window) [self pushModelStateToPage:_onboardingViewController];
-    if (_settingsViewController.view.window) [self pushModelStateToPage:_settingsViewController];
+    switch (_translationPanel.currentPage) {
+        case BawanPanelPageOnboarding: [self pushModelStateToPage:_onboardingViewController]; break;
+        case BawanPanelPageSettings: [self pushModelStateToPage:_settingsViewController]; break;
+        case BawanPanelPageTranslation: break;
+    }
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -360,21 +364,33 @@ static NSString *StringFromUTF8(const std::string &text) {
     _retryItem.hidden = !failed;
     _retryItem.enabled = failed;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
-    BOOL hasModelMessage = _model.phase() != BawanModelSetupReady;
-    if (hasModelMessage || _showingModelStatus) {
-        // Ready clears a preceding model message, including Loading while busy.
-        // It must not erase a translation outcome or a shortcut warning.
-        _showingModelStatus = hasModelMessage;
-        [_translationPanel setAvailable:available busy:_busy status:hasModelMessage ? _modelItem.title : @""
-                                  kind:failed ? BawanStatusError : BawanStatusInformation];
-    } else {
-        [_translationPanel setAvailable:available busy:_busy];
+    if (_model.phase() != BawanModelSetupReady) {
+        [self showStatus:_modelItem.title kind:failed ? BawanStatusError : BawanStatusInformation
+                   owner:StatusOwner::ModelStatus];
+        return;
+    }
+    switch (_statusOwner) {
+        case StatusOwner::ModelStatus:
+            [self showStatus:@"" kind:BawanStatusInformation owner:StatusOwner::None];
+            break;
+        case StatusOwner::None:
+        case StatusOwner::TranslationOutcome:
+        case StatusOwner::ShortcutWarning:
+            [_translationPanel setAvailable:available busy:_busy];
+            break;
     }
 }
 
-- (void)showTranslationStatus:(NSString *)message kind:(BawanStatusKind)kind {
-    _showingModelStatus = NO;
+- (void)showStatus:(NSString *)message kind:(BawanStatusKind)kind owner:(StatusOwner)owner {
+    _statusOwner = message.length ? owner : StatusOwner::None;
     [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy status:message kind:kind];
+}
+
+- (void)handleShortcutProblem:(NSString *)message {
+    [self updateShortcutItem];
+    [_translationPanel showWithoutChangingInput];
+    [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
+    _statusItem.button.toolTip = message;
 }
 
 - (void)updateShortcutItem {
@@ -469,7 +485,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
     _busy = YES;
     [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-    [self showTranslationStatus:@"" kind:BawanStatusInformation];
+    [self showStatus:@"" kind:BawanStatusInformation owner:StatusOwner::None];
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
@@ -491,19 +507,20 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [self showTranslationStatus:event.truncated ?
+            [self showStatus:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
-                                      kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
+                        kind:event.truncated ? BawanStatusWarning : BawanStatusInformation
+                       owner:StatusOwner::TranslationOutcome];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
+            [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [self showTranslationStatus:StringFromUTF8(event.text) kind:BawanStatusError];
+            [self showStatus:StringFromUTF8(event.text) kind:BawanStatusError owner:StatusOwner::TranslationOutcome];
             break;
         default: break;
     }
@@ -518,7 +535,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = NO;
     [self updateStatus];
-    [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
+    [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
 }
 
 - (void)openTranslation:(id)sender {
@@ -606,8 +623,11 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
-    if (_settingsViewController.view.window.visible) [self refreshSettings];
-    else [_shortcut refresh];
+    if (_translationPanel.window.visible && _translationPanel.currentPage == BawanPanelPageSettings) {
+        [self refreshSettings];
+    } else {
+        [_shortcut refresh];
+    }
     [_onboardingViewController refresh];
 }
 

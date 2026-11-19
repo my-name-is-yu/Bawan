@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import "ShortcutPreferences.h"
 
+@class SelectionReader;
+
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, ShortcutAvailability) {
@@ -13,13 +15,12 @@ typedef NS_ENUM(NSInteger, ShortcutAvailability) {
 
 // Main-thread callbacks. Only the default copy gesture is a passive listener.
 @interface ShortcutMonitor : NSObject
-@property(nonatomic, copy, nullable) void (^onText)(NSString *text);
-@property(nonatomic, copy, nullable) void (^onProblem)(NSString *message);
 @property(nonatomic, copy, nullable) void (^onOpenPanel)(void);
 @property(nonatomic, copy, nullable) void (^onAvailabilityChanged)(void);
 @property(nonatomic) BOOL suspended;
 @property(nonatomic) BOOL configurationActive;
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences;
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (void)start;
 - (void)stop;
 - (void)refresh;
