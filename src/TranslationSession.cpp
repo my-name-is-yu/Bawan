@@ -104,14 +104,13 @@ TranslationSession::Effects TranslationSession::reduce(Event event) {
         },
         [&](Submit submitted) { submit(std::move(submitted), effects); },
         [&](RequestStarted started) {
+            withWork(*this, [&](auto & work) { acceptRequestId(work, started.requestId); });
+        },
+        [&](RequestRejected) {
             if (phase() != Phase::Starting) return;
-            if (started.requestId != 0) {
-                withWork(*this, [&](auto & work) { acceptRequestId(work, started.requestId); });
-            } else {
-                if (const auto attempt = trialAttempt()) effects.emplace_back(TrialFinished{*attempt, std::nullopt});
-                else effects.emplace_back(TranslationError{"Unable to start translation."});
-                withWork(*this, [](auto & work) { work = Idle{}; });
-            }
+            if (const auto attempt = trialAttempt()) effects.emplace_back(TrialFinished{*attempt, std::nullopt});
+            else effects.emplace_back(TranslationError{"Unable to start translation."});
+            withWork(*this, [](auto & work) { work = Idle{}; });
         },
         [&](Cancel) {
             const bool reportCancellation = busy() && !trialAttempt();

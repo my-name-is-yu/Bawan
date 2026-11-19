@@ -33,11 +33,12 @@ public:
     struct ModelFailed { std::string message; };
     struct Submit { Source source; Origin origin; };
     struct RequestStarted { RequestId requestId; };
+    struct RequestRejected {};
     struct Cancel {};
     struct WarmUpRequested {};
     struct TrialInvalidated { TrialAttempt attempt; };
     using Event = std::variant<OpenTranslator, ModelPreparing, ModelReady, ModelFailed, Submit, RequestStarted,
-        Cancel, WarmUpRequested, TrialInvalidated, EngineEvent>;
+        RequestRejected, Cancel, WarmUpRequested, TrialInvalidated, EngineEvent>;
 
     struct SubmitRequest { Source source; };
     struct CancelEngine {};

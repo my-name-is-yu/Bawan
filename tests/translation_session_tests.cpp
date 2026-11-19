@@ -114,15 +114,15 @@ void rejectedEngineStartIsTerminal() {
     Session session;
     (void)session.reduce(Session::ModelReady{});
     (void)session.reduce(manual("Rejected"));
-    expect<Session::TranslationError>(session.reduce(Session::RequestStarted{0}), "A rejected dispatch is terminal");
+    expect<Session::TranslationError>(session.reduce(Session::RequestRejected{}), "A rejected dispatch is terminal");
     require(!session.busy(), "A rejected dispatch must not leave the controls busy");
-    expect<>(session.reduce(Session::RequestStarted{0}), "A duplicate rejection is stale");
+    expect<>(session.reduce(Session::RequestRejected{}), "A duplicate rejection is stale");
 
     Session onboarding{Session::TranslatorAccess::AwaitingOnboarding};
     (void)onboarding.reduce(selection("Held"));
     (void)onboarding.reduce(Session::ModelReady{});
     (void)onboarding.reduce(trial({17}));
-    const auto rejected = onboarding.reduce(Session::RequestStarted{0});
+    const auto rejected = onboarding.reduce(Session::RequestRejected{});
     expect<Session::TrialFinished>(rejected, "A rejected trial reports failure only to onboarding");
     require(!std::get<Session::TrialFinished>(rejected.front()).output && !onboarding.trialAttempt(),
         "The user can retry practice or resume the held selection");
