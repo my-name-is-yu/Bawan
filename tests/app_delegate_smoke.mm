@@ -448,15 +448,18 @@ static NSEvent *SetupKey(NSWindow *window, NSString *characters, NSEventModifier
 }
 
 static void CheckFirstRunSelection(void) {
-    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, Edit, Cancel, Close };
+    enum class Change { None, ReadyBeforeFinish, ReadyBeforeReplacement, NewSelection, Edit, Cancel, Close,
+                        ExistingUserDeclined };
     for (Change change : {Change::None, Change::ReadyBeforeFinish, Change::ReadyBeforeReplacement,
-            Change::NewSelection, Change::Edit, Change::Cancel, Change::Close}) {
+            Change::NewSelection, Change::Edit, Change::Cancel, Change::Close, Change::ExistingUserDeclined}) {
         NSString *suite = [@"local.bawan.FirstSelectionSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
         ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
         SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
         SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-        AppDelegate *delegate = [[SelectionSetupSmokeDelegate alloc] init];
+        const BOOL existingUser = change == Change::ExistingUserDeclined;
+        AppDelegate *delegate = existingUser ? [[SetupSmokeDelegate alloc] init] : [[SelectionSetupSmokeDelegate alloc] init];
+        if (existingUser) [defaults setBool:YES forKey:@"firstLaunchShown"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:defaults forKey:@"defaults"];
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
@@ -469,8 +472,23 @@ static void CheckFirstRunSelection(void) {
         panel.onClose = ^{ [weakDelegate cancelTranslation]; };
         @try {
             [delegate startInitialSetup];
-            [delegate handleSelectionText:@"The first selected sentence"];
             NSWindow *window = panel.window;
+            if (existingUser) {
+                [delegate handleSelectionText:@"A selection before model consent"];
+                Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                    !Flag(delegate, @"busy") && [delegate valueForKey:@"pendingText"] == nil &&
+                    store.preparations == 0,
+                    @"Declining model consent must leave returning users out of the busy state");
+                continue;
+            }
+            [delegate openSettings:nil];
+            Require([window.contentView.identifier isEqualToString:@"bawan-settings"],
+                @"Settings must open before the first selection");
+            [window cancelOperation:nil];
+            Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
+                ![defaults boolForKey:@"firstLaunchShown"],
+                @"Back from Settings must return to unfinished onboarding without a queued selection");
+            [delegate handleSelectionText:@"The first selected sentence"];
             Require([window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
                 Flag(delegate, @"busy") &&
                 [[delegate valueForKey:@"pendingText"] isEqualToString:@"The first selected sentence"] &&

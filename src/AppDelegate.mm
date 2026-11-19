@@ -537,15 +537,13 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleSelectionText:(NSString *)text {
     [_translationPanel showForSelection:text];
-    if ([self needsOnboarding]) {
-        if (![self modelFailed]) [self queueTranslation:text direction:bawan::Direction::Automatic];
+    const BOOL needsOnboarding = [self needsOnboarding];
+    if (needsOnboarding || _model.setupNotStarted()) {
+        if (needsOnboarding && ![self modelFailed]) [self queueTranslation:text direction:bawan::Direction::Automatic];
         [self showOnboarding];
         return;
     }
     [self translateText:text direction:bawan::Direction::Automatic];
-    if (_model.setupNotStarted()) {
-        [self showOnboarding];
-    }
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
@@ -594,7 +592,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];
-    if (_pendingText && [self needsOnboarding]) {
+    if ([self needsOnboarding]) {
         __weak AppDelegate *weakSelf = self;
         _settingsViewController.onBack = ^{ [weakSelf showOnboarding]; };
     }
