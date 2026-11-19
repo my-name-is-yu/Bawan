@@ -6,6 +6,8 @@
 #import "SettingsViewController.h"
 #import "BawanAppearance.h"
 
+#include "EngineEventMailbox.h"
+
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -247,13 +249,32 @@ static void WaitFor(Predicate predicate, NSString *message) {
     }
 }
 
+@interface EngineHost (SmokeDelivery)
+- (void)deliverEventsFromMailbox:(const std::shared_ptr<bawan::EngineEventMailbox> &)mailbox;
+@end
+
+@interface SmokeEngineHost : EngineHost
+@end
+
+@implementation SmokeEngineHost {
+    BOOL _queuedStaleProgress;
+}
+- (void)deliverEventsFromMailbox:(const std::shared_ptr<bawan::EngineEventMailbox> &)mailbox {
+    if (!_queuedStaleProgress) {
+        _queuedStaleProgress = YES;
+        mailbox->push(Progress{1, "Undelivered old output", bawan::Direction::EnglishToJapanese});
+    }
+    [super deliverEventsFromMailbox:mailbox];
+}
+@end
+
 static void CheckEngineHostReset() {
     const auto direction = bawan::Direction::EnglishToJapanese;
     NSURL *missing = [NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"];
     __block std::vector<bawan::EngineEvent> events;
     __block std::uint64_t replacementId = 0;
     __block __weak EngineHost *weakHost;
-    EngineHost *host = [[EngineHost alloc] initWithEventHandler:^(const bawan::EngineEvent &event) {
+    EngineHost *host = [[SmokeEngineHost alloc] initWithEventHandler:^(const bawan::EngineEvent &event) {
         Require(NSThread.isMainThread, @"EngineHost must deliver on the main thread");
         events.push_back(event);
         if (events.size() == 1) {
