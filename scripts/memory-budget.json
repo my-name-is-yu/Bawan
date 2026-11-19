@@ -1,0 +1,6 @@
+{
+  "cold_idle": {"footprint_mib": 27, "rss_mib": 111},
+  "windows_closed": {"footprint_mib": 43, "rss_mib": 137},
+  "warm_translation": {"footprint_mib": 684, "rss_mib": 1324},
+  "idle_unloaded": {"footprint_mib": 81, "rss_mib": 241}
+}
