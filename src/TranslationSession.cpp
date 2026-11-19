@@ -87,10 +87,15 @@ void TranslationSession::acceptRequestId(Work<O> & work, RequestId id) {
 }
 
 template <class O>
-void TranslationSession::interrupt(Work<O> & work, Effects & effects) {
-    if (std::holds_alternative<Running<O>>(work)) effects.emplace_back(CancelEngine{});
+void TranslationSession::retire(Work<O> & work, Effects & effects) {
     if (isTrial(work)) effects.emplace_back(TrialDiscarded{});
     work = Idle{};
+}
+
+template <class O>
+void TranslationSession::interrupt(Work<O> & work, Effects & effects) {
+    if (std::holds_alternative<Running<O>>(work)) effects.emplace_back(CancelEngine{});
+    retire(work, effects);
 }
 
 TranslationSession::Effects TranslationSession::reduce(Event event, ModelAvailability model) {
@@ -200,7 +205,8 @@ void TranslationSession::submit(Submit event, ModelAvailability model, Effects &
     }
     auto & work = std::get<Translator>(surface_).work;
     if (trial && practicing()) return;
-    interrupt(work, effects);
+    if (ready) retire(work, effects);
+    else interrupt(work, effects);
     if (!trial) effects.emplace_back(ClearOutput{});
     work = Queued<Origin>{std::move(event.source), std::move(event.origin)};
     if (ready) startRequest(work, effects);

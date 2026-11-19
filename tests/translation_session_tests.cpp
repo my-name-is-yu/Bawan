@@ -118,8 +118,8 @@ void replacementAndStaleCallbacks() {
     expect<Session::ClearOutput, Session::Status, Session::SubmitRequest>(
         session.reduce(manual("Old")), "A fresh submission resets output");
     requestStarted(session, 13);
-    expect<Session::CancelEngine, Session::ClearOutput, Session::Status, Session::SubmitRequest>(
-        session.reduce(selection("New")), "Cancel the old engine work before submitting the replacement");
+    expect<Session::ClearOutput, Session::Status, Session::SubmitRequest>(
+        session.reduce(selection("New")), "Submit a replacement without cancelling the engine's reusable model load");
     expect<>(session.reduce(Finished{13, Complete{"Premature completion", false, ToJapanese}}),
         "Completion before the engine acknowledges the new request is stale");
     requestStarted(session, 27);

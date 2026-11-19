@@ -69,6 +69,7 @@ private:
     template <class O> static void startRequest(Work<O> & work, Effects & effects);
     template <class O> static void acceptRequestId(Work<O> & work, RequestId id);
     template <class O> static bool isTrial(const Work<O> & work);
+    template <class O> static void retire(Work<O> & work, Effects & effects);
     template <class O> static void interrupt(Work<O> & work, Effects & effects);
     bool practicing() const;
     void openTranslator(OpenTranslator event, ModelAvailability model, Effects & effects);
