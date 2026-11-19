@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import "MemoryProbe.h"
 #import "TranslationPanel.h"
 #import "ModelStore.h"
 #import "OnboardingViewController.h"
@@ -46,7 +47,6 @@
 - (void)refreshSettings;
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification;
-- (void)memoryProbeTick:(NSTimer *)timer;
 @end
 
 @interface SmokeAppDelegate : AppDelegate
@@ -1495,21 +1495,45 @@ static void CheckDownloadActions(void) {
     }
 }
 
+@interface MemoryProbeTestHost : NSObject <MemoryProbeHost>
+@property(nonatomic, copy) NSString *action;
+@property(nonatomic) BOOL ready;
+@property(nonatomic) BOOL failed;
+@end
+
+@implementation MemoryProbeTestHost
+- (void)memoryProbeShowTranslationPanel { self.action = @"translation"; }
+- (void)openSettings:(id)sender { self.action = @"settings"; }
+- (void)showOnboarding { self.action = @"setup"; }
+- (void)memoryProbeClosePanel { self.action = @"close"; }
+- (void)prepareModel { self.action = @"prepare"; }
+- (BOOL)hasVerifiedModelFile { return self.ready; }
+- (BOOL)modelFailed { return self.failed; }
+- (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
+    self.action = [text isEqualToString:@"Hello. How are you?"] &&
+        direction == bawan::Direction::EnglishToJapanese ? @"translate" : @"invalid";
+}
+@end
+
 static void CheckMemoryProbe(void) {
-    AppDelegate *delegate = [[SmokeAppDelegate alloc] init];
+    MemoryProbeTestHost *host = [[MemoryProbeTestHost alloc] init];
+    Require(![MemoryProbe probeWithEnvironment:@{} host:host], @"Missing probe environment must disable probing");
+    Require(![MemoryProbe probeWithEnvironment:@{@"BAWAN_MEMORY_PROBE": @""} host:host],
+        @"Empty probe environment must disable probing");
     NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
     Require([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:NO
         attributes:nil error:nil], @"Probe fixture directory must be created");
-    [delegate setValue:directory forKey:@"memoryProbeDirectory"];
+    MemoryProbe *probe = [MemoryProbe probeWithEnvironment:@{@"BAWAN_MEMORY_PROBE": directory} host:host];
+    Require(probe != nil, @"Nonempty probe environment must enable probing");
     NSString *command = [directory stringByAppendingPathComponent:@"command"];
     NSString *reply = [directory stringByAppendingPathComponent:@"reply"];
     NSString *engine = [directory stringByAppendingPathComponent:@"engine"];
     @try {
-        [delegate memoryProbeTick:nil];
+        [probe tick];
         Require(![NSFileManager.defaultManager fileExistsAtPath:reply], @"No command must produce no reply");
         for (NSString *value in @[@"ping", @"", @"unknown", @"model"]) {
             [value writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            [delegate memoryProbeTick:nil];
+            [probe tick];
             NSString *expected = [value isEqualToString:@"ping"] ? @"ok" :
                 ([value isEqualToString:@"model"] ? @"waiting" : @"error");
             Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
@@ -1517,13 +1541,42 @@ static void CheckMemoryProbe(void) {
             Require(![NSFileManager.defaultManager fileExistsAtPath:command], @"Commands must be consumed once");
         }
         for (auto kind : {bawan::EngineEvent::Kind::Complete, bawan::EngineEvent::Kind::Idle,
-                          bawan::EngineEvent::Kind::Error}) {
-            [delegate handleEngineEvent:{kind, 99, ""}];
+                          bawan::EngineEvent::Kind::Error, bawan::EngineEvent::Kind::Cancelled}) {
+            [probe recordEngineEvent:kind];
             NSString *expected = kind == bawan::EngineEvent::Kind::Complete ? @"complete" :
                 (kind == bawan::EngineEvent::Kind::Idle ? @"idle" : @"error");
             Require([[NSString stringWithContentsOfFile:engine encoding:NSUTF8StringEncoding error:nil]
                 isEqualToString:expected], @"Probe must expose completion, actual unload, and engine errors");
         }
+        for (NSString *value in @[@"translation", @"settings", @"setup", @"close", @"prepare", @"translate"]) {
+            [value writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [probe tick];
+            Require([host.action isEqualToString:value], @"Probe must dispatch each host action unchanged");
+            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
+                isEqualToString:@"ok"], @"Host actions must acknowledge success");
+            host.action = nil;
+            [probe tick];
+            Require(host.action == nil, @"Consumed commands must not dispatch again");
+        }
+        for (NSString *expected in @[@"ready", @"error"]) {
+            host.ready = [expected isEqualToString:@"ready"];
+            host.failed = !host.ready;
+            [@"model" writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [probe tick];
+            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
+                isEqualToString:expected], @"Probe must report model readiness and failure");
+        }
+        [NSFileManager.defaultManager removeItemAtPath:engine error:nil];
+        for (auto kind : {bawan::EngineEvent::Kind::Loading, bawan::EngineEvent::Kind::Ready,
+                          bawan::EngineEvent::Kind::Text}) [probe recordEngineEvent:kind];
+        Require(![NSFileManager.defaultManager fileExistsAtPath:engine], @"Nonterminal events must not write engine state");
+        __weak MemoryProbe *weakProbe;
+        @autoreleasepool {
+            MemoryProbe *scheduled = [MemoryProbe probeWithEnvironment:@{@"BAWAN_MEMORY_PROBE": directory} host:host];
+            weakProbe = scheduled;
+            [scheduled start];
+        }
+        Require(!weakProbe, @"The scheduled timer must not retain its probe");
     } @finally {
         [NSFileManager.defaultManager removeItemAtPath:directory error:nil];
     }
