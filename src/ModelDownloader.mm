@@ -180,8 +180,10 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
 }
 
 - (std::optional<ModelIssue>)discard {
+    [self stopTransfer];
+    const BOOL removed = [self removePartial];
     [self stop];
-    if ([self removePartial]) return std::nullopt;
+    if (removed) return std::nullopt;
     return ModelIssue::InvalidPartialUnremovable;
 }
 
@@ -256,8 +258,9 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
 }
 
 - (void)fail:(ModelFailure)failure discard:(BOOL)discard {
-    [self stop];
+    [self stopTransfer];
     if (discard && ![self removePartial]) failure = ModelIssue::InvalidPartialUnremovable;
+    [self stop];
     [self emit:ModelFailed{failure, [self resumeProgress]}];
 }
 
