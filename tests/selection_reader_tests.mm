@@ -127,7 +127,6 @@ static void testPassiveCopy() {
     Fixture f;
     f.begin();
     f.copy(@"  first physical copy\n");
-    // The second physical Cmd-C need not update the clipboard again.
     [f.reader readSelection];
     [f.environment runUntil:0.059];
     require(f.quiet() && f.environment.reads == 0, "passive copy waits for the foreground application");
@@ -142,7 +141,6 @@ static void testActiveCopy() {
     f.begin(NO);
     [f.environment runUntil:0.1];
     require(f.quiet() && f.environment.sends == 0, "active copy waits for the gesture's release notification");
-    // A change before release must not be mistaken for the synthesized copy.
     f.copy(@"unrelated earlier clipboard content");
     [f.reader readSelection];
     [f.reader readSelection];

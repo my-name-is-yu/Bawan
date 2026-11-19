@@ -346,7 +346,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
             [self cancelPending];
             [self configureGestures];
         }
-        // Previously intercepted downs still own their repeats and release.
         if (active && type == kCGEventKeyUp) {
             __weak ShortcutMonitor *weakSelf = self;
             dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf refresh]; });

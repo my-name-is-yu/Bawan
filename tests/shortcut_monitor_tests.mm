@@ -351,7 +351,6 @@ static void testRepeatedTriggersAndDeferredCopy() {
         }
         fixture.selection(presses);
         if (presses == 2) {
-            // Use an active custom double binding rather than passive Cmd-C.
             fixture.bind(bawan::ShortcutAction::TranslateSelection, {true, 40, bawan::Control | bawan::Option, 2});
         }
         const std::uint16_t key = presses == 1 ? 8 : 40;
@@ -396,8 +395,6 @@ static void testSelectionTrial(NSPanel *panel) {
         ++copies;
         copiedText = result.text;
     };
-    // Only the focused, fully selected onboarding sample may use selection shortcuts
-    // during configuration. The production recognizer handles both passive and custom bindings.
     NSTextView *sample = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 150)];
     sample.string = @"Try translating this sentence.";
     sample.editable = NO;
@@ -547,7 +544,6 @@ int main() {
             }
         }
 
-        // Settings bypasses even non-native custom bindings, before either press is swallowed.
         bind({17, bawan::Option, kCGEventFlagMaskAlternate}, 2);
         monitor.configurationActive = YES;
         for (unsigned press = 0; press < 2; ++press) {
@@ -571,7 +567,6 @@ int main() {
         require(!route(monitor, kCGEventKeyUp, 17, 0), "Settings receives the next fresh release");
         monitor.configurationActive = NO;
 
-        // A captured down must drain through a focus change, then native editing can resume.
         bind({9, bawan::Command, kCGEventFlagMaskCommand}, 2);
         [panel orderOut:nil];
         require(NSApp.keyWindow == nil, "outside-app route has no Bawan key window");
@@ -592,7 +587,6 @@ int main() {
         settle();
         require(opens == 2, "native priority does not disable a legitimate custom binding outside Bawan");
 
-        // The same native boundary applies to custom selection translation, including single Copy.
         [panel orderFront:nil];
         [panel makeKeyWindow];
         require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:nil] &&
@@ -603,7 +597,6 @@ int main() {
 
         testSelectionTrial(panel);
 
-        // Default Cmd-C remains a passive observer outside Bawan.
         [panel orderOut:nil];
         require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:nil] &&
                 [preferences restoreAction:bawan::ShortcutAction::TranslateSelection error:nil], "restore defaults");
