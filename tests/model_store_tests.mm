@@ -350,6 +350,95 @@ static void CheckInsecureRedirectPreservesPartial() {
             "Rejecting a redirect must preserve the existing prefix");
 }
 
+static NSURL *CreateSavedModelDirectory(const Fixture &fixture) {
+    Require([fixture.files createDirectoryAtURL:fixture.model withIntermediateDirectories:YES attributes:nil error:nil],
+            "Create a directory occupying the saved model path");
+    NSURL *marker = [fixture.model URLByAppendingPathComponent:@"unrelated.txt"];
+    Require([fixture.prefix() writeToURL:marker atomically:YES], "Write an unrelated file in the model path directory");
+    return marker;
+}
+
+static void CheckSavedModelDirectoryCollision() {
+    Fixture f;
+    NSURL *marker = CreateSavedModelDirectory(f);
+    [DownloadFixtureProtocol setResponses:@[]];
+    [f.store prepare];
+    WaitFor([&] { return f.ready || f.errors; }, "Saved model path collision did not finish");
+    Require([[NSData dataWithContentsOfURL:marker] isEqual:f.prefix()],
+            "Verification must preserve the directory at the saved model path and its contents");
+    Require(f.errors == 1 && !f.ready && f.store.state == ModelStoreFailed &&
+            [f.error containsString:@"occupied"] && DownloadFixtureProtocol.requests.count == 0,
+            "Report the occupied model path before contacting the server");
+}
+
+static void CheckSavedModelSymlinkCollision() {
+    for (bool targetExists : {false, true}) {
+        Fixture f;
+        NSURL *folder = f.model.URLByDeletingLastPathComponent;
+        Require([f.files createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil],
+                "Create a directory for the model symlink fixture");
+        NSURL *target = [folder URLByAppendingPathComponent:@"other.gguf"];
+        if (targetExists) Require([f.body writeToURL:target atomically:YES], "Write the model symlink target");
+        Require([f.files createSymbolicLinkAtURL:f.model withDestinationURL:target error:nil], "Create the model symlink");
+        [DownloadFixtureProtocol setResponses:@[]];
+        [f.store prepare];
+        WaitFor([&] { return f.ready || f.errors; }, "Saved model symlink did not finish");
+        Require(f.errors == 1 && !f.ready && [f.error containsString:@"occupied"] &&
+                DownloadFixtureProtocol.requests.count == 0, "A saved model symlink must count as an occupied path");
+        Require([[f.files destinationOfSymbolicLinkAtPath:f.model.path error:nil] isEqualToString:target.path],
+                "Verification must leave the saved model symlink in place");
+        NSData *contents = [NSData dataWithContentsOfURL:target];
+        Require(targetExists ? [contents isEqual:f.body] : contents == nil,
+                "Verification must leave the symlink target untouched");
+    }
+}
+
+static void CheckCorruptSavedModelCanBeReplaced() {
+    Fixture f;
+    Require([f.files createDirectoryAtURL:f.model.URLByDeletingLastPathComponent
+             withIntermediateDirectories:YES attributes:nil error:nil], "Create a directory for the corrupt model fixture");
+    NSData *wrongHash = [@"wrong model fixture" dataUsingEncoding:NSUTF8StringEncoding];
+    for (NSData *bytes in @[f.prefix(), wrongHash]) {
+        Require([bytes writeToURL:f.model atomically:YES], "Write a corrupt saved model file");
+        [DownloadFixtureProtocol setResponses:@[]];
+        NSUInteger previousErrors = f.errors;
+        [f.store revalidate];
+        WaitFor([&] { return f.ready || f.errors > previousErrors; }, "Corrupt saved model check did not finish");
+        NSString *reason = bytes.length == f.body.length ? @"SHA256" : @"size";
+        Require(!f.ready && [f.error containsString:reason] && ![f.files fileExistsAtPath:f.model.path] &&
+                DownloadFixtureProtocol.requests.count == 0, "Remove only a corrupt saved file and report why it failed");
+    }
+    f.errors = 0;
+    [DownloadFixtureProtocol setResponses:@[f.response(200, f.body)]];
+    [f.store revalidate];
+    f.awaitReady();
+}
+
+static void CheckInstallCollisionPreservesVerifiedDownload() {
+    Fixture f;
+    Fixture *fixture = &f;
+    __block NSURL *marker = nil;
+    f.store.onStateChange = ^(ModelStoreState state) {
+        if (state == ModelStoreVerifying && !marker) marker = CreateSavedModelDirectory(*fixture);
+    };
+    [DownloadFixtureProtocol setResponses:@[f.response(200, f.body)]];
+    [f.store prepare];
+    WaitFor([&] { return f.ready || f.errors; }, "Late model path collision did not finish");
+    Require(f.errors == 1 && !f.ready && [f.error containsString:@"occupied"] &&
+            [[NSData dataWithContentsOfURL:marker] isEqual:f.prefix()] &&
+            [[NSData dataWithContentsOfURL:f.partial] isEqual:f.body],
+            "A late collision must preserve both the directory and the complete download");
+    [f.store prepare];
+    Require(f.errors == 2 && DownloadFixtureProtocol.requests.count == 1,
+            "Retry must check for the collision before requesting any more bytes");
+    NSURL *moved = [f.model.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"moved-directory"];
+    Require([f.files moveItemAtURL:f.model toURL:moved error:nil], "Move the colliding directory out of the model path");
+    f.errors = 0;
+    [f.store prepare];
+    f.awaitReady();
+    Require(DownloadFixtureProtocol.requests.count == 1, "Install the preserved download without another transfer");
+}
+
 static void CheckPartialPathCollisions() {
     for (bool metadataCollision : {false, true}) {
         Fixture f;
@@ -532,6 +621,10 @@ static void CheckResumedHashFailure() {
 int main() {
     @autoreleasepool {
         try {
+            CheckSavedModelDirectoryCollision();
+            CheckSavedModelSymlinkCollision();
+            CheckCorruptSavedModelCanBeReplaced();
+            CheckInstallCollisionPreservesVerifiedDownload();
             CheckPauseAndResume();
             CheckConcurrentDownloadsPreserveProgress();
             CheckProcessRestart();
