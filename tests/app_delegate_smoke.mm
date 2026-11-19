@@ -279,11 +279,14 @@ static void CheckEngineHostReset() {
         events.push_back(event);
         if (events.size() == 1) {
             [weakHost stopAndDiscardEvents];
-            replacementId = [weakHost translate:"Replacement" direction:direction modelURL:missing];
+            [weakHost startWithModelURL:missing];
+            replacementId = [weakHost translate:"Replacement" direction:direction];
         }
     }];
     weakHost = host;
-    [host translate:"Old request" direction:direction modelURL:missing];
+    [host startWithModelURL:missing];
+    [host translate:"Old request" direction:direction];
+    [host startWithModelURL:missing];
     Require(events.empty(), @"EngineHost delivery must not be synchronous");
     const auto *delivered = &events;
     WaitFor([delivered] { return delivered->size() >= 5; }, @"The fresh engine did not finish after reset");
@@ -296,6 +299,10 @@ static void CheckEngineHostReset() {
     const auto *finished = std::get_if<Finished>(&events[4]);
     Require(finished && finished->requestId == replacementId && std::holds_alternative<Error>(finished->outcome),
         @"Only the replacement request may reach a terminal outcome after reset");
+    NSURL *different = [NSURL fileURLWithPath:@"/__bawan_tests__/different-model.gguf"];
+    [host startWithModelURL:different];
+    const auto switchedId = [host translate:"Use the new file" direction:direction];
+    Require(switchedId == replacementId, @"A different model path must start a new engine generation");
     [host stopAndDiscardEvents];
 }
 

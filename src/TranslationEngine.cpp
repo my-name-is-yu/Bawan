@@ -29,27 +29,7 @@ constexpr const char * kUnsupportedModel = "This PLaMo model is not supported.";
 constexpr const char * kUnexpectedError = "An unexpected translation error occurred.";
 
 void logCallbackFailure(const EngineEvent &event, const char * message) noexcept {
-    using namespace engine;
-    using Label = std::pair<const char *, std::uint64_t>;
-    const auto [name, id] = std::visit(Visitor{
-        [](const Lifecycle &state) -> Label {
-            return {std::visit(Visitor{
-                [](Loading) { return "Loading"; },
-                [](Ready) { return "Ready"; },
-                [](Idle) { return "Idle"; },
-                [](LoadCancelled) { return "LoadCancelled"; },
-                [](const Failed &) { return "Failed"; },
-            }, state), 0};
-        },
-        [](const Progress &progress) -> Label { return {"Progress", progress.requestId}; },
-        [](const Finished &finished) -> Label {
-            return {std::visit(Visitor{
-                [](const Complete &) { return "Complete"; },
-                [](Cancelled) { return "Cancelled"; },
-                [](const Error &) { return "Error"; },
-            }, finished.outcome), finished.requestId};
-        },
-    }, event);
+    const auto metadata = engine::describe(event);
     // Use a fixed buffer and C stdio so diagnostics cannot throw or reenter
     // the callback. Bound and escape details to prevent forged log entries.
     constexpr std::size_t limit = 256;
@@ -70,7 +50,8 @@ void logCallbackFailure(const EngineEvent &event, const char * message) noexcept
     }
     detail[size] = '\0';
     std::fprintf(stderr, "[Bawan] TranslationEngine callback threw (event=%s, requestId=%llu): %s%s\n",
-                 name, static_cast<unsigned long long>(id), detail, message[consumed] ? "..." : "");
+                 metadata.name, static_cast<unsigned long long>(metadata.requestId.value_or(0)),
+                 detail, message[consumed] ? "..." : "");
 }
 
 std::size_t contextSize(std::size_t promptTokens) {

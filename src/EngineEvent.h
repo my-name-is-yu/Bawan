@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -48,5 +49,39 @@ struct Finished {
 }
 
 using EngineEvent = std::variant<engine::Lifecycle, engine::Progress, engine::Finished>;
+
+namespace engine {
+
+struct EventDescription {
+    const char *name;
+    const char *probeValue = nullptr;
+    std::optional<RequestId> requestId = std::nullopt;
+};
+
+inline EventDescription describe(const EngineEvent &event) noexcept {
+    return std::visit(Visitor{
+        [](const Lifecycle &state) {
+            return std::visit(Visitor{
+                [](Loading) { return EventDescription{"Loading"}; },
+                [](Ready) { return EventDescription{"Ready"}; },
+                [](Idle) { return EventDescription{"Idle", "idle"}; },
+                [](LoadCancelled) { return EventDescription{"LoadCancelled", "error"}; },
+                [](const Failed &) { return EventDescription{"Failed", "error"}; },
+            }, state);
+        },
+        [](const Progress &progress) { return EventDescription{"Progress", nullptr, progress.requestId}; },
+        [](const Finished &finished) {
+            auto description = std::visit(Visitor{
+                [](const Complete &) { return EventDescription{"Complete", "complete"}; },
+                [](Cancelled) { return EventDescription{"Cancelled", "error"}; },
+                [](const Error &) { return EventDescription{"Error", "error"}; },
+            }, finished.outcome);
+            description.requestId = finished.requestId;
+            return description;
+        },
+    }, event);
+}
+
+}
 
 }
