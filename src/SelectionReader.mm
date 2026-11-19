@@ -143,7 +143,9 @@
     // Reading promised pasteboard data can reenter the app and replace/cancel this session.
     if (![self isCurrentSession:session]) return;
     [self cancel];
-    if (self.onResult) self.onResult([[SelectionResult alloc]
-        initWithKind:problem ? SelectionResultKindProblem : SelectionResultKindText text:problem ?: text]);
+    if (self.onResult) {
+        if (problem) self.onResult(SelectionProblem{problem});
+        else self.onResult(SelectedText{text});
+    }
 }
 @end

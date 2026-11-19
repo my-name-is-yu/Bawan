@@ -102,14 +102,15 @@ static NSString *StringFromUTF8(const std::string &text) {
     };
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
-    _shortcut.onSelection = ^(SelectionResult *result) {
+    _shortcut.onSelection = ^(const SelectionEvent &event) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        switch (result.kind) {
-            case SelectionResultKindText: [owner handleSelectionText:result.text]; break;
-            case SelectionResultKindTrial: [owner handleSelectionTrialText:result.text]; break;
-            case SelectionResultKindProblem: [owner handleShortcutProblem:result.text]; break;
-        }
+        std::visit([&](const auto &value) {
+            using Value = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Value, SelectedText>) [owner handleSelectionText:value.text];
+            else if constexpr (std::is_same_v<Value, SelectionTrial>) [owner handleSelectionTrialText:value.text];
+            else [owner handleShortcutProblem:value.message];
+        }, event);
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
