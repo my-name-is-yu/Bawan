@@ -4,6 +4,7 @@
 #include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <sys/stat.h>
 
 @interface ModelStore (DownloadFixture)
 - (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
@@ -36,7 +37,7 @@ static __weak DownloadFixtureProtocol *activeProtocol;
 
 @implementation DownloadFixtureProtocol
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
-    return [request.URL.host isEqualToString:@"model.test"];
+    return [@[@"model.test", @"cdn.model.test"] containsObject:request.URL.host ?: @""];
 }
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
 + (void)setResponses:(NSArray<NSDictionary *> *)responses {
@@ -72,6 +73,12 @@ static __weak DownloadFixtureProtocol *activeProtocol;
     }
     NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL
         statusCode:[step[@"status"] integerValue] HTTPVersion:@"HTTP/1.1" headerFields:step[@"headers"]];
+    NSURL *redirect = step[@"redirect"];
+    if (redirect) {
+        [self.client URLProtocol:self wasRedirectedToRequest:[NSURLRequest requestWithURL:redirect]
+                 redirectResponse:response];
+        return;
+    }
     [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
     NSData *bytes = step[@"body"];
     if (bytes.length) [self.client URLProtocol:self didLoadData:bytes];
@@ -296,6 +303,87 @@ static void CheckFreshPartialResponse() {
             "A valid complete 206 response must create a fresh partial and verify it");
 }
 
+static void CheckResumeKeepsExistingMetadata() {
+    Fixture f;
+    f.seed(f.prefix());
+    struct stat before {};
+    Require(stat(f.sidecar.fileSystemRepresentation, &before) == 0, "Inspect the saved resume metadata");
+    NSData *chunk = [f.suffix() subdataWithRange:NSMakeRange(0, 3)];
+    [DownloadFixtureProtocol setResponses:@[f.response(206, chunk,
+        @{@"Content-Range": @"bytes 7-18/19", @"Content-Length": @"12"}, true)]];
+    [f.store prepare];
+    WaitFor([&] { return f.progress > 7.0 / 19 || f.errors; }, "Resumed chunk was not persisted");
+    Require(f.errors == 0, "Valid resumed bytes must be accepted");
+    struct stat after {};
+    Require(stat(f.sidecar.fileSystemRepresentation, &after) == 0 && before.st_ino == after.st_ino,
+            "A matching HTTP 206 must reuse the validated metadata file");
+}
+
+static void CheckResumeRedirect() {
+    Fixture f;
+    f.seed(f.prefix());
+    NSURL *cdn = [NSURL URLWithString:@"https://cdn.model.test/fixture.gguf"];
+    [DownloadFixtureProtocol setResponses:@[
+        @{@"status": @302, @"headers": @{@"Location": cdn.absoluteString}, @"redirect": cdn},
+        f.continuation()]];
+    [f.store prepare];
+    f.awaitReady();
+    RequireResumeRequest(0);
+    RequireResumeRequest(1);
+    NSURLRequest *redirected = DownloadFixtureProtocol.requests[1];
+    Require([redirected.URL isEqual:cdn] && [[redirected valueForHTTPHeaderField:@"Accept-Encoding"] isEqual:@"identity"],
+            "The redirected request must use the CDN and keep identity encoding");
+}
+
+static void CheckInsecureRedirectPreservesPartial() {
+    Fixture f;
+    f.seed(f.prefix());
+    NSURL *cdn = [NSURL URLWithString:@"http://cdn.model.test/fixture.gguf"];
+    [DownloadFixtureProtocol setResponses:@[
+        @{@"status": @302, @"headers": @{@"Location": cdn.absoluteString}, @"redirect": cdn},
+        f.continuation()]];
+    [f.store prepare];
+    WaitFor([&] { return f.ready || f.errors; }, "Rejected redirect must finish with an error");
+    Require(f.errors == 1 && !f.ready && DownloadFixtureProtocol.requests.count == 1,
+            "A resume must not follow a redirect to HTTP");
+    Require(f.store.canResume && [[NSData dataWithContentsOfURL:f.partial] isEqual:f.prefix()],
+            "Rejecting a redirect must preserve the existing prefix");
+}
+
+static void CheckPartialPathCollisions() {
+    for (bool metadataCollision : {false, true}) {
+        Fixture f;
+        f.seed(f.prefix());
+        NSURL *collision = metadataCollision ? f.sidecar : f.partial;
+        Require([f.files removeItemAtURL:collision error:nil], "Remove fixture item before creating a collision");
+        Require([f.files createDirectoryAtURL:collision withIntermediateDirectories:NO attributes:nil error:nil],
+                "Create directory at reserved download path");
+        NSURL *marker = [collision URLByAppendingPathComponent:@"unrelated.txt"];
+        Require([f.prefix() writeToURL:marker atomically:YES], "Write marker in colliding directory");
+        [DownloadFixtureProtocol setResponses:@[f.response(200, f.body)]];
+        [f.store prepare];
+        WaitFor([&] { return f.ready || f.errors; }, "Path collision must finish with an error");
+        Require([[NSData dataWithContentsOfURL:marker] isEqual:f.prefix()], "Cleanup must preserve the colliding directory");
+        Require(f.errors == 1 && !f.ready && DownloadFixtureProtocol.requests.count == 0,
+                "Report the collision before starting a transfer");
+    }
+}
+
+static void CheckMetadataSymlinkIsIgnored() {
+    Fixture f;
+    f.seed(f.prefix());
+    NSURL *unrelated = [f.sidecar.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"elsewhere.plist"];
+    Require([f.files moveItemAtURL:f.sidecar toURL:unrelated error:nil], "Move metadata to a different file");
+    Require([f.files createSymbolicLinkAtURL:f.sidecar withDestinationURL:unrelated error:nil], "Create a metadata symlink");
+    NSData *original = [NSData dataWithContentsOfURL:unrelated];
+    [DownloadFixtureProtocol setResponses:@[f.response(200, f.body)]];
+    [f.store prepare];
+    f.awaitReady();
+    Require([DownloadFixtureProtocol.requests[0] valueForHTTPHeaderField:@"Range"] == nil,
+            "A symlink must not authorize appending to an existing prefix");
+    Require([[NSData dataWithContentsOfURL:unrelated] isEqual:original], "Cleanup must preserve the symlink target");
+}
+
 static void CheckInvalidPartials() {
     NSArray<NSDictionary *> *changes = @[
         @{@"url": @"https://model.test/other.gguf"}, @{@"size": @20}, @{@"sha256": @"wrong"},
@@ -450,6 +538,11 @@ int main() {
             CheckNetworkFailure();
             CheckRangeIgnored();
             CheckFreshPartialResponse();
+            CheckResumeKeepsExistingMetadata();
+            CheckResumeRedirect();
+            CheckInsecureRedirectPreservesPartial();
+            CheckPartialPathCollisions();
+            CheckMetadataSymlinkIsIgnored();
             CheckInvalidPartials();
             CheckInterruptedWithoutValidator();
             CheckRejectedRangeResponses();

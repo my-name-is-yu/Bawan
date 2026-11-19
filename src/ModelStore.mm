@@ -68,6 +68,33 @@ private:
 
 static const char VerifiedAttribute[] = "local.bawan.verified-sha256";
 
+static bool RemovePartialFile(NSURL *url) {
+    // Unlike NSFileManager removal, unlink never descends into a directory.
+    return unlink(url.fileSystemRepresentation) == 0 || errno == ENOENT;
+}
+
+static NSDictionary *ReadPartialMetadata(NSURL *url) {
+    constexpr off_t MaxMetadataBytes = 64 * 1024;
+    const int descriptor = open(url.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (descriptor < 0) return nil;
+    struct stat info {};
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_size <= 0 || info.st_size > MaxMetadataBytes) {
+        close(descriptor);
+        return nil;
+    }
+    std::unique_ptr<FILE, decltype(&std::fclose)> file(fdopen(descriptor, "rb"), &std::fclose);
+    if (!file) {
+        close(descriptor);
+        return nil;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:static_cast<NSUInteger>(info.st_size)];
+    if (std::fread(data.mutableBytes, 1, data.length, file.get()) != data.length) return nil;
+    id metadata = [NSPropertyListSerialization propertyListWithData:data
+        options:NSPropertyListImmutable format:nil error:nil];
+    return [metadata isKindOfClass:NSDictionary.class] ? metadata : nil;
+}
+
 static std::string VerificationStamp(const struct stat &info, const char *expectedSHA256) {
     char stamp[160];
     std::snprintf(stamp, sizeof(stamp), "1 %s %lld %llu %ld.%09ld", expectedSHA256,
@@ -263,28 +290,20 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
 - (void)revalidate { [self prepareTrustingVerifiedModel:NO]; }
 
 - (BOOL)discardPartial {
-    BOOL removed = YES;
-    for (NSURL *url in @[_partialURL, _metadataURL]) {
-        NSError *error = nil;
-        if (![_files removeItemAtURL:url error:&error] && error.code != NSFileNoSuchFileError)
-            removed = NO;
-    }
+    const bool removedPartial = RemovePartialFile(_partialURL);
+    const bool removedMetadata = RemovePartialFile(_metadataURL);
     _receivedBytes = 0;
     _etag = nil;
-    return removed;
+    return removedPartial && removedMetadata;
 }
 
 - (BOOL)loadPartial {
     _receivedBytes = 0;
     _etag = nil;
     struct stat info {};
-    if (lstat(_partialURL.fileSystemRepresentation, &info) != 0) return [self discardPartial];
-    NSData *data = [NSData dataWithContentsOfURL:_metadataURL];
-    id metadata = data ? [NSPropertyListSerialization propertyListWithData:data
-        options:NSPropertyListImmutable format:nil error:nil] : nil;
-    if (![metadata isKindOfClass:NSDictionary.class] || !S_ISREG(info.st_mode) ||
+    if (lstat(_partialURL.fileSystemRepresentation, &info) != 0 || !S_ISREG(info.st_mode) ||
         info.st_size <= 0 || info.st_size > _expectedSize) return [self discardPartial];
-    NSDictionary *saved = metadata;
+    NSDictionary *saved = ReadPartialMetadata(_metadataURL);
     if (![saved[@"url"] isEqual:_downloadURL.absoluteString] ||
         ![saved[@"size"] isKindOfClass:NSNumber.class] ||
         [saved[@"size"] longLongValue] != _expectedSize ||
@@ -293,7 +312,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     NSString *etag = saved[@"etag"];
     // A full file can be rehashed even without a validator. A prefix needs a
     // strong validator so If-Range cannot join bytes from different versions.
-    if (info.st_size < _expectedSize && !bawan::isStrongModelETag(etag.UTF8String))
+    if (info.st_size < _expectedSize && !bawan::isStrongModelETag(etag.UTF8String ?: ""))
         return [self discardPartial];
     _receivedBytes = info.st_size;
     _etag = etag;
@@ -342,7 +361,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         return;
     }
     if (![self loadPartial]) {
-        [self reportError:@"Unable to remove the old partial download. Check the folder permissions and try again."
+        [self reportError:@"Unable to remove the old partial download. Check for conflicting items or folder permissions and try again."
               generation:generation];
         return;
     }
@@ -433,7 +452,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
                                generation:generation];
                         return;
                     }
-                    [self->_files removeItemAtURL:self->_metadataURL error:nil];
+                    RemovePartialFile(self->_metadataURL);
                     self->_receivedBytes = 0;
                     self->_etag = nil;
                 }
@@ -444,6 +463,25 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
             });
         }
     });
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+    willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request
+    completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler {
+    if (session != _session || task != _task) {
+        completionHandler(nil);
+        return;
+    }
+    if (![request.URL.scheme.lowercaseString isEqualToString:@"https"]) {
+        completionHandler(nil);
+        [self failTransfer:@"The server redirected the model download to an insecure address. Please try again."
+                  discard:NO generation:_generation.load()];
+        return;
+    }
+    NSMutableURLRequest *redirect = [request mutableCopy];
+    for (NSString *header in @[@"Range", @"If-Range", @"Accept-Encoding"])
+        [redirect setValue:[task.originalRequest valueForHTTPHeaderField:header] forHTTPHeaderField:header];
+    completionHandler(redirect);
 }
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
@@ -485,7 +523,8 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         return;
     }
     const BOOL restart = decision == bawan::DownloadResponse::Restart || _requestOffset == 0;
-    const int flags = O_WRONLY | O_NOFOLLOW | (restart ? (O_CREAT | O_TRUNC) : O_APPEND);
+    const int flags = O_WRONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK |
+        (restart ? (O_CREAT | O_TRUNC) : O_APPEND);
     int descriptor = open(_partialURL.fileSystemRepresentation, flags, 0600);
     struct stat info {};
     if (descriptor < 0 || fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode) ||
@@ -504,16 +543,18 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
         return;
     }
     _receivedBytes = restart ? 0 : _requestOffset;
-    _etag = bawan::isStrongModelETag(etag.UTF8String) ? [etag copy] : @"";
-    NSDictionary *metadata = @{@"url":_downloadURL.absoluteString, @"size":@(_expectedSize),
-        @"sha256":_expectedSHA256, @"etag":_etag};
-    NSData *saved = [NSPropertyListSerialization dataWithPropertyList:metadata
-        format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
-    if (!saved || ![saved writeToURL:_metadataURL options:NSDataWritingAtomic error:nil]) {
-        completionHandler(NSURLSessionResponseCancel);
-        [self failTransfer:@"Unable to save download progress. Check disk space and folder permissions, then try again."
-                  discard:YES generation:generation];
-        return;
+    if (restart) {
+        _etag = bawan::isStrongModelETag(etag.UTF8String) ? [etag copy] : @"";
+        NSDictionary *metadata = @{@"url":_downloadURL.absoluteString, @"size":@(_expectedSize),
+            @"sha256":_expectedSHA256, @"etag":_etag};
+        NSData *saved = [NSPropertyListSerialization dataWithPropertyList:metadata
+            format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+        if (!saved || ![saved writeToURL:_metadataURL options:NSDataWritingAtomic error:nil]) {
+            completionHandler(NSURLSessionResponseCancel);
+            [self failTransfer:@"Unable to save download progress. Check disk space and folder permissions, then try again."
+                      discard:YES generation:generation];
+            return;
+        }
     }
     completionHandler(NSURLSessionResponseAllow);
     if (restart && _requestOffset) {
@@ -524,7 +565,7 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
 }
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
-    if (session != _session || dataTask != _task || !_partialFile) return;
+    if (session != _session || dataTask != _task || !_partialFile || data.length == 0) return;
     const uint64_t generation = _generation.load();
     if (data.length > static_cast<uint64_t>(_expectedSize - _receivedBytes)) {
         [self failTransfer:@"The model download has an incorrect size. The partial download was discarded. Please try again."

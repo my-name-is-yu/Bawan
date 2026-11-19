@@ -29,11 +29,11 @@ public:
     // This state also ignores progress outside preparation so it cannot overwrite
     // the status of a verified file or a reported failure.
     void beginPreparing() { reset(File::Preparing, nil, 0, BawanModelCheckingStatus); }
-    void fileDownloading() { file_ = File::Downloading; }
-    void filePaused() { file_ = File::Paused; }
-    void fileVerifying() { file_ = File::Preparing; }
+    void fileDownloading() { if (filePreparationActive()) file_ = File::Downloading; }
+    void filePaused() { if (file_ == File::Downloading) file_ = File::Paused; }
+    void fileVerifying() { if (file_ == File::Downloading) file_ = File::Preparing; }
     void fileProgress(double progress, NSString *message) {
-        if (file_ != File::Preparing && file_ != File::Downloading && file_ != File::Paused) return;
+        if (!filePreparationActive()) return;
         progress_ = progress;
         message_ = [message copy];
     }
@@ -99,6 +99,9 @@ public:
     }
 
 private:
+    bool filePreparationActive() const {
+        return file_ == File::Preparing || file_ == File::Downloading || file_ == File::Paused;
+    }
     void reset(File file, NSURL *url, double progress, NSString *message) {
         file_ = file;
         url_ = url;

@@ -28,6 +28,10 @@ int main() {
         state.fileProgress(0.5, @"Stray progress");
         Expect(state.setupNotStarted() && state.progress() == 0,
             "Progress must not start a preparation on its own");
+        state.fileDownloading();
+        state.filePaused();
+        state.fileVerifying();
+        Expect(state.setupNotStarted(), "Transfer states must not start a preparation on their own");
 
         state.beginPreparing();
         Expect(state.phase() == BawanModelSetupPreparing && state.canFinishSetup() && !state.canEnterTranslator() &&
@@ -91,6 +95,11 @@ int main() {
             "An engine failure keeps the verified file but blocks both onboarding exits until Retry");
         state.stopLoading();
         Expect(state.failed(), "Cancelling must keep a reported engine failure");
+        state.fileDownloading();
+        state.filePaused();
+        state.fileVerifying();
+        Expect(state.hasVerifiedFile() && [state.url() isEqual:url] && state.engine() == BawanModelState::Engine::Failed,
+            "Late transfer states must keep the verified model and its engine failure");
 
         state.beginPreparing();
         Expect(!state.failed() && !state.hasVerifiedFile() && state.url() == nil &&
