@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Portable tests (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux
+      - name: Check
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
+        run: >-
+          ./scripts/check.sh -DBAWAN_BUILD_APP=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+  native:
+    name: Native checks (macOS)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos
+      - name: Check
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 3
+        run: >-
+          ./scripts/check.sh
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache
+          -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache
