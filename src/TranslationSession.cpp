@@ -1,5 +1,6 @@
 #include "TranslationSession.h"
 
+#include <type_traits>
 #include <utility>
 
 namespace bawan {
@@ -13,155 +14,219 @@ Overload(Handlers...) -> Overload<Handlers...>;
 
 }
 
+TranslationSession::TranslationSession(TranslatorAccess access) {
+    if (access == TranslatorAccess::AwaitingOnboarding) state_.surface = Onboarding{};
+}
+
+template <class Self, class F>
+decltype(auto) TranslationSession::withWork(Self & self, F f) {
+    return std::visit([&](auto & surface) { return f(surface.work); }, self.state_.surface);
+}
+
+template <class O>
+TranslationSession::Phase TranslationSession::phaseOf(const Work<O> & work) {
+    return std::visit(Overload{
+        [](Idle) { return Phase::Idle; },
+        [](const Queued<O> &) { return Phase::Queued; },
+        [](const Starting<O> &) { return Phase::Starting; },
+        [](const Running<O> &) { return Phase::Running; },
+    }, work);
+}
+
+TranslationSession::Phase TranslationSession::phase() const {
+    const auto workPhase = withWork(*this, [](const auto & work) { return phaseOf(work); });
+    const auto * onboarding = std::get_if<Onboarding>(&state_.surface);
+    return workPhase == Phase::Idle && onboarding && onboarding->selection ? Phase::Queued : workPhase;
+}
+
+template <class O>
+std::optional<TranslationSession::RequestId> TranslationSession::requestIdOf(const Work<O> & work) {
+    if (const auto * running = std::get_if<Running<O>>(&work)) return running->requestId;
+    return std::nullopt;
+}
+
+std::optional<TranslationSession::RequestId> TranslationSession::activeRequestId() const {
+    return withWork(*this, [](const auto & work) { return requestIdOf(work); });
+}
+
+std::optional<TranslationSession::TrialAttempt> TranslationSession::trialAttempt() const {
+    const auto * onboarding = std::get_if<Onboarding>(&state_.surface);
+    if (!onboarding) return std::nullopt;
+    return std::visit(Overload{
+        [](Idle) -> std::optional<TrialAttempt> { return std::nullopt; },
+        [](const auto & trial) -> std::optional<TrialAttempt> { return trial.origin.attempt; },
+    }, onboarding->work);
+}
+
+template <class O>
+void TranslationSession::startRequest(Work<O> & work, Effects & effects) {
+    if (auto * queued = std::get_if<Queued<O>>(&work)) {
+        effects.emplace_back(SubmitRequest{std::move(queued->source)});
+        work = Starting<O>{queued->origin};
+    }
+}
+
+template <class O>
+void TranslationSession::acceptRequestId(Work<O> & work, RequestId id) {
+    if (const auto * starting = std::get_if<Starting<O>>(&work)) work = Running<O>{id, starting->origin};
+}
+
+template <class O>
+bool TranslationSession::interrupt(Work<O> & work, Effects & effects) {
+    const bool running = std::holds_alternative<Running<O>>(work);
+    if (running) effects.emplace_back(CancelEngine{});
+    if constexpr (std::is_same_v<O, Trial>) {
+        std::visit(Overload{
+            [](Idle) {},
+            [&](const auto & trial) { effects.emplace_back(TrialDiscarded{trial.origin.attempt}); },
+        }, work);
+    }
+    work = Idle{};
+    return running;
+}
+
 TranslationSession::Effects TranslationSession::reduce(Event event) {
     Effects effects;
     std::visit(Overload{
-        [&](OpenTranslator opened) {
-            if (access_ == TranslatorAccess::Open) return;
-            access_ = TranslatorAccess::Open;
-            if (activeTrial()) {
-                interrupt(effects);
-                restoreSelection();
-            }
-            if (const auto * queued = std::get_if<Queued>(&state_);
-                opened.pending == PendingSelection::Discard &&
-                queued && std::holds_alternative<Selection>(queued->origin)) {
-                state_ = Idle{};
-            }
-            advance(effects);
-        },
+        [&](OpenTranslator opened) { openTranslator(opened, effects); },
         [&](ModelPreparing) {
-            if (model_ != ModelAvailability::Preparing) resetWork(effects);
-            model_ = ModelAvailability::Preparing;
+            if (!std::holds_alternative<Preparing>(state_.model)) {
+                resetWork(effects);
+                state_.model = Preparing{};
+            }
         },
-        [&](ModelReady) {
-            model_ = ModelAvailability::Ready;
-            advance(effects);
-        },
+        [&](ModelReady) { modelReady(effects); },
         [&](ModelFailed failed) {
             resetWork(effects);
-            model_ = ModelAvailability::Failed;
+            state_.model = Failed{};
             effects.emplace_back(ModelError{std::move(failed.message)});
         },
         [&](Submit submitted) { submit(std::move(submitted), effects); },
+        [&](RequestStarted started) {
+            if (started.requestId != 0) {
+                withWork(*this, [&](auto & work) { acceptRequestId(work, started.requestId); });
+            }
+        },
         [&](Cancel) {
-            const bool reportCancellation = !std::holds_alternative<Idle>(state_) && !activeTrial();
+            const bool reportCancellation = busy() && !trialAttempt();
             resetWork(effects);
             if (reportCancellation) effects.emplace_back(Status::Cancelled);
         },
         [&](WarmUpRequested) {
-            if (model_ == ModelAvailability::Failed || std::holds_alternative<Running>(state_)) return;
-            if (model_ == ModelAvailability::Preparing || std::holds_alternative<Idle>(state_)) {
-                warmUpPending_ = true;
-                advance(effects);
+            if (auto * preparing = std::get_if<Preparing>(&state_.model)) {
+                preparing->warmUp = WarmUpPlan::Pending;
+            } else if (std::holds_alternative<Ready>(state_.model) && !busy()) {
+                effects.emplace_back(WarmUp{});
             }
         },
         [&](TrialInvalidated invalidated) {
-            const auto * trial = activeTrial();
-            if (!trial || !(trial->attempt == invalidated.attempt)) return;
-            interrupt(effects);
-            restoreSelection();
-            advance(effects);
+            if (trialAttempt() == invalidated.attempt) {
+                interrupt(std::get<Onboarding>(state_.surface).work, effects);
+            }
         },
-        [&](EngineEvent update) { handleEngineEvent(std::move(update), effects); },
+        [&](EngineEvent update) { receiveEngineEvent(std::move(update), effects); },
     }, std::move(event));
     return effects;
 }
 
-void TranslationSession::advance(Effects & effects) {
-    if (model_ != ModelAvailability::Ready) return;
-    if (auto * queued = std::get_if<Queued>(&state_)) {
-        if (access_ != TranslatorAccess::Open && !std::holds_alternative<Trial>(queued->origin)) return;
-        const RequestId id{++lastRequestId_};
-        effects.emplace_back(SubmitRequest{id, std::move(queued->source)});
-        state_ = Running{id, queued->origin};
-        warmUpPending_ = false;
-    } else if (std::holds_alternative<Idle>(state_) && std::exchange(warmUpPending_, false)) {
-        effects.emplace_back(WarmUp{});
+void TranslationSession::openTranslator(OpenTranslator event, Effects & effects) {
+    auto * onboarding = std::get_if<Onboarding>(&state_.surface);
+    if (!onboarding) return;
+    interrupt(onboarding->work, effects);
+    Translator translator;
+    if (event.pending == PendingSelection::Resume && onboarding->selection) {
+        translator.work = Queued<TranslatorOrigin>{std::move(*onboarding->selection), Selection{}};
+    }
+    state_.surface = std::move(translator);
+    if (std::holds_alternative<Ready>(state_.model)) {
+        startRequest(std::get<Translator>(state_.surface).work, effects);
     }
 }
 
-const TranslationSession::Trial * TranslationSession::activeTrial() const {
-    if (const auto * queued = std::get_if<Queued>(&state_)) return std::get_if<Trial>(&queued->origin);
-    if (const auto * running = std::get_if<Running>(&state_)) return std::get_if<Trial>(&running->origin);
-    return nullptr;
-}
-
-void TranslationSession::interrupt(Effects & effects) {
-    if (std::holds_alternative<Running>(state_)) effects.emplace_back(CancelEngine{});
-    if (const auto * trial = activeTrial()) effects.emplace_back(TrialDiscarded{trial->attempt});
-    state_ = Idle{};
+void TranslationSession::modelReady(Effects & effects) {
+    const auto * preparing = std::get_if<Preparing>(&state_.model);
+    const bool warmUp = preparing && preparing->warmUp == WarmUpPlan::Pending;
+    state_.model = Ready{};
+    withWork(*this, [&](auto & work) { startRequest(work, effects); });
+    if (warmUp && !busy()) effects.emplace_back(WarmUp{});
 }
 
 void TranslationSession::resetWork(Effects & effects) {
-    if (model_ == ModelAvailability::Ready && !std::holds_alternative<Running>(state_)) {
-        effects.emplace_back(CancelEngine{});
-    }
-    interrupt(effects);
-    suspendedSelection_.reset();
-    warmUpPending_ = false;
-}
-
-void TranslationSession::restoreSelection() {
-    if (auto selection = std::exchange(suspendedSelection_, std::nullopt)) {
-        state_ = Queued{std::move(*selection), Selection{}};
-    }
+    const bool running = phase() == Phase::Running;
+    if (!running && std::holds_alternative<Ready>(state_.model)) effects.emplace_back(CancelEngine{});
+    withWork(*this, [&](auto & work) { interrupt(work, effects); });
+    if (auto * onboarding = std::get_if<Onboarding>(&state_.surface)) onboarding->selection.reset();
+    if (auto * preparing = std::get_if<Preparing>(&state_.model)) preparing->warmUp = WarmUpPlan::None;
 }
 
 void TranslationSession::submit(Submit event, Effects & effects) {
     const auto * trial = std::get_if<Trial>(&event.origin);
-    if (model_ == ModelAvailability::Failed) {
-        if (trial) effects.emplace_back(TrialFinished{trial->attempt, std::nullopt});
+    if (std::holds_alternative<Failed>(state_.model)) {
+        if (trial && std::holds_alternative<Onboarding>(state_.surface)) {
+            effects.emplace_back(TrialFinished{trial->attempt, std::nullopt});
+        }
         return;
     }
-    if (trial) {
-        if (const auto * active = activeTrial(); active && active->attempt == trial->attempt) return;
-        if (auto * queued = std::get_if<Queued>(&state_); queued && std::holds_alternative<Selection>(queued->origin)) {
-            suspendedSelection_ = std::move(queued->source);
+    const bool ready = std::holds_alternative<Ready>(state_.model);
+    if (auto * onboarding = std::get_if<Onboarding>(&state_.surface)) {
+        if (trial) {
+            if (trialAttempt() == trial->attempt) return;
+            interrupt(onboarding->work, effects);
+            onboarding->work = Queued<Trial>{std::move(event.source), *trial};
+            if (ready) startRequest(onboarding->work, effects);
+            return;
         }
-    } else {
-        suspendedSelection_.reset();
-    }
-
-    interrupt(effects);
-    if (!trial) {
+        if (!std::holds_alternative<Selection>(event.origin)) return;
+        interrupt(onboarding->work, effects);
+        onboarding->selection = std::move(event.source);
         effects.emplace_back(ClearOutput{});
         effects.emplace_back(Status::Clear);
-    }
-    state_ = Queued{std::move(event.source), event.origin};
-    advance(effects);
-}
-
-void TranslationSession::handleEngineEvent(EngineEvent event, Effects & effects) {
-    const auto * running = std::get_if<Running>(&state_);
-    if (!running || !(running->requestId == event.requestId)) return;
-    const auto * trial = std::get_if<Trial>(&running->origin);
-    if (auto * progress = std::get_if<Progress>(&event.update)) {
-        if (!trial) effects.emplace_back(std::move(progress->output));
         return;
     }
+    if (trial) return;
+    const TranslatorOrigin origin = std::holds_alternative<Manual>(event.origin)
+        ? TranslatorOrigin{Manual{}} : TranslatorOrigin{Selection{}};
+    auto & work = std::get<Translator>(state_.surface).work;
+    interrupt(work, effects);
+    effects.emplace_back(ClearOutput{});
+    effects.emplace_back(Status::Clear);
+    work = Queued<TranslatorOrigin>{std::move(event.source), origin};
+    if (ready) startRequest(work, effects);
+}
 
-    if (trial) {
-        std::optional<Output> output;
-        if (auto * complete = std::get_if<Complete>(&event.update);
-            complete && !complete->truncated && !complete->output.text.empty()) {
-            output = std::move(complete->output);
-        }
-        effects.emplace_back(TrialFinished{trial->attempt, std::move(output)});
-    } else {
-        std::visit(Overload{
-            [](Progress) {},
-            [&](Complete complete) {
-                effects.emplace_back(std::move(complete.output));
-                effects.emplace_back(complete.truncated ? Status::Truncated : Status::Clear);
-            },
-            [&](Cancelled) { effects.emplace_back(Status::Cancelled); },
-            [&](EngineError error) { effects.emplace_back(TranslationError{std::move(error.message)}); },
-        }, std::move(event.update));
+void TranslationSession::receiveEngineEvent(EngineEvent event, Effects & effects) {
+    if (activeRequestId() != event.requestId) return;
+    using Kind = EngineEvent::Kind;
+    const auto attempt = trialAttempt();
+    switch (event.kind) {
+        case Kind::Loading:
+        case Kind::Ready:
+        case Kind::Idle:
+            return;
+        case Kind::Text:
+            if (!attempt) effects.emplace_back(Output{std::move(event.text), event.direction});
+            return;
+        case Kind::Complete:
+            if (!attempt) {
+                effects.emplace_back(Output{std::move(event.text), event.direction});
+                effects.emplace_back(event.truncated ? Status::Truncated : Status::Clear);
+            }
+            break;
+        case Kind::Cancelled:
+            if (!attempt) effects.emplace_back(Status::Cancelled);
+            break;
+        case Kind::Error:
+            if (!attempt) effects.emplace_back(TranslationError{std::move(event.text)});
+            break;
     }
-    state_ = Idle{};
-    restoreSelection();
-    advance(effects);
+    if (attempt) {
+        std::optional<Output> output;
+        if (event.kind == Kind::Complete && !event.truncated && !event.text.empty()) {
+            output = Output{std::move(event.text), event.direction};
+        }
+        effects.emplace_back(TrialFinished{*attempt, std::move(output)});
+    }
+    withWork(*this, [](auto & work) { work = Idle{}; });
 }
 
 }

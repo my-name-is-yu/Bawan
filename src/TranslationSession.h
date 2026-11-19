@@ -12,10 +12,7 @@ namespace bawan {
 
 class TranslationSession final {
 public:
-    struct RequestId {
-        std::uint64_t value;
-        bool operator==(RequestId other) const { return value == other.value; }
-    };
+    using RequestId = decltype(EngineEvent::requestId);
     struct TrialAttempt {
         std::uint64_t value;
         bool operator==(TrialAttempt other) const { return value == other.value; }
@@ -27,11 +24,7 @@ public:
     using Origin = std::variant<Manual, Selection, Trial>;
 
     struct Source { std::string text; Direction direction; };
-    struct Idle {};
-    struct Queued { Source source; Origin origin; };
-    struct Running { RequestId requestId; Origin origin; };
-    using State = std::variant<Idle, Queued, Running>;
-
+    enum class Phase { Idle, Queued, Starting, Running };
     enum class TranslatorAccess { AwaitingOnboarding, Open };
     enum class PendingSelection { Resume, Discard };
     struct OpenTranslator { PendingSelection pending = PendingSelection::Resume; };
@@ -39,27 +32,18 @@ public:
     struct ModelReady {};
     struct ModelFailed { std::string message; };
     struct Submit { Source source; Origin origin; };
+    struct RequestStarted { RequestId requestId; };
     struct Cancel {};
     struct WarmUpRequested {};
     struct TrialInvalidated { TrialAttempt attempt; };
-
-    struct Output { std::string text; Direction direction; };
-    struct Progress { Output output; };
-    struct Complete { Output output; bool truncated; };
-    struct Cancelled {};
-    struct EngineError { std::string message; };
-    struct EngineEvent {
-        using Update = std::variant<Progress, Complete, Cancelled, EngineError>;
-        RequestId requestId;
-        Update update;
-    };
-    using Event = std::variant<OpenTranslator, ModelPreparing, ModelReady, ModelFailed, Submit,
+    using Event = std::variant<OpenTranslator, ModelPreparing, ModelReady, ModelFailed, Submit, RequestStarted,
         Cancel, WarmUpRequested, TrialInvalidated, EngineEvent>;
 
-    struct SubmitRequest { RequestId requestId; Source source; };
+    struct SubmitRequest { Source source; };
     struct CancelEngine {};
     struct WarmUp {};
     struct ClearOutput {};
+    struct Output { std::string text; Direction direction; };
     enum class Status { Clear, Cancelled, Truncated };
     struct TranslationError { std::string message; };
     struct ModelError { std::string message; };
@@ -69,28 +53,47 @@ public:
         TranslationError, ModelError, TrialFinished, TrialDiscarded>;
     using Effects = std::vector<Effect>;
 
-    explicit TranslationSession(TranslatorAccess access = TranslatorAccess::Open) : access_(access) {}
+    explicit TranslationSession(TranslatorAccess access = TranslatorAccess::Open);
 
-    const State & state() const { return state_; }
+    Phase phase() const;
+    bool busy() const { return phase() != Phase::Idle; }
+    std::optional<RequestId> activeRequestId() const;
+    std::optional<TrialAttempt> trialAttempt() const;
     [[nodiscard]] Effects reduce(Event event);
 
 private:
-    enum class ModelAvailability { Preparing, Ready, Failed };
+    struct Idle {};
+    template <class O> struct Queued { Source source; O origin; };
+    template <class O> struct Starting { O origin; };
+    template <class O> struct Running { RequestId requestId; O origin; };
+    template <class O> using Work = std::variant<Idle, Queued<O>, Starting<O>, Running<O>>;
 
-    void advance(Effects & effects);
-    const Trial * activeTrial() const;
-    void interrupt(Effects & effects);
+    using TranslatorOrigin = std::variant<Manual, Selection>;
+    struct Onboarding { std::optional<Source> selection; Work<Trial> work; };
+    struct Translator { Work<TranslatorOrigin> work; };
+
+    enum class WarmUpPlan { None, Pending };
+    struct Preparing { WarmUpPlan warmUp = WarmUpPlan::None; };
+    struct Ready {};
+    struct Failed {};
+    struct State {
+        std::variant<Preparing, Ready, Failed> model = Preparing{};
+        std::variant<Onboarding, Translator> surface = Translator{};
+    };
+
+    template <class Self, class F> static decltype(auto) withWork(Self & self, F f);
+    template <class O> static Phase phaseOf(const Work<O> & work);
+    template <class O> static std::optional<RequestId> requestIdOf(const Work<O> & work);
+    template <class O> static void startRequest(Work<O> & work, Effects & effects);
+    template <class O> static void acceptRequestId(Work<O> & work, RequestId id);
+    template <class O> static bool interrupt(Work<O> & work, Effects & effects);
+    void openTranslator(OpenTranslator event, Effects & effects);
+    void modelReady(Effects & effects);
     void resetWork(Effects & effects);
-    void restoreSelection();
     void submit(Submit event, Effects & effects);
-    void handleEngineEvent(EngineEvent event, Effects & effects);
+    void receiveEngineEvent(EngineEvent event, Effects & effects);
 
     State state_;
-    TranslatorAccess access_;
-    ModelAvailability model_ = ModelAvailability::Preparing;
-    std::optional<Source> suspendedSelection_;
-    bool warmUpPending_ = false;
-    std::uint64_t lastRequestId_ = 0;
 };
 
 }
