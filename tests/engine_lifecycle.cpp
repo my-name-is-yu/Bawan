@@ -1,4 +1,5 @@
 #include "TranslationEngine.h"
+#include "EngineEventChecks.h"
 
 #include <chrono>
 #include <atomic>
@@ -20,8 +21,45 @@ using namespace std::chrono_literals;
 
 namespace {
 
-using Kind = bawan::EngineEvent::Kind;
+using namespace bawan::engine;
+using bawan::test::lifecycle;
+using bawan::test::outcome;
+
+enum class Kind { Loading, Ready, Idle, LoadCancelled, Failed, Progress, Complete, Cancelled, Error };
 using Observation = std::pair<Kind, std::uint64_t>;
+
+Observation observe(const bawan::EngineEvent &event) {
+    return std::visit(Visitor{
+        [](const Lifecycle &state) -> Observation {
+            return {std::visit(Visitor{
+                [](Loading) { return Kind::Loading; },
+                [](Ready) { return Kind::Ready; },
+                [](Idle) { return Kind::Idle; },
+                [](LoadCancelled) { return Kind::LoadCancelled; },
+                [](const Failed &) { return Kind::Failed; },
+            }, state), 0};
+        },
+        [](const Progress &progress) -> Observation { return {Kind::Progress, progress.requestId}; },
+        [](const Finished &finished) -> Observation {
+            return {std::visit(Visitor{
+                [](const Complete &) { return Kind::Complete; },
+                [](Cancelled) { return Kind::Cancelled; },
+                [](const Error &) { return Kind::Error; },
+            }, finished.outcome), finished.requestId};
+        },
+    }, event);
+}
+
+void requireOutput(const bawan::EngineEvent &event, std::uint64_t id) {
+    constexpr auto expectedDirection = bawan::Direction::EnglishToJapanese;
+    if (const auto *progress = std::get_if<Progress>(&event)) {
+        if (progress->requestId == id && progress->direction == expectedDirection && !progress->text.empty()) return;
+    } else if (const auto *complete = outcome<Complete>(event)) {
+        if (std::get<Finished>(event).requestId == id && complete->direction == expectedDirection &&
+            !complete->text.empty()) return;
+    }
+    throw std::runtime_error("Translation lost its request identity, direction or output");
+}
 
 class StderrCapture {
 public:
@@ -87,26 +125,30 @@ public:
         return events_;
     }
 
-    void requireEvent(bawan::EngineEvent::Kind kind, std::uint64_t id, std::size_t after) {
+    void requireEvent(Kind kind, std::uint64_t id, std::size_t after) {
         std::unique_lock<std::mutex> lock(mutex_);
         // A cold Metal backend may compile its embedded libraries on first use.
         if (!changed_.wait_for(lock, 60s, [&] {
             for (std::size_t i = after; i < events_.size(); ++i) {
-                if (events_[i].requestId == id && events_[i].kind == kind) {
-                    return kind != bawan::EngineEvent::Kind::Error || !events_[i].text.empty();
+                if (observe(events_[i]) == Observation{kind, id}) {
+                    if (const auto *error = outcome<Error>(events_[i])) return !error->message.empty();
+                    if (const auto *failed = lifecycle<Failed>(events_[i])) return !failed->message.empty();
+                    return true;
                 }
             }
             return false;
         })) {
             const char *kindName = "unknown";
             switch (kind) {
-                case bawan::EngineEvent::Kind::Loading: kindName = "Loading"; break;
-                case bawan::EngineEvent::Kind::Ready: kindName = "Ready"; break;
-                case bawan::EngineEvent::Kind::Idle: kindName = "Idle"; break;
-                case bawan::EngineEvent::Kind::Text: kindName = "Text"; break;
-                case bawan::EngineEvent::Kind::Complete: kindName = "Complete"; break;
-                case bawan::EngineEvent::Kind::Cancelled: kindName = "Cancelled"; break;
-                case bawan::EngineEvent::Kind::Error: kindName = "Error"; break;
+                case Kind::Loading: kindName = "Loading"; break;
+                case Kind::Ready: kindName = "Ready"; break;
+                case Kind::Idle: kindName = "Idle"; break;
+                case Kind::LoadCancelled: kindName = "LoadCancelled"; break;
+                case Kind::Failed: kindName = "Failed"; break;
+                case Kind::Progress: kindName = "Progress"; break;
+                case Kind::Complete: kindName = "Complete"; break;
+                case Kind::Cancelled: kindName = "Cancelled"; break;
+                case Kind::Error: kindName = "Error"; break;
             }
             throw std::runtime_error(std::string("Timed out after 60s waiting for ") + kindName +
                                      " (requestId=" + std::to_string(id) + ")");
@@ -124,7 +166,7 @@ public:
     void requireSequence(std::initializer_list<Observation> expected) {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<Observation> actual;
-        for (const auto & event : events_) { actual.emplace_back(event.kind, event.requestId); }
+        for (const auto & event : events_) { actual.push_back(observe(event)); }
         if (actual != std::vector<Observation>(expected)) {
             std::string message = "Unexpected callback sequence:";
             for (const auto & event : actual) {
@@ -147,7 +189,7 @@ public:
         : events_(events), entered_(enter_.get_future()), resumed_(resume_.get_future().share()) {}
 
     void push(bawan::EngineEvent event) {
-        const bool hold = event.kind == Kind::Loading && !held_.exchange(true);
+        const bool hold = lifecycle<Loading>(event) && !held_.exchange(true);
         events_.push(std::move(event));
         if (hold) {
             enter_.set_value();
@@ -193,14 +235,14 @@ void callbackFailuresAreObservable() {
     bool throwRequest = true;
     bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
         [&](bawan::EngineEvent event) {
-            const auto kind = event.kind;
-            const auto id = event.requestId;
+            const bool loading = lifecycle<Loading>(event) != nullptr;
+            const bool requestFailed = outcome<Error>(event) != nullptr;
             events.push(std::move(event));
-            if (kind == Kind::Loading && std::exchange(throwLoading, false)) {
+            if (loading && std::exchange(throwLoading, false)) {
                 throw std::runtime_error("callback 100% failed\nunsafe\\detail\t" +
                     std::string(300, 'x') + "PRIVATE-TAIL");
             }
-            if (kind == Kind::Error && id != 0 && std::exchange(throwRequest, false)) { throw 17; }
+            if (requestFailed && std::exchange(throwRequest, false)) { throw 17; }
         });
     const auto failed = engine.translate("INPUT_MUST_NOT_BE_LOGGED");
     events.requireEvent(Kind::Error, failed, 0);
@@ -208,8 +250,8 @@ void callbackFailuresAreObservable() {
     events.requireEvent(Kind::Error, retry, 0);
     engine.shutdown();
     events.requireSequence({
-        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}, {Kind::Error, failed},
-        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}, {Kind::Error, retry},
+        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0}, {Kind::Error, failed},
+        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0}, {Kind::Error, retry},
     });
     const auto diagnostics = capture.finish();
     const std::string prefix = "[Bawan] TranslationEngine callback threw (event=";
@@ -236,7 +278,9 @@ void requestFailureKeepsLoadedModel(const std::string & modelPath) {
     const auto failed = engine.translate(std::string(1, '\xC3'));
     events.requireEvent(Kind::Error, failed, 0);
     events.requireSequence({{Kind::Loading, 0}, {Kind::Ready, 0}, {Kind::Error, failed}});
-    if (events.snapshot().back().text != "The text is not valid UTF-8.") {
+    const auto afterFailure = events.snapshot();
+    const auto *error = outcome<Error>(afterFailure.back());
+    if (!error || error->message != "The text is not valid UTF-8.") {
         throw std::runtime_error("Request failure lost its error details");
     }
     const auto recovery = engine.translate("Hello.", bawan::Direction::EnglishToJapanese);
@@ -247,18 +291,16 @@ void requestFailureKeepsLoadedModel(const std::string & modelPath) {
     std::vector<Observation> actual;
     bool completed = false;
     for (const auto & event : events.snapshot()) {
-        if (event.kind == Kind::Text || event.kind == Kind::Complete) {
-            if (event.requestId != recovery || event.direction != bawan::Direction::EnglishToJapanese ||
-                event.text.empty()) {
-                throw std::runtime_error("Recovery lost its request identity, direction or output");
-            }
-            if (event.kind == Kind::Complete) { completed = true; }
+        const auto observation = observe(event);
+        if (observation.first == Kind::Progress || observation.first == Kind::Complete) {
+            requireOutput(event, recovery);
+            if (observation.first == Kind::Complete) { completed = true; }
             else { continue; }
         }
-        if (event.kind == Kind::Idle && !completed) {
+        if (observation.first == Kind::Idle && !completed) {
             throw std::runtime_error("Request failure unloaded the reusable model");
         }
-        actual.emplace_back(event.kind, event.requestId);
+        actual.push_back(observation);
     }
     if (actual != std::vector<Observation>{{Kind::Loading, 0}, {Kind::Ready, 0},
             {Kind::Error, failed}, {Kind::Complete, recovery}, {Kind::Idle, 0}}) {
@@ -287,9 +329,9 @@ void releaseKeepsLatestTranslation() {
     // Replacing a translation must keep the useful in-flight load. Release
     // retains the latest queued translation, even when warm-up is also queued.
     events.requireSequence({
-        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0},
+        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0},
         {Kind::Cancelled, superseded}, {Kind::Loading, 0}, {Kind::Idle, 0},
-        {Kind::Error, 0}, {Kind::Error, latest},
+        {Kind::Failed, 0}, {Kind::Error, latest},
     });
 }
 
@@ -305,10 +347,10 @@ void releaseSupersedesWarmUp() {
     engine.releaseMemory();
     engine.warmUp();
     gate.release();
-    events.requireEvent(Kind::Error, 0, 0);
+    events.requireEvent(Kind::Failed, 0, 0);
     events.requireQuietFor(100ms);
     engine.shutdown();
-    events.requireSequence({{Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}});
+    events.requireSequence({{Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0}});
 }
 
 void cancelOverlappingTranslations() {
@@ -331,9 +373,9 @@ void cancelOverlappingTranslations() {
     engine.shutdown();
     requireIncreasingIds({active, superseded, withdrawn, recovery});
     events.requireSequence({
-        {Kind::Loading, 0}, {Kind::Cancelled, 0}, {Kind::Cancelled, active},
+        {Kind::Loading, 0}, {Kind::LoadCancelled, 0}, {Kind::Cancelled, active},
         {Kind::Cancelled, superseded}, {Kind::Cancelled, withdrawn},
-        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}, {Kind::Error, recovery},
+        {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0}, {Kind::Error, recovery},
     });
 }
 
@@ -413,19 +455,14 @@ void pendingTranslationCompletesBeforeRelease(const std::string & modelPath, boo
     bool completed = false;
     bool unloaded = false;
     for (const auto & event : events.snapshot()) {
-        if (event.kind == Kind::Loading) { ++loads; }
-        if (event.requestId != 0 &&
-            (event.kind == Kind::Complete || event.kind == Kind::Cancelled || event.kind == Kind::Error)) {
-            terminals.emplace_back(event.kind, event.requestId);
+        const auto observation = observe(event);
+        if (observation.first == Kind::Loading) { ++loads; }
+        if (std::holds_alternative<Finished>(event)) { terminals.push_back(observation); }
+        if (observation.first == Kind::Progress || observation.first == Kind::Complete) {
+            requireOutput(event, latest);
         }
-        if (event.kind == Kind::Text || event.kind == Kind::Complete) {
-            if (event.requestId != latest || event.direction != bawan::Direction::EnglishToJapanese ||
-                event.text.empty()) {
-                throw std::runtime_error("The retained translation lost its request identity, output or direction");
-            }
-        }
-        if (event.kind == Kind::Complete && event.requestId == latest) { completed = true; }
-        if (event.kind == Kind::Idle) {
+        if (observation == Observation{Kind::Complete, latest}) { completed = true; }
+        if (observation.first == Kind::Idle) {
             if (!completed) { throw std::runtime_error("Release unloaded before the pending translation completed"); }
             unloaded = true;
         }
@@ -440,7 +477,6 @@ void pendingTranslationCompletesBeforeRelease(const std::string & modelPath, boo
 
 int main(int argc, char ** argv) {
     try {
-        using Kind = bawan::EngineEvent::Kind;
         Events events;
         bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
             [&](bawan::EngineEvent event) { events.push(std::move(event)); }, 25ms);
@@ -450,11 +486,11 @@ int main(int argc, char ** argv) {
         auto after = events.mark();
         const auto first = engine.translate("Hello");
         events.requireEvent(Kind::Error, first, after);
-        events.requireEvent(Kind::Error, 0, after);
+        events.requireEvent(Kind::Failed, 0, after);
 
         after = events.mark();
         engine.warmUp();
-        events.requireEvent(Kind::Error, 0, after);
+        events.requireEvent(Kind::Failed, 0, after);
 
         after = events.mark();
         const auto retry = engine.translate("Try again");
@@ -462,13 +498,15 @@ int main(int argc, char ** argv) {
         engine.shutdown();
         events.requireQuietFor(50ms);
         events.requireSequence({
-            {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}, {Kind::Error, first},
-            {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0},
-            {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Error, 0}, {Kind::Error, retry},
+            {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0}, {Kind::Error, first},
+            {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0},
+            {Kind::Loading, 0}, {Kind::Idle, 0}, {Kind::Failed, 0}, {Kind::Error, retry},
         });
         for (const auto & event : events.snapshot()) {
-            if (event.kind == Kind::Error &&
-                event.text != "Unable to load the model. Please check the model file.") {
+            const auto *failure = lifecycle<Failed>(event);
+            const auto *error = outcome<Error>(event);
+            const auto *message = failure ? &failure->message : error ? &error->message : nullptr;
+            if (message && *message != "Unable to load the model. Please check the model file.") {
                 throw std::runtime_error("Load failure lost its error details");
             }
         }
@@ -483,13 +521,13 @@ int main(int argc, char ** argv) {
         Events cancelledEvents;
         bawan::TranslationEngine *cancelledEngine = nullptr;
         bawan::TranslationEngine cancelled("/__bawan_tests__/missing-model.gguf", [&](bawan::EngineEvent event) {
-            if (event.kind == Kind::Loading) cancelledEngine->cancel();
+            if (lifecycle<Loading>(event)) cancelledEngine->cancel();
             cancelledEvents.push(std::move(event));
         }, 25ms);
         cancelledEngine = &cancelled;
         after = cancelledEvents.mark();
         cancelled.warmUp();
-        cancelledEvents.requireEvent(Kind::Cancelled, 0, after);
+        cancelledEvents.requireEvent(Kind::LoadCancelled, 0, after);
         cancelled.shutdown();
 
         Events replacedEvents;
@@ -498,7 +536,7 @@ int main(int argc, char ** argv) {
         auto resumed = resume.get_future().share();
         std::atomic<bool> held{false};
         bawan::TranslationEngine replaced("/__bawan_tests__/missing-model.gguf", [&](bawan::EngineEvent event) {
-            const bool hold = event.kind == Kind::Loading && !held.exchange(true);
+            const bool hold = lifecycle<Loading>(event) && !held.exchange(true);
             replacedEvents.push(std::move(event));
             if (hold) {
                 loadingSeen.set_value();
