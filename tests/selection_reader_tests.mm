@@ -101,8 +101,11 @@ struct Fixture {
     Fixture() {
         NSMutableArray<NSString *> *receivedTexts = texts;
         NSMutableArray<NSString *> *receivedProblems = problems;
-        reader.onText = ^(NSString *text) { [receivedTexts addObject:text]; };
-        reader.onProblem = ^(NSString *message) { [receivedProblems addObject:message]; };
+        reader.onResult = ^(SelectionResult *result) {
+            if (result.kind == SelectionResultKindText) [receivedTexts addObject:result.text];
+            else if (result.kind == SelectionResultKindProblem) [receivedProblems addObject:result.text];
+            else require(false, "reader does not emit trial results");
+        };
     }
     void begin(BOOL passive = YES) {
         [reader beginCopyFromApplication:environment.application passive:passive];
@@ -124,7 +127,6 @@ static void testPassiveCopy() {
     Fixture f;
     f.begin();
     f.copy(@"  first physical copy\n");
-    // The second physical Cmd-C need not update the clipboard again.
     [f.reader readSelection];
     [f.environment runUntil:0.059];
     require(f.quiet() && f.environment.reads == 0, "passive copy waits for the foreground application");
@@ -139,7 +141,6 @@ static void testActiveCopy() {
     f.begin(NO);
     [f.environment runUntil:0.1];
     require(f.quiet() && f.environment.sends == 0, "active copy waits for the gesture's release notification");
-    // A change before release must not be mistaken for the synthesized copy.
     f.copy(@"unrelated earlier clipboard content");
     [f.reader readSelection];
     [f.reader readSelection];
@@ -335,8 +336,9 @@ static void testReentrantReads() {
         FakeSelectionEnvironment *environment = f.environment;
         __weak SelectionReader *weakReader = reader;
         NSMutableArray<NSString *> *texts = f.texts;
-        reader.onText = ^(NSString *text) {
-            [texts addObject:text];
+        reader.onResult = ^(SelectionResult *result) {
+            require(result.kind == SelectionResultKindText, "reentrant completion returns text");
+            [texts addObject:result.text];
             if (texts.count == 1) {
                 SelectionReader *reader = weakReader;
                 [reader beginCopyFromApplication:environment.application passive:YES];
@@ -352,7 +354,7 @@ static void testReentrantReads() {
         require(texts.count == 2 && [texts[0] isEqualToString:@"first selection"] &&
                 [texts[1] isEqualToString:@"next selection"] && f.problems.count == 0,
                 "completion clears its own session before the client starts another read");
-        reader.onText = nil;
+        reader.onResult = nil;
     }
 }
 

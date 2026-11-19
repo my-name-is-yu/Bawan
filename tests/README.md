@@ -101,7 +101,7 @@ permissions, physical key delivery, visible windows and the system clipboard:
 
 ```sh
 clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
-  tests/selection_reader_tests.mm src/SelectionReader.mm \
+  tests/selection_reader_tests.mm src/SelectionReader.mm src/SelectionResult.mm \
   -framework AppKit -framework CoreGraphics -o /tmp/bawan-selection-reader-tests
 /tmp/bawan-selection-reader-tests
 ```
@@ -288,7 +288,8 @@ across gesture reconfiguration and owns the deferred active-copy release.
 `shortcut_tests` exercises those portable policies alongside the existing
 active/passive gesture timing tests. `shortcut_monitor_tests` routes real CGEvents
 through the production monitor and observes panel dispatch and SelectionReader
-begin/read/cancel calls. It covers key/press-count/enable changes while held,
+begin/read/cancel calls and text/problem forwarding through monitor callbacks.
+It covers key/press-count/enable changes while held,
 active/passive transitions, overlapping sleep/suspension/configuration, queued
 cancellation, matching/duplicate releases and multiple fresh trigger cycles.
 
@@ -308,7 +309,7 @@ without llama.cpp:
 ```sh
 clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Isrc \
   tests/shortcut_monitor_tests.mm src/ShortcutBinding.cpp \
-  src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm \
+  src/ShortcutPreferences.mm src/ShortcutMonitor.mm src/SelectionReader.mm src/SelectionResult.mm \
   -framework AppKit -framework CoreGraphics -framework ApplicationServices \
   -framework Carbon -o /tmp/bawan-shortcut-monitor-tests
 /tmp/bawan-shortcut-monitor-tests

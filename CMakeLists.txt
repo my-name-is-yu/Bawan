@@ -86,7 +86,7 @@ if(APPLE AND (BAWAN_BUILD_APP OR BAWAN_BUILD_TESTS))
         add_library(${target} STATIC
             src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm
             src/BawanAppearance.mm src/BawanMascotView.mm
-            src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm
+            src/ShortcutMonitor.mm src/SelectionReader.mm src/SelectionResult.mm src/ShortcutPreferences.mm
             src/SetupUI.mm src/OnboardingViewController.mm)
         target_include_directories(${target} PUBLIC src)
         target_link_libraries(${target} PUBLIC bawan_gesture
@@ -103,7 +103,7 @@ if(BAWAN_BUILD_APP)
     set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
         "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
     add_executable(Bawan MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/ModelStore.mm
+        src/main.mm src/AppDelegate.mm src/ModelStore.mm src/EngineHost.mm
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES})
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
@@ -194,7 +194,7 @@ if(BAWAN_BUILD_TESTS)
         set_tests_properties(onboarding PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 45)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
-            src/AppDelegate.mm src/ModelStore.mm)
+            src/AppDelegate.mm src/ModelStore.mm src/EngineHost.mm)
         target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES

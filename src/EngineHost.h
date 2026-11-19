@@ -1,0 +1,21 @@
+#pragma once
+
+#import <Foundation/Foundation.h>
+
+#include "EngineEvent.h"
+
+NS_ASSUME_NONNULL_BEGIN
+
+@interface EngineHost : NSObject
+
+- (instancetype)initWithEventHandler:(void (^)(const bawan::EngineEvent &))handler NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
+- (void)warmUpForModelURL:(NSURL *)modelURL;
+- (bawan::engine::RequestId)translate:(std::string)text direction:(bawan::Direction)direction modelURL:(NSURL *)modelURL;
+- (void)cancel;
+- (void)releaseMemory;
+- (void)stopAndDiscardEvents;
+
+@end
+
+NS_ASSUME_NONNULL_END
