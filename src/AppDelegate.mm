@@ -468,8 +468,13 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)handleShortcutProblem:(NSString *)message {
     [self updateShortcutItem];
-    [_translationPanel showWithoutChangingInput];
-    [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
+    if ([self needsOnboarding]) {
+        [self showOnboarding];
+        [_onboardingViewController showShortcutError:message];
+    } else {
+        [_translationPanel showWithoutChangingInput];
+        [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
+    }
     _statusItem.button.toolTip = message;
 }
 

@@ -18,6 +18,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setActive:(BOOL)active;
 - (void)focusInitialControl;
 - (void)refresh;
+- (void)showShortcutError:(NSString *)message;
 @property(nonatomic, readonly) NSString *selectionTrialText;
 @property(nonatomic, readonly, nullable) NSString *selectionTrialOutput;
 @property(nonatomic, readonly) bawan::Direction selectionTrialDirection;

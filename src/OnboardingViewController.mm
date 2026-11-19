@@ -415,6 +415,19 @@ struct ShortcutRow {
     BawanSetupPresentPage(self.view, _scroll);
 }
 
+- (void)showShortcutError:(NSString *)message {
+    _error.stringValue = message;
+    _error.hidden = NO;
+    [self.view layoutSubtreeIfNeeded];
+    [_error scrollRectToVisible:_error.bounds];
+    if (self.view.window.visible) {
+        NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
+            NSAccessibilityAnnouncementKey: message,
+            NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
+        });
+    }
+}
+
 - (void)setUpShortcut:(NSButton *)sender {
     auto action = static_cast<bawan::ShortcutAction>(sender.tag);
     auto binding = [_preferences bindingForAction:action];
@@ -422,16 +435,7 @@ struct ShortcutRow {
     if (!binding.enabled) {
         binding.enabled = true;
         if (![_preferences setBinding:binding forAction:action error:&error]) {
-            _error.stringValue = error ?: @"Unable to enable this shortcut.";
-            _error.hidden = NO;
-            [self.view layoutSubtreeIfNeeded];
-            [_error scrollRectToVisible:_error.bounds];
-            if (self.view.window.visible) {
-                NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
-                    NSAccessibilityAnnouncementKey: _error.stringValue,
-                    NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
-                });
-            }
+            [self showShortcutError:error ?: @"Unable to enable this shortcut."];
             return;
         }
     }

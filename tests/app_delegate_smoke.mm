@@ -1249,6 +1249,12 @@ static void CheckFirstRunIntegration(void) {
         Require(primary.enabled && monitor.permissionRequests == 0 &&
             ![defaults boolForKey:@"firstLaunchShown"],
             @"Model readiness must enable Start without requesting either optional OS permission");
+        NSString *copyWarning = @"The selected text could not be copied.";
+        [delegate handleShortcutProblem:copyWarning];
+        NSTextField *shortcutError = (NSTextField *)FindView(window.contentView, @"onboarding-error");
+        Require(panel.currentPage == BawanPanelPageOnboarding && ![defaults boolForKey:@"firstLaunchShown"] &&
+            shortcutError && !shortcutError.hiddenOrHasHiddenAncestor && [shortcutError.stringValue isEqualToString:copyWarning],
+            @"A copy failure must show its warning without opening a translator that cannot accept requests");
         [primary performClick:nil];
         Require(panel.currentPage == BawanPanelPageTranslation && [defaults boolForKey:@"firstLaunchShown"] &&
             [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
