@@ -4,8 +4,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-// Use on the main thread. Each call publishes its resulting snapshot before it
-// returns; later snapshots of the same preparation also arrive on the main thread.
 @interface ModelStore : NSObject
 @property(nonatomic, readonly) ModelStoreSnapshot snapshot;
 @property(nonatomic, copy, nullable) void (^onChange)(const ModelStoreSnapshot &snapshot);

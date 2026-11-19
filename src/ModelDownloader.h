@@ -14,8 +14,6 @@ using ModelDownloadOpening = std::variant<ModelFailed, ModelDestinationPresent, 
 using ModelDownloadEvent = std::variant<ModelDownloading, ModelDownloaded, ModelFailed>;
 typedef void (^ModelDownloadHandler)(const ModelDownloadEvent &event);
 
-// Owns the partial file next to the destination: its lock, resume metadata,
-// transfer and installation. Use on the main thread; events arrive there too.
 @interface ModelDownloader : NSObject
 - (instancetype)initWithPartialURL:(NSURL *)partialURL destinationURL:(NSURL *)destinationURL
                        downloadURL:(NSURL *)downloadURL expectedSize:(int64_t)expectedSize

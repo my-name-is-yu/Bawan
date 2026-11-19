@@ -144,7 +144,6 @@ inline BawanModelSetupView BawanPresentModelSetup(const BawanModelSetup &setup) 
     return {BawanModelSetupReady, BawanModelReadyStatus, 1};
 }
 
-// The latest ModelStore snapshot, with the engine that loads it once the file is verified.
 class BawanModelState {
 public:
     void fileChanged(const ModelStoreSnapshot &file) { setup_ = BawanModelSetupFor(file); }
@@ -170,10 +169,7 @@ public:
         return ready && std::holds_alternative<BawanEngineFailed>(ready->engine);
     }
     bool failed() const { return std::holds_alternative<ModelFailed>(setup_) || engineHasFailed(); }
-    // Escape/Open Translator can leave setup once the file is verified. A load
-    // may still be running, but a reported engine failure needs attention first.
     bool canEnterTranslator() const { return hasVerifiedFile() && !engineHasFailed(); }
-    // The explicit setup footer action may continue while preparation is running.
     bool canFinishSetup() const { return !setupNotStarted() && !failed(); }
 
     BawanModelSetupView view() const { return BawanPresentModelSetup(setup_); }

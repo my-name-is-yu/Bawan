@@ -15,7 +15,6 @@ typedef NS_ENUM(NSInteger, BawanPanelPageKind) {
     BawanPanelPageTranslation, BawanPanelPageSettings, BawanPanelPageOnboarding
 };
 
-// Shows the latest model setup on whichever setup page is current, and on a page as it is shown.
 @interface TranslationPanel : NSObject <BawanModelSetupDisplay>
 @property(nonatomic, copy, nullable) void (^onTranslate)(NSString *text, bawan::Direction direction);
 @property(nonatomic, copy, nullable) void (^onCancel)(void);

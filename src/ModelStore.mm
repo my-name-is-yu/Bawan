@@ -158,7 +158,7 @@ static const char ModelSHA256[] =
             case VerificationOutcome::Valid: return ModelReady{url};
             case VerificationOutcome::Occupied: return ModelFailed{ModelIssue::PathOccupied};
             case VerificationOutcome::Invalid:
-                if (auto issue = RemoveInvalidSavedModel(url, result.file)) return ModelFailed{*issue};
+                if (auto issue = RemoveSavedModelIfUnchanged(url, result.file)) return ModelFailed{*issue};
                 break;
             case VerificationOutcome::Unchecked:
             case VerificationOutcome::Cancelled: break;
@@ -187,7 +187,8 @@ static const char ModelSHA256[] =
     dispatch_async(_verificationQueue, ^{
         @autoreleasepool {
             const VerificationResult result = VerifyModel(url, self->_generation, generation,
-                self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp);
+                self->_expectedSize, self->_expectedSHA256.UTF8String,
+                trustStamp ? StampUse::TrustUnchanged : StampUse::Rehash);
             if (result.outcome == VerificationOutcome::Cancelled) return;
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (self->_generation.load() == generation) [self publish:finish(result) generation:generation];

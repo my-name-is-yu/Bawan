@@ -139,6 +139,7 @@ static NSDictionary *ReadPartialMetadata(NSURL *url) {
 }
 
 - (ModelDownloadOpening)open {
+    dispatch_assert_queue(dispatch_get_main_queue());
     const PartialDownloadLockResult lock = _lock.acquire([_partialURL URLByAppendingPathExtension:@"lock"]);
     const SavedModelPath destination = CheckSavedModelPath(_destinationURL);
     if (destination != SavedModelPath::Absent) {

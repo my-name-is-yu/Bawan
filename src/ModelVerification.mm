@@ -19,7 +19,7 @@ SavedModelPath CheckSavedModelPath(NSURL *url) {
     return errno == ENOENT ? SavedModelPath::Absent : SavedModelPath::Uncheckable;
 }
 
-std::optional<ModelIssue> RemoveInvalidSavedModel(NSURL *url, const struct stat &verified) {
+std::optional<ModelIssue> RemoveSavedModelIfUnchanged(NSURL *url, const struct stat &verified) {
     const char *path = url.fileSystemRepresentation;
     struct stat current {};
     if (lstat(path, &current) == 0) {
@@ -52,7 +52,7 @@ static bool HasVerificationStamp(int descriptor, const std::string &stamp) {
 
 VerificationResult VerifyModel(NSURL *url, const std::atomic<uint64_t> &generation,
                                uint64_t expectedGeneration, int64_t expectedSize,
-                               const char *expectedSHA256, bool trustStamp) {
+                               const char *expectedSHA256, StampUse stampUse) {
     const int descriptor = open(url.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
     if (descriptor < 0)
         return {errno == ELOOP ? VerificationOutcome::Occupied : VerificationOutcome::Unchecked,
@@ -72,7 +72,7 @@ VerificationResult VerifyModel(NSURL *url, const std::atomic<uint64_t> &generati
         return result;
     };
     const std::string stamp = VerificationStamp(info, expectedSHA256);
-    if (trustStamp && HasVerificationStamp(fileno(file.get()), stamp)) return finish();
+    if (stampUse == StampUse::TrustUnchanged && HasVerificationStamp(fileno(file.get()), stamp)) return finish();
 
     CC_SHA256_CTX hash;
     CC_SHA256_Init(&hash);

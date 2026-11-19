@@ -336,10 +336,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
     _modelSetup = BawanModelSetupView{phase, [message copy], progress};
-    [self showModelSetupOnPage];
+    [self replayModelSetupOnPage];
 }
 
-- (void)showModelSetupOnPage {
+- (void)replayModelSetupOnPage {
     if (_modelSetup && [[self page] conformsToProtocol:@protocol(BawanModelSetupDisplay)])
         [(id<BawanModelSetupDisplay>)[self page] setModelPhase:_modelSetup->phase message:_modelSetup->message
                                                 progress:_modelSetup->progress];
@@ -396,7 +396,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         _panel.contentView = view;
         _panel.title = top.title;
-        [self showModelSetupOnPage];
+        [self replayModelSetupOnPage];
     }
     if (!_panel.visible) [self positionNearPointer];
     [page refresh];
