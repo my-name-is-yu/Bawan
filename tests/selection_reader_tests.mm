@@ -278,6 +278,17 @@ static void testReentrantReads() {
     {
         Fixture f;
         __weak SelectionReader *weakReader = f.reader;
+        f.begin();
+        f.copy(@"stale passive copy");
+        f.environment.onChangeCount = ^{ [weakReader cancel]; };
+        [f.reader readSelection];
+        [f.environment runUntil:1];
+        require(f.quiet() && f.environment.reads == 0,
+                "cancelling during a clipboard change check skips reading its text");
+    }
+    {
+        Fixture f;
+        __weak SelectionReader *weakReader = f.reader;
         f.begin(NO);
         f.environment.onChangeCount = ^{ [weakReader cancel]; };
         [f.reader readSelection];

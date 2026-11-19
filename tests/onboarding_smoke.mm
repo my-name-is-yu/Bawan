@@ -180,7 +180,8 @@ static void RunSmoke(void) {
         Settle(window);
         Require(IsShown(modelStep) && !IsShown(shortcutStep) && IsShown(primary) && IsShown(license) &&
             [primary.title hasPrefix:@"Download Model"] &&
-            [primary isKindOfClass:BawanActionButton.class] && ((BawanActionButton *)primary).primary &&
+            [primary isKindOfClass:BawanActionButton.class] &&
+            ((BawanActionButton *)primary).style == BawanActionButtonStylePrimary &&
             [modelMessage.stringValue containsString:@"license"] && [modelMessage.stringValue containsString:@"573 MB"],
             @"The model step must explain the download and offer only Download and Model License");
         CheckBounds(window);
@@ -268,6 +269,11 @@ static void RunSmoke(void) {
         Capture(window, @"failed");
         [primary performClick:nil];
         Require(setups == 3 && finishes == 1, @"Retry must reach setup without finishing onboarding");
+
+        [onboarding setModelPhase:BawanModelSetupPreparing message:BawanModelLoadingStatus progress:std::nullopt];
+        Settle(window);
+        Require(IsShown(shortcutStep) && primary.enabled && [note.stringValue isEqualToString:BawanModelLoadingStatus],
+            @"Indeterminate engine loading must keep onboarding available and show its status");
 
         // Once the shortcut works, the same footer action simply starts translating.
         [onboarding setModelPhase:BawanModelSetupReady message:BawanModelReadyStatus progress:1];
