@@ -280,10 +280,10 @@ static void RunSmoke(void) {
         // A conflict while enabling stays local and never blocks continuing.
         NSString *error = nil;
         auto selection = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-        auto panel = selection;
+        auto panelBinding = selection;
         selection.enabled = false;
         Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error] &&
-            [preferences setBinding:panel forAction:bawan::ShortcutAction::OpenPanel error:&error],
+            [preferences setBinding:panelBinding forAction:bawan::ShortcutAction::OpenPanel error:&error],
             @"The conflict fixture must give the window shortcut the selection key");
         [onboarding refresh];
         Require([selectionStatus.stringValue isEqualToString:@"Off"],
