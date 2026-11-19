@@ -18,12 +18,19 @@ inline NSBitmapImageRep *Render(NSView *view, BOOL focusMask = NO) {
         pixelsWide:static_cast<NSInteger>(std::ceil(NSWidth(view.bounds)))
         pixelsHigh:static_cast<NSInteger>(std::ceil(NSHeight(view.bounds)))
         bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-        colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+        colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    bitmap = [bitmap bitmapImageRepByRetaggingWithColorSpace:NSColorSpace.sRGBColorSpace];
     Require(bitmap != nil, view, @"Could not allocate a control capture");
-    [NSGraphicsContext saveGraphicsState];
     NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+    Require(context != nil, view, @"Could not create a control capture context");
+    CGContextRef cg = context.CGContext;
+    if (view.isFlipped) {
+        CGContextTranslateCTM(cg, 0, NSHeight(view.bounds));
+        CGContextScaleCTM(cg, 1, -1);
+    }
+    [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:
-        [NSGraphicsContext graphicsContextWithCGContext:context.CGContext flipped:view.isFlipped]];
+        [NSGraphicsContext graphicsContextWithCGContext:cg flipped:view.isFlipped]];
     [view.effectiveAppearance performAsCurrentDrawingAppearance:^{
         [NSColor.clearColor setFill];
         NSRectFillUsingOperation(view.bounds, NSCompositingOperationCopy);

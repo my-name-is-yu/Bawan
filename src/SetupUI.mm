@@ -84,7 +84,7 @@ static constexpr CGFloat BawanCheckboxGap = 8;
         BawanDrawInputSurface(box, self.enabled, highlighted);
     }
     NSColor *color = BawanColor(BawanText);
-    if (!self.enabled) color = [BawanColor(BawanSecondaryText) colorWithAlphaComponent:BawanDisabledAlpha];
+    if (!self.enabled) color = [color colorWithAlphaComponent:BawanDisabledAlpha];
     NSDictionary *attributes = @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:color};
     NSSize size = [self.title sizeWithAttributes:attributes];
     [self.title drawAtPoint:NSMakePoint(NSMaxX(box) + BawanCheckboxGap, floor((NSHeight(self.bounds) - size.height) / 2))
