@@ -111,10 +111,14 @@ struct ShortcutRow {
 
     _modelStep = [self buildModelStep];
     _shortcutStep = [self buildShortcutStep];
-    NSStackView *content = BawanSetupStack(@[_modelStep, _shortcutStep], NSUserInterfaceLayoutOrientationVertical, 0);
+    _error = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanError);
+    _error.identifier = @"onboarding-error";
+    _error.hidden = YES;
+    NSStackView *content = BawanSetupStack(@[_error, _modelStep, _shortcutStep], NSUserInterfaceLayoutOrientationVertical, 0);
+    [content setCustomSpacing:10 afterView:_error];
     [document addSubview:content];
-    for (NSView *step in @[_modelStep, _shortcutStep]) {
-        [step.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
+    for (NSView *view in content.arrangedSubviews) {
+        [view.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
     }
     [NSLayoutConstraint activateConstraints:@[
         [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
@@ -210,10 +214,6 @@ struct ShortcutRow {
     for (NSView *view in trial.arrangedSubviews) [view.widthAnchor constraintEqualToAnchor:trial.widthAnchor].active = YES;
     _selectionTrial = trial;
     [views addObject:trial];
-    _error = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanError);
-    _error.identifier = @"onboarding-error";
-    _error.hidden = YES;
-    [views addObject:_error];
     NSStackView *step = BawanSetupStack(views, NSUserInterfaceLayoutOrientationVertical, 10);
     [step setCustomSpacing:16 afterView:hero];
     step.identifier = @"onboarding-step-shortcut";

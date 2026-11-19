@@ -1237,6 +1237,12 @@ static void CheckFirstRunIntegration(void) {
         NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
         Require(primary && !primary.hiddenOrHasHiddenAncestor && [primary.title hasPrefix:@"Download Model"],
             @"The model step's footer action must offer Download");
+        NSString *copyWarning = @"The selected text could not be copied.";
+        [delegate handleShortcutProblem:copyWarning];
+        NSTextField *shortcutError = (NSTextField *)FindView(window.contentView, @"onboarding-error");
+        Require(panel.currentPage == BawanPanelPageOnboarding && shortcutError &&
+            !shortcutError.hiddenOrHasHiddenAncestor && [shortcutError.stringValue isEqualToString:copyWarning],
+            @"A copy failure must be visible before downloading the model");
         delegate.allowLicense = NO;
         [primary performClick:nil];
         Require(delegate.licenseViews == 1 && store.preparations == 0 &&
@@ -1260,6 +1266,10 @@ static void CheckFirstRunIntegration(void) {
         [delegate modelFileDidFail:@"The model could not be verified. Try again."];
         Require(primary.enabled && [primary.title localizedCaseInsensitiveContainsString:@"retry"],
             @"A preparation failure must return to the model step with Retry");
+        [delegate handleShortcutProblem:@"Unable to copy the current selection."];
+        Require(!shortcutError.hiddenOrHasHiddenAncestor &&
+            [shortcutError.stringValue isEqualToString:@"Unable to copy the current selection."],
+            @"A copy failure must be visible while waiting for a retry");
         [primary performClick:nil];
         Require(store.preparations == 3 && store.revalidations == 2 && delegate.licenseViews == 2 &&
             !Flag(delegate, @"modelFailed") && [primary.title hasPrefix:@"Set Up Later"],
@@ -1268,9 +1278,7 @@ static void CheckFirstRunIntegration(void) {
         Require(primary.enabled && monitor.permissionRequests == 0 &&
             ![defaults boolForKey:@"firstLaunchShown"],
             @"Model readiness must enable Start without requesting either optional OS permission");
-        NSString *copyWarning = @"The selected text could not be copied.";
         [delegate handleShortcutProblem:copyWarning];
-        NSTextField *shortcutError = (NSTextField *)FindView(window.contentView, @"onboarding-error");
         Require(panel.currentPage == BawanPanelPageOnboarding && ![defaults boolForKey:@"firstLaunchShown"] &&
             shortcutError && !shortcutError.hiddenOrHasHiddenAncestor && [shortcutError.stringValue isEqualToString:copyWarning],
             @"A copy failure must show its warning without opening a translator that cannot accept requests");
