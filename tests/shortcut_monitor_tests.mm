@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <iostream>
 
-// Exercise the production tap callback's routing without installing system-wide taps.
 @interface ShortcutMonitor (EventRoutingTests)
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
