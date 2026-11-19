@@ -18,7 +18,7 @@ typedef NS_ENUM(NSInteger, ShortcutAvailability) {
 @interface ShortcutMonitor : NSObject
 @property(nonatomic, copy, nullable) void (^onOpenPanel)(void);
 @property(nonatomic, copy, nullable) void (^onAvailabilityChanged)(void);
-@property(nonatomic, copy, nullable) void (^onSelection)(SelectionResult *result);
+@property(nonatomic, copy, nullable) void (^onSelection)(const SelectionEvent &event);
 @property(nonatomic) BOOL suspended;
 @property(nonatomic) BOOL configurationActive;
 @property(nonatomic, weak, nullable) NSTextView *selectionTrialView;

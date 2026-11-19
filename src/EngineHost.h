@@ -4,6 +4,8 @@
 
 #include "EngineEvent.h"
 
+#include <optional>
+
 NS_ASSUME_NONNULL_BEGIN
 
 @interface EngineHost : NSObject
@@ -11,8 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithEventHandler:(void (^)(const bawan::EngineEvent &))handler NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 - (void)startWithModelURL:(NSURL *)modelURL;
-- (void)warmUp;
-- (bawan::engine::RequestId)translate:(std::string)text direction:(bawan::Direction)direction;
+- (BOOL)warmUp;
+- (std::optional<bawan::engine::RequestId>)translate:(std::string)text direction:(bawan::Direction)direction;
 - (void)cancel;
 - (void)releaseMemory;
 - (void)stopAndDiscardEvents;

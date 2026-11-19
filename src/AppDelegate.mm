@@ -103,14 +103,15 @@ static NSString *StringFromUTF8(const std::string &text) {
     };
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
-    _shortcut.onSelection = ^(SelectionResult *result) {
+    _shortcut.onSelection = ^(const SelectionEvent &event) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        switch (result.kind) {
-            case SelectionResultKindText: [owner handleSelectionText:result.text]; break;
-            case SelectionResultKindTrial: [owner handleSelectionTrialText:result.text]; break;
-            case SelectionResultKindProblem: [owner handleShortcutProblem:result.text]; break;
-        }
+        std::visit([&](const auto &value) {
+            using Value = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Value, SelectedText>) [owner handleSelectionText:value.text];
+            else if constexpr (std::is_same_v<Value, SelectionTrial>) [owner handleSelectionTrialText:value.text];
+            else [owner handleShortcutProblem:value.message];
+        }, event);
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
@@ -193,6 +194,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)modelFileDidFail:(NSString *)message {
+    [_engineHost stopAndDiscardEvents];
     [_onboardingViewController cancelSelectionTrial];
     _selectionTrialAttempt = 0;
     _pendingTrialText = nil;
@@ -507,8 +509,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)warmUpEngine {
     if (_terminating) return;
-    _warmUpWhenAvailable = ![self hasVerifiedModelFile];
-    if (!_warmUpWhenAvailable) [_engineHost warmUp];
+    _warmUpWhenAvailable = ![_engineHost warmUp];
 }
 
 - (void)queueTranslation:(NSString *)text direction:(bawan::Direction)direction {
@@ -533,8 +534,12 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction trialAttempt:(NSUInteger)attempt {
     if (_terminating) return;
+    const char *utf8 = text.UTF8String;
+    if (!utf8) return;
+    const auto requestId = [_engineHost translate:std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding])
+                                      direction:direction];
     _selectionTrialAttempt = attempt;
-    if (![self hasVerifiedModelFile]) {
+    if (!requestId) {
         if ([self modelFailed]) {
             [_onboardingViewController finishSelectionTrial:attempt output:nil direction:direction];
             _selectionTrialAttempt = 0;
@@ -558,10 +563,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _pendingText = nil;
     }
     _warmUpWhenAvailable = NO;
-    const char *utf8 = text.UTF8String;
-    if (!utf8) return;
-    _activeRequestId = [_engineHost translate:std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding])
-                                  direction:direction];
+    _activeRequestId = *requestId;
     _busy = YES;
     if (!attempt) {
         [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
@@ -587,10 +589,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     if (metadata.requestId != _activeRequestId) return;
     if (const NSUInteger attempt = _selectionTrialAttempt) {
-        if (![_onboardingViewController isSelectionTrialCurrent:attempt]) {
-            [self cancelTranslationKeepingPendingSelection:YES];
-            return;
-        }
+        if (![_onboardingViewController isSelectionTrialCurrent:attempt]) return;
         if (const auto *finished = std::get_if<Finished>(&event)) {
             _busy = _pendingText != nil;
             _activeRequestId = 0;

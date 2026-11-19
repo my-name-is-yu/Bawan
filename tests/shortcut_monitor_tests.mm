@@ -5,6 +5,8 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
+#include <vector>
 
 @interface ShortcutMonitor (EventRoutingTests)
 - (BOOL)handleEventType:(CGEventType)type event:(CGEventRef)event active:(BOOL)active;
@@ -25,7 +27,7 @@
 @property(nonatomic) unsigned reads;
 @property(nonatomic) unsigned cancellations;
 @property(nonatomic) BOOL lastPassive;
-@property(nonatomic, strong) SelectionResult *resultToDeliver;
+@property(nonatomic) std::optional<SelectionReadResult> resultToDeliver;
 @property(nonatomic) NSUInteger resultGeneration;
 @end
 @implementation RoutingSelectionReader
@@ -37,14 +39,14 @@
 }
 - (void)readSelection {
     ++_reads;
-    SelectionResult *result = _resultToDeliver;
+    auto result = _resultToDeliver;
     if (!result) return;
     const NSUInteger generation = _resultGeneration;
     __weak RoutingSelectionReader *weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
         RoutingSelectionReader *self = weakSelf;
         if (!self || generation != self.resultGeneration) return;
-        if (self.onResult) self.onResult(result);
+        if (self.onResult) self.onResult(*result);
     });
 }
 - (void)cancel {
@@ -126,42 +128,50 @@ static void postWorkspaceNotification(NSNotificationName name) {
 static void testSelectionCallbacks() {
     RoutingFixture fixture;
     fixture.selection();
-    NSMutableArray<SelectionResult *> *results = [NSMutableArray array];
-    fixture.monitor.onSelection = ^(SelectionResult *result) {
-        [results addObject:result];
+    std::vector<SelectionEvent> results;
+    auto *received = &results;
+    fixture.monitor.onSelection = ^(const SelectionEvent &event) {
+        received->push_back(event);
     };
-    auto gesture = [&](SelectionResultKind kind, NSString *text) {
-        fixture.reader.resultToDeliver = [[SelectionResult alloc] initWithKind:kind text:text];
+    auto gesture = [&](const SelectionReadResult &result) {
+        fixture.reader.resultToDeliver = result;
         const unsigned reads = fixture.reader.reads;
         require(route(fixture.monitor, kCGEventKeyDown, 8, kCGEventFlagMaskCommand), "selection gesture captures Copy down");
         require(fixture.reader.reads == reads, "selection gesture waits for Copy release");
         require(route(fixture.monitor, kCGEventKeyUp, 8, 0), "selection gesture captures Copy release");
         require(fixture.reader.reads == reads + 1, "completed selection gesture starts exactly one read");
     };
-    for (SelectionResultKind kind : {SelectionResultKindText, SelectionResultKindProblem}) {
-        NSString *text = kind == SelectionResultKindText ? @"Selected sentence" : @"Copy failed";
-        gesture(kind, text);
-        require(results.count == 0, "reader completion remains pending after the gesture");
+    for (const SelectionReadResult &result : {SelectionReadResult{SelectedText{@"Selected sentence"}},
+                                             SelectionReadResult{SelectionProblem{@"Copy failed"}}}) {
+        gesture(result);
+        require(results.empty(), "reader completion remains pending after the gesture");
         settle();
-        require(results.count == 1 && results[0].kind == kind && [results[0].text isEqualToString:text],
-                "completed selection gesture delivers exactly one matching result");
-        [results removeAllObjects];
+        require(results.size() == 1, "completed selection gesture delivers exactly one result");
+        std::visit([&](const auto &expected) {
+            using Value = std::decay_t<decltype(expected)>;
+            const Value *actual = std::get_if<Value>(&results[0]);
+            require(actual != nullptr, "selection gesture preserves the result type");
+            if constexpr (std::is_same_v<Value, SelectedText>)
+                require([actual->text isEqualToString:expected.text], "selection gesture preserves selected text");
+            else require([actual->message isEqualToString:expected.message], "selection gesture preserves problem message");
+        }, result);
+        results.clear();
     }
-    gesture(SelectionResultKindText, @"Stopped selection");
+    gesture(SelectedText{@"Stopped selection"});
     [fixture.monitor stop];
     settle();
-    require(results.count == 0, "stopping cancels a pending reader result");
+    require(results.empty(), "stopping cancels a pending reader result");
     [fixture.monitor start];
-    gesture(SelectionResultKindText, @"Suspended selection");
+    gesture(SelectedText{@"Suspended selection"});
     fixture.monitor.suspended = YES;
     settle();
-    require(results.count == 0, "suspending cancels a pending reader result");
+    require(results.empty(), "suspending cancels a pending reader result");
     fixture.monitor.suspended = NO;
-    gesture(SelectionResultKindText, @"Superseded selection");
-    gesture(SelectionResultKindText, @"Newest selection");
+    gesture(SelectedText{@"Superseded selection"});
+    gesture(SelectedText{@"Newest selection"});
     settle();
-    require(results.count == 1 && results[0].kind == SelectionResultKindText &&
-            [results[0].text isEqualToString:@"Newest selection"],
+    require(results.size() == 1 && std::holds_alternative<SelectedText>(results[0]) &&
+            [std::get<SelectedText>(results[0]).text isEqualToString:@"Newest selection"],
             "a newer selection gesture cancels the old result and delivers only its own");
 }
 
@@ -390,10 +400,14 @@ static void testSelectionTrial(NSPanel *panel) {
     RoutingMonitor *monitor = fixture.monitor;
     __block unsigned copies = 0;
     __block NSString *copiedText = nil;
-    monitor.onSelection = ^(SelectionResult *result) {
-        require(result.kind == SelectionResultKindTrial, "selection trial emits a trial result");
+    monitor.onSelection = ^(const SelectionEvent &event) {
+        require(std::holds_alternative<SelectionTrial>(event), "selection trial emits a trial result");
+        copiedText = std::visit([](const auto &value) -> NSString * {
+            using Value = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Value, SelectionTrial>) return value.text;
+            else return nil;
+        }, event);
         ++copies;
-        copiedText = result.text;
     };
     NSTextView *sample = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 150)];
     sample.string = @"Try translating this sentence.";
