@@ -72,6 +72,7 @@
     NSView *_translationContent;
     BawanMascotView *_mascot;
     NSViewController<BawanPanelPage> *_page;
+    BawanPanelPageKind _currentPage;
     __weak NSResponder *_translationResponder;
     BawanTextView *_source;
     BawanTextView *_output;
@@ -308,21 +309,23 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 }
 
 - (BOOL)isShowingPage {
-    return _page && _panel.contentView == _page.view;
+    return _currentPage != BawanPanelPageTranslation;
 }
 
 - (NSWindow *)window { return _panel; }
+- (BawanPanelPageKind)currentPage { return _currentPage; }
 
 - (void)showSettings:(SettingsViewController *)settings {
     __weak TranslationPanel *weakSelf = self;
-    [self showPage:settings title:@"Bawan Settings" onBack:^{ [weakSelf showTranslation]; }];
+    [self showPage:settings kind:BawanPanelPageSettings title:@"Bawan Settings" onBack:^{ [weakSelf showTranslation]; }];
 }
 
 - (void)showOnboarding:(OnboardingViewController *)onboarding onBack:(void (^)(void))onBack {
-    [self showPage:onboarding title:@"Bawan Setup" onBack:onBack];
+    [self showPage:onboarding kind:BawanPanelPageOnboarding title:@"Bawan Setup" onBack:onBack];
 }
 
-- (void)showPage:(NSViewController<BawanPanelPage> *)page title:(NSString *)title onBack:(void (^)(void))onBack {
+- (void)showPage:(NSViewController<BawanPanelPage> *)page kind:(BawanPanelPageKind)kind
+           title:(NSString *)title onBack:(void (^)(void))onBack {
     page.onBack = onBack;
     BOOL showingPage = [self isShowingPage];
     BOOL entering = !showingPage || _page != page;
@@ -338,6 +341,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         }
         [_panel makeFirstResponder:nil];
         _page = page;
+        _currentPage = kind;
         NSView *view = page.view;
         view.frame = _panel.contentView.bounds;
         view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -359,6 +363,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;
+    _currentPage = BawanPanelPageTranslation;
     _panel.title = @"Bawan";
     if (![_panel makeFirstResponder:_translationResponder ?: _source]) {
         [_panel makeFirstResponder:_source];
