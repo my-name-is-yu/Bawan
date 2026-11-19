@@ -63,7 +63,7 @@ The download is ad-hoc signed and not notarized, so macOS Gatekeeper may block l
 ### Build Prerequisites
 
 - Apple Silicon Mac (macOS 14+)
-- Apple Command Line Tools and CMake
+- Xcode (for its Metal compiler) or Apple Command Line Tools, and CMake
 
 ### Build from Source
 
@@ -74,7 +74,7 @@ cmake --version
 open build/Bawan.app
 ```
 
-The first build downloads `llama.cpp` (`b12307`) and verifies its SHA256 checksum. All downloads, intermediate files, and the built app stay inside `build/`. Subsequent runs perform incremental builds. End users do not need CMake or developer tools to run the built app.
+The first build downloads `llama.cpp` (`b12307`) and verifies its SHA256 checksum. All downloads, intermediate files, and the built app stay inside `build/`. Subsequent runs perform incremental builds. End users do not need CMake or developer tools to run the built app. With Xcode installed, the build precompiles the Metal kernels so the app keeps less memory after unloading the model; Command Line Tools builds compile them at first translation instead.
 
 ### Install to Applications
 

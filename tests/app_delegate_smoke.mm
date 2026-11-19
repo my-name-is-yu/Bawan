@@ -1223,6 +1223,15 @@ static void CheckFirstRunIntegration(void) {
         Require([source.string isEqualToString:@"Original source"], @"Onboarding and Settings must preserve source Undo");
         [source.undoManager redo];
         Require([source.string isEqualToString:edited], @"Onboarding and Settings must preserve source Redo");
+        [delegate openSettings:nil];
+        [window close];
+        [delegate openSettings:nil];
+        Require(panel.currentPage == BawanPanelPageSettings && window.visible &&
+            [window.contentView.identifier isEqualToString:@"bawan-settings"],
+            @"Settings must reopen after the panel was closed on it");
+        [window cancelOperation:nil];
+        Require(panel.currentPage == BawanPanelPageTranslation && [source.string isEqualToString:edited],
+            @"Leaving reopened Settings must restore the translator");
 
         [defaults setBool:NO forKey:@"firstLaunchShown"];
         [delegate showOnboarding];

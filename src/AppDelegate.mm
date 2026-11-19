@@ -76,7 +76,10 @@ static NSString *StringFromUTF8(const std::string &text) {
         [weakSelf translateText:text direction:direction];
     };
     _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
-    _translationPanel.onClose = ^{ [weakSelf cancelTranslation]; };
+    _translationPanel.onClose = ^{
+        [weakSelf cancelTranslation];
+        [weakSelf releaseClosedPages];
+    };
     _translationPanel.onSettings = ^{ [weakSelf openSettings:nil]; };
 
     _memoryPressure = dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
@@ -299,6 +302,11 @@ static NSString *StringFromUTF8(const std::string &text) {
         return;
     }
     [self enterTranslatorFromOnboarding];
+}
+
+- (void)releaseClosedPages {
+    if (!_settingsViewController.recordingShortcut) _settingsViewController = nil;
+    if (![self needsOnboarding]) _onboardingViewController = nil;
 }
 
 - (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {

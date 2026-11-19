@@ -307,6 +307,8 @@ struct SettingsShortcutRow {
     }
 }
 
+- (BOOL)recordingShortcut { return _eventMonitor != nil; }
+
 - (void)focusInitialControl {
     BawanSetupPresentPage(self.view, _scroll);
 }

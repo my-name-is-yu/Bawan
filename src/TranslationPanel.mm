@@ -361,6 +361,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
     [_page setActive:NO];
     if ([_page respondsToSelector:@selector(willLeavePanelPage)]) [_page willLeavePanelPage];
+    _page = nil;
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;
