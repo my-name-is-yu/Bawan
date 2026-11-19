@@ -1,5 +1,4 @@
 #!/bin/sh
-# Prepare signed, notarized release files locally; publishing is a separate step.
 set -eu
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
@@ -69,7 +68,6 @@ codesign --display --verbose=2 "$app" 2>&1 |
     awk '/^Authority=Developer ID Application:/ { found=1 } END { exit !found }' ||
     fail 'The built app does not have a Developer ID Application signature.'
 
-# Submit before stapling, then recreate the final archive with its ticket attached.
 submission_zip="$staging_dir/notarization.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$submission_zip"
 notary_result="$build_dir/notarization-result.plist"

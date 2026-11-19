@@ -8,6 +8,7 @@
     void (^_pendingRelaunch)(void);
     BOOL _observing;
 }
+- (void)enqueueRelaunchAfterTranslationUIUpdates;
 @end
 #endif
 
@@ -68,20 +69,23 @@
     if (self.onStateChanged) self.onStateChanged();
 #if BAWAN_ENABLE_UPDATES
     if (!busy && _pendingRelaunch) {
-        // Finish the translation's UI updates before handing control to Sparkle.
-        __weak AppUpdater *weakSelf = self;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            AppUpdater *owner = weakSelf;
-            if (!owner || owner->_translationBusy || !owner->_pendingRelaunch) return;
-            void (^relaunch)(void) = owner->_pendingRelaunch;
-            owner->_pendingRelaunch = nil;
-            relaunch();
-        });
+        [self enqueueRelaunchAfterTranslationUIUpdates];
     }
 #endif
 }
 
 #if BAWAN_ENABLE_UPDATES
+- (void)enqueueRelaunchAfterTranslationUIUpdates {
+    __weak AppUpdater *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AppUpdater *owner = weakSelf;
+        if (!owner || owner->_translationBusy || !owner->_pendingRelaunch) return;
+        void (^relaunch)(void) = owner->_pendingRelaunch;
+        owner->_pendingRelaunch = nil;
+        relaunch();
+    });
+}
+
 - (BOOL)updater:(SPUUpdater *)updater mayPerformUpdateCheck:(SPUUpdateCheck)check error:(NSError **)error {
     if (!_translationBusy) return YES;
     if (error) *error = [NSError errorWithDomain:@"local.bawan.Updates" code:1 userInfo:@{

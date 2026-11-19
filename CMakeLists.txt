@@ -130,7 +130,6 @@ if(BAWAN_BUILD_APP)
     bawan_link_updater(BawanApp)
     set_target_properties(BawanApp PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
         INSTALL_RPATH "@executable_path/../Frameworks")
-    # Sign after every bundle build, including plist/resource-only changes.
     add_custom_target(Bawan ALL
         COMMAND "${CMAKE_COMMAND}" "-DAPP_BUNDLE=$<TARGET_BUNDLE_DIR:BawanApp>"
             "-DSIGNING_IDENTITY=${BAWAN_SIGNING_IDENTITY}"

@@ -8,7 +8,6 @@
 #if BAWAN_ENABLE_UPDATES
 #import <Sparkle/Sparkle.h>
 
-// Exercise the delegate contract without starting Sparkle or performing I/O.
 @interface AppUpdater (SmokeTest)
 - (BOOL)updater:(nullable id)updater mayPerformUpdateCheck:(SPUUpdateCheck)check error:(NSError **)error;
 - (BOOL)updater:(nullable id)updater shouldPostponeRelaunchForUpdate:(nullable id)item
@@ -1466,8 +1465,6 @@ static void CheckUpdateRestartSafety(AppDelegate *host) {
     Require(![updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
         @"An idle application must leave normal relaunch handling to Sparkle");
 
-    // Real terminal events must release the delayed restart once. A stale
-    // request must leave both the current translation and restart deferred.
     uint64_t request = 100;
     for (auto kind : {bawan::EngineEvent::Kind::Complete, bawan::EngineEvent::Kind::Cancelled,
                       bawan::EngineEvent::Kind::Error}) {
