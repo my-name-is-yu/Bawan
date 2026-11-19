@@ -263,7 +263,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     _onboardingViewController.onSelectionTrialInterrupted = ^{ [weakSelf invalidateSelectionTrial]; };
     [self pushModelStateToPage:_onboardingViewController];
-    [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOnboarding]; }];
+    [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOrCloseOnboarding]; }];
 }
 
 // The shortcut step's button: leave for the translator even while the model is
@@ -291,8 +291,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_translationPanel showForManualInput];
 }
 
-// Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
-- (void)finishOnboarding {
+- (void)finishOrCloseOnboarding {
     if (!_model.canEnterTranslator()) {
         [_translationPanel close];
         return;
@@ -624,7 +623,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)openTranslation:(id)sender {
     if ([self needsOnboarding]) {
         if (_model.canEnterTranslator()) {
-            [self finishOnboarding];
+            [self enterTranslatorFromOnboarding];
             if (![self busy]) [self warmUpEngine];
         } else {
             [self showOnboarding];
