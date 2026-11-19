@@ -1,6 +1,9 @@
 set(BAWAN_UPDATE_FEED_URL "https://github.com/my-name-is-yu/Bawan/releases/latest/download/appcast.xml"
     CACHE STRING "HTTPS Sparkle appcast URL")
-set(BAWAN_SPARKLE_PUBLIC_KEY "" CACHE STRING "Base64 Ed25519 public key for update archives")
+set(BAWAN_SPARKLE_PUBLIC_KEY "$ENV{BAWAN_SPARKLE_PUBLIC_KEY}" CACHE STRING "Base64 Ed25519 public key for update archives")
+if(BAWAN_SPARKLE_PUBLIC_KEY STREQUAL "" AND DEFINED ENV{BAWAN_SPARKLE_PUBLIC_KEY})
+    set(BAWAN_SPARKLE_PUBLIC_KEY "$ENV{BAWAN_SPARKLE_PUBLIC_KEY}")
+endif()
 set(BAWAN_UPDATE_PLIST "")
 set(BAWAN_SPARKLE_FRAMEWORK "")
 
@@ -31,7 +34,7 @@ if(BAWAN_ENABLE_UPDATES)
     set(BAWAN_UPDATE_PLIST "
     <key>SUFeedURL</key><string>${escaped_feed_url}</string>
     <key>SUPublicEDKey</key><string>${BAWAN_SPARKLE_PUBLIC_KEY}</string>
-    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUEnableAutomaticChecks</key><false/>
     <key>SUScheduledCheckInterval</key><integer>86400</integer>
     <key>SUAllowsAutomaticUpdates</key><false/>
     <key>SUVerifyUpdateBeforeExtraction</key><true/>

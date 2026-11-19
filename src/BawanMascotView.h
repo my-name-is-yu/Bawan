@@ -1,6 +1,9 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
-@interface BawanMascotView : NSImageView
+// The animated Bawan dog. By default it sits in the gold masthead medallion;
+// the plain variant draws the dog alone at a larger size with the same motion.
+@interface BawanMascotView : NSView
+- (instancetype)initPlainWithPointSize:(CGFloat)pointSize;
 - (void)resetHoverAnimation;
 @end

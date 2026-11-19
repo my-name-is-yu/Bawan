@@ -1,3 +1,86 @@
+# Centered model step — 2026-11-17
+
+The model step centers everything on the animated dog, now a plain `BawanMascotView` that plays the medallion's tilt, hop, shake and blink. The shortcut step drops its body dog and leads with its title and explanation. Follow-ups are tracked in my-name-is-yu/Bawan#34 (trying the shortcut in onboarding) and my-name-is-yu/Bawan#35 (pausing and resuming the model download).
+
+# Two-step onboarding — 2026-11-17
+
+Onboarding is now two steps on one page: the model step (Download Model… and Model License in the footer) and the shortcut step (Translate Selection and Open Translator, with one footer action that reads Set Up Later until both shortcuts work and Start Translating afterwards). Accepting the license moves on at once while the model downloads, and the footer shows the progress. A failed download returns to the model step with Retry. ⌘↵ triggers each step's footer action.
+
+# Onboarding layout — 2026-11-17
+
+Onboarding restores the earlier body layout: a hero with the 120pt mascot beside the title and a one-line model status, then the explanation and setup button, then indented shortcut rows with full-width rules above and below. Every element in it (header, footer, type scale, controls, copy and status presentation) is the shared version described below.
+
+# Setup consistency pass — 2026-11-17
+
+Onboarding and Settings now share one row pattern (title over status, controls on the trailing side, hidden actions keep their slot) and one serif type scale (`BawanSetupTitleSize` 24, section 18, row 15, body 14, caption 13). The checkbox, the launch-at-login switch and the progress bars are drawn in Bawan's palette instead of the system accent. The shortcut names come from `ShortcutActionTitle` everywhere, including the status menu. Both pages show keys and press counts in the same 128/80pt fields. Model status, icon, color and action copy come from `BawanPresentModel`, and Model License is always a beveled button. Each page's footer primary action shows and responds to ⌘↵. The Settings footer note is centered. Checked in light, dark and minimum-size captures.
+
+# Onboarding and Settings chrome update — 2026-11-17
+
+The setup pages now reuse the translator's chrome from `src/BawanChrome.{h,mm}`: the 80pt masthead with the 72pt medallion and trailing icon slot, the 72pt footer with its divider, the beveled serif buttons, and serif labels throughout. Settings shows a filled gear that returns to the translator, plus a footer Done button. Onboarding moves Start translating and Model License into the footer and drops the hero mascot, because the masthead medallion now carries the brand. Tests assert the shared header and footer metrics. Captures in `build-check/{onboarding,settings}-smoke/` were checked at 720×500 and 640×420 in light and dark. The sections below describe the earlier slim-masthead pass and are superseded where they conflict.
+
+# Onboarding and Settings implementation QA — 2026-11-17
+
+final result: passed
+
+## Scope and visual truth
+
+Native AppKit implementation based on the selected third concept. The two screens are separate states of one retained translator window, without tabs or a sidebar.
+
+- Selected reference: `design/onboarding-settings-reference.png` (exact copy of the selected generated result `exec-71f129ef-7b96-45db-af37-12128424c8cf.png`).
+- Base: initially `d277cca2808b0f35e983d2bba08d17103b4217ac`, integrated with `32e812ac5fff4070bf9f2603235ad34148f8bd42` before final verification; branch `yu/redesign-onboarding-settings`.
+- Review preview: [implemented native screens](design/onboarding-settings-implemented.png), captured from the AppKit smoke-test views.
+- Native implementation captures: `build/onboarding-smoke/ready-light.png`, `build/settings-smoke/target-light.png`.
+- Source board: 1942×809px. Source-window crops: onboarding `(31,79)-(955,775)`, settings `(987,79)-(1912,775)`; original logical size/density is unspecified by the generated mock.
+- Native viewport: 720×500pt at 2× density (1440×1000px); minimum 640×420pt (1280×840px). CSS size/deviceScaleFactor do not apply to AppKit.
+- Comparisons preserve aspect ratio: source crops fit within 720×540px; native content within 720×500px. The resulting 40px height difference is recorded rather than stretching either image. Native content captures omit OS-rendered traffic lights/window shadow, which remain actual AppKit window controls.
+- Matched state: model Ready. Onboarding has two enabled shortcuts awaiting their respective permissions; Settings has selection translation awaiting Input Monitoring and the opening shortcut intentionally Off.
+
+## Comparison history
+
+1. Opened source and native together in `build/setup-design-qa/onboarding-comparison-1.png` and `settings-comparison-1.png`.
+   - P2: onboarding hero, headings and rows were too small/dense, leaving substantially more unused lower space than the selected source. Increased hero 80→120pt with a correctly downsampled 240px bitmap, heading 24→28pt, row 52→64pt, spacing 8→10pt and Start 40→44pt; replaced white native readout keycaps and filled utility buttons with the shared warm input/button surfaces.
+   - P2: card titles used smaller sans typography, and the unconditional Login Items link added an unnecessary normal-state row. Matched18pt serif card headings, increased body/status sizing, and limited that remediation link to approval/error states. Grouped model readiness/license with its title.
+   - P2: unprepared-model onboarding had a small setup link competing with a disabled Start. Added a separate primary model-setup/retry action and explicit license/download-size explanation; Ready layout is unchanged by this extra state.
+2. Recaptured and opened `build/setup-design-qa/onboarding-comparison-2.png` and `settings-comparison-2.png` together with source. Full-view hierarchy, required controls and reading order are retained. Focused evidence: `onboarding-detail-comparison.png`, `settings-detail-comparison.png`.
+3. An independent visual reviewer found no remaining P0/P1/P2 issue. Minimum-size footer is intentionally below the fold in the scrollable document; the runtime test scrolls Start into view, asserts it is fully visible, and captures `build/onboarding-smoke/minimum-dark-scrolled.png`.
+
+## Required fidelity surfaces
+
+- **Fonts/typography:** existing Georgia/Hiragino serif headings and native system body/control fonts. Clear heading/control/status hierarchy and readable native 13–16pt body/control sizes. Native font rendering differs from the generated illustration; no missing or clipped labels in checked states.
+- **Spacing/layout:** slim 52pt mastheads,40pt header mascot, two equal Settings cards, full-width onboarding rows, grouped status/actions, and one-column utility settings. Normal-size Start stays visible; smaller windows use vertical scrolling without horizontal overflow. Text/controls remain within their parent/document bounds.
+- **Colors/tokens:** existing dynamic cream/brown/vermilion/gold light palette and espresso/ivory dark palette; semantic status roles remain distinct. Native checkbox accent follows the OS rather than forcing the generated blue.
+- **Image quality:** original supplied dog/paper assets are reused, with ImageIO thumbnail decoding sized for the 120pt onboarding hero; the existing 72pt shared mascot cache is preserved. SF Symbols provide native icons. No replacement artwork or new image dependency.
+- **Copy/content:** selected capability names, optional-shortcut explanation, Start action, model status/license and separate normal Settings are retained. First-run masthead says Bawan rather than the mock’s misleading Settings. Setup/error/progress states extend the Ready-only visual target without inventing success. Required permissions follow the actual configured shortcut.
+
+## Interaction and regression verification
+
+Native Release build succeeds; all 11 CTest cases pass in 15.59s. `codesign --verify --deep --strict build/Bawan.app` and `git diff --check` pass. UI clipboard interactions use an isolated pasteboard.
+
+- First launch does not prepare/download the model before explicit license continuation. Declining leaves setup pending; accepted preparation can be resumed/retried.
+- Ready completion and Escape work without optional permissions. Completion is persisted when leaving Ready; existing users skip the introductory page.
+- A selection shortcut before any model preparation now retains the selection and returns to setup rather than entering an unstarted busy queue; regression covered.
+- Settings and onboarding are separate pages in the same window. Translator text, output, selection, reading position and Undo/Redo survive transitions; translator-only commands stay inactive on auxiliary pages.
+- Shortcut enabled preference, missing permission, monitor failure and availability remain separate. Existing recording, physical-release, conflict, native shortcut, source-edit and stale-event tests remain.
+- Latest-main memory-pressure/context changes are retained. Startup uses `ModelStore.prepare` (validated-file cache); explicit retry uses `revalidate`. Fixture counters and the unchanged verification-stamp regression cover that distinction.
+- Model phase/progress/error/ready presentation, nonfinite progress normalization, model/license callbacks, launch-at-login callback/approval/error recovery and repeated-error reveal are covered.
+- Normal/minimum dimensions and both appearances are captured. Minimum-size Start is reachable by scrolling; actual permission grants, model download and real-model inference were not performed in this QA run. Browser console checks are inapplicable to the native implementation.
+
+## Residual polish and limits
+
+P3 only: native control metrics, OS accent, slightly different paper tone/texture and extra reset/help affordances differ from the generated mock. No installed application was replaced; the deliverable is the local built application. The source mock does not specify transient model/error states; those were validated by behavior and native captures.
+
+## Implementation checklist
+
+- [x] Separate first-run guidance from everyday Settings; no tabs/sidebar.
+- [x] Keep optional permissions independent from manual use and persist only completed introduction.
+- [x] Preserve model-license gating, failure/retry, translator state, native keys and recording lifecycle.
+- [x] Compare full view and focused regions, address P2 findings, verify normal/minimum/light/dark.
+- [x] Native build, all 11 tests, signature and whitespace checks pass.
+
+---
+
+## Historical UI QA retained below
+
 # Bawan Vintage UI QA — 2026-11-13
 
 **Current result: Bawan v1 accepted for normal use on 2026-11-14.** Full-window, live appearance/accessibility and 20-cycle whole-app measurements were performed on 2026-11-13. The user confirmed both physical-key shortcuts, including selection translation without taking source-app focus. Advanced GPU/allocation tracing and sleep/wake recovery remain unverified; the original exhaustive checklist below is not fully passed. See [current local acceptance evidence](design/acceptance-2026-11-13.md) for results and limits.

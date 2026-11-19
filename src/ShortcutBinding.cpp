@@ -92,7 +92,6 @@ ShortcutGesture::Result ShortcutGesture::handle(const ShortcutEvent& event) {
     }
     if (event.kind == ShortcutEvent::Kind::KeyUp) {
         if (event.keyCode == binding_.keyCode) {
-            result.released = down_;
             result.consumed = consumedDown_;
             down_ = false;
             consumedDown_ = false;

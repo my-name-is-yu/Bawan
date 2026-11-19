@@ -97,11 +97,49 @@ Public release preparation, Developer ID certificates, notarization and signed S
 
 To clean build artifacts, quit Bawan and delete `build/`. The downloaded model in Application Support and your macOS permissions are stored separately.
 
+### Memory regression check (macOS)
+
+Quit other Bawan instances, then run from a logged-in Apple Silicon Mac desktop:
+
+```sh
+./scripts/measure-memory.sh --require-model
+# First time: review resources/MODEL_USAGE.md and the linked model terms, then:
+./scripts/measure-memory.sh --download-model --require-model
+/usr/bin/python3 tests/memory_probe_tests.py
+```
+
+The script builds Release, launches a fresh process, and prints **physical footprint**
+from `vmmap --summary` and RSS from `ps` (MiB). It measures cold idle after 5 seconds,
+then opens/closes the translator, Settings, and setup pages (2 seconds each open and
+closed). These pages share one native window. It next verifies the saved model (or
+explicitly downloads ~573 MB through ModelStore), translates “Hello. How are you?”
+to Japanese, and samples after completion. Finally it waits for the engine's actual
+Idle event (the production timeout is 60 seconds) plus 5 seconds to settle. The
+translator remains open during warm/unloaded samples; closing it cancels engine work.
+These are phase snapshots, not translation peak measurements or a disk-cache purge.
+
+`BAWAN_MEMORY_PROBE` enables a small file-command hook only in the launched process;
+normal launches install no probe timer. The probe suppresses automatic onboarding
+and startup model preparation for a consistent cold baseline, without changing saved
+onboarding/license preferences. `--download-model` explicitly authorizes ModelStore
+to download and SHA256-verify the official model in its usual Application Support
+folder. Without a model, the last two phases are explicitly skipped unless
+`--require-model` is supplied (use it for regression checks).
+
+Raw vmmap reports, app logs, and measurements JSON are saved under `build/memory-*`.
+Both metrics must stay within `scripts/memory-budget.json`; an overrun exits 1,
+probe/tool/model errors exit 2. Use `--budget PATH` to check another set of limits.
+Budgets are the rounded-up measured baseline plus 15% on an Apple M4 Pro (Virtual),
+macOS 26.6.2: footprint/RSS respectively 22.8/96.3, 36.6/118.4, 594.7/1150.8,
+and 69.6/209.5 MiB. Recalibrate deliberately on the same hardware/OS class after
+investigating regressions; RSS includes clean mapped model pages, so it differs
+substantially from physical footprint. Existing app tests: `./scripts/check.sh`.
+
 <a id="setup--usage"></a>
 
 ## ⌨️ Setup & Usage
 
-1. **Model download:** Before the first model setup, Bawan shows a summary of the model license with links to the official terms and commercial registration. After you continue, Bawan downloads the official PLaMo model (~573 MB) and verifies its file size and SHA256 checksum. Progress appears in the window and menu bar. If setup fails, choose **Retry Model Setup** from the menu.
+1. **First-run setup:** The initial guide keeps model preparation separate from optional shortcuts. Choose **Review license & download** to read the model terms before downloading the official PLaMo model (~573 MB). Download and SHA256-verification progress stay in the guide. Pause or resume the download from the guide footer, Settings, or menu. Interrupted downloads continue from saved progress, including after restarting Bawan; servers without a usable strong ETag or Range support may require a fresh download. Every completed download is SHA256-verified; invalid bytes are discarded and **Retry Model Setup** starts over. Once the model is ready, choose **Start translating**. You can leave shortcut permissions for later. Returning users open the translator normally; model status and retry are also available in Settings.
 2. **Permissions:** Open **Settings…** from the menu bar (or the gear icon) and grant the permissions shown for your shortcuts:
    - **Input Monitoring** is required for the default `⌘C` ×2 selection translation.
    - **Accessibility** is required for opening the translator (`⌥T` ×2) or using a custom shortcut for selection translation.
@@ -127,7 +165,7 @@ In Settings, `Esc` cancels shortcut recording first; otherwise it returns to the
 | Translate selected text | `⌘C` (2 presses) | Input Monitoring |
 | Open translator | `⌥T` (2 presses) | Accessibility |
 
-In **Settings…**, click **Shortcut (click)** to record a new key combination and choose **1** or **2** presses:
+In **Settings…**, each shortcut has its own card. **Use shortcut** controls your preference; the status below shows whether the shortcut is actually ready or needs permission. Click the key field to record a new combination, then choose **Once** or **Twice**:
 
 - Shortcuts must combine at least one modifier (`⌘`, `⌥`, or `⌃`) with a regular key.
 - Reserved app shortcuts (`⌘Return`, `⌘⇧C`, `⌘Q`, `⌘,`) and combinations already used by the other active action cannot be assigned.

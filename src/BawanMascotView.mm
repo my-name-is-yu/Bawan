@@ -2,6 +2,8 @@
 #import "BawanAppearance.h"
 #import <QuartzCore/QuartzCore.h>
 
+#include <algorithm>
+
 namespace {
 constexpr CFTimeInterval HoverDuration = 0.28;
 NSString *const HoverKey = @"bawan.hover";
@@ -86,6 +88,8 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     CALayer *_leftLid;
     CALayer *_rightLid;
     BOOL _inside;
+    BOOL _plain;
+    CGFloat _pointSize;
     NSUInteger _nextMotion;
     NSUInteger _hoverGeneration;
 }
@@ -95,13 +99,25 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 - (BOOL)mouseDownCanMoveWindow { return NO; }
+- (NSSize)intrinsicContentSize { return NSMakeSize(_pointSize, _pointSize); }
 - (instancetype)initWithFrame:(NSRect)frame {
+    return [self initWithFrame:frame plainSize:0];
+}
+
+- (instancetype)initPlainWithPointSize:(CGFloat)pointSize {
+    return [self initWithFrame:NSMakeRect(0, 0, pointSize, pointSize) plainSize:pointSize];
+}
+
+- (instancetype)initWithFrame:(NSRect)frame plainSize:(CGFloat)plainSize {
     self = [super initWithFrame:frame];
     if (!self) return nil;
-    self.image = BawanMascotImage();
+    _plain = plainSize > 0;
+    _pointSize = _plain ? plainSize : BawanBrandMarkSize;
+    NSImage *image = _plain ? BawanMascotImageAtSize(plainSize) : BawanMascotImage();
+    [self setAccessibilityElement:NO];
     self.wantsLayer = YES;
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
-    CGImageRef bitmap = [self.image CGImageForProposedRect:nullptr context:nil hints:nil];
+    CGImageRef bitmap = [image CGImageForProposedRect:nullptr context:nil hints:nil];
     _clip = [CALayer layer];
     _clip.name = @"bawan.mascot.clip";
     _dog = [CALayer layer];
@@ -153,13 +169,18 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     [super layout];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    _clip.frame = NSInsetRect(self.bounds, 1.8, 1.8);
-    CAShapeLayer *clipMask = (CAShapeLayer *)_clip.mask;
-    if (!clipMask) { clipMask = [CAShapeLayer layer]; _clip.mask = clipMask; }
-    CGPathRef circle = CGPathCreateWithEllipseInRect(_clip.bounds, nullptr);
-    clipMask.path = circle;
-    CGPathRelease(circle);
-    _dog.frame = NSInsetRect(_clip.bounds, 2.2, 2.2);
+    if (_plain) {
+        _clip.frame = self.bounds;
+        _dog.frame = _clip.bounds;
+    } else {
+        _clip.frame = NSInsetRect(self.bounds, 1.8, 1.8);
+        CAShapeLayer *clipMask = (CAShapeLayer *)_clip.mask;
+        if (!clipMask) { clipMask = [CAShapeLayer layer]; _clip.mask = clipMask; }
+        CGPathRef circle = CGPathCreateWithEllipseInRect(_clip.bounds, nullptr);
+        clipMask.path = circle;
+        CGPathRelease(circle);
+        _dog.frame = NSInsetRect(_clip.bounds, 2.2, 2.2);
+    }
     CGSize size = _dog.bounds.size;
     for (CALayer *part in @[_leftEar, _rightEar, _face]) {
         part.bounds = _dog.bounds;
@@ -198,7 +219,7 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
     [CATransaction commit];
 }
 
-- (void)drawRect:(NSRect)dirtyRect { BawanDrawMedallionBase(self.bounds); }
+- (void)drawRect:(NSRect)dirtyRect { if (!_plain) BawanDrawMedallionBase(self.bounds); }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
@@ -238,6 +259,8 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
         if (view && view->_hoverGeneration == generation) [view clearHoverAnimations];
     }];
     NSValue *rest = Transform(0);
+    // Offsets were tuned for the 64pt medallion dog; scale them so larger dogs move alike.
+    const CGFloat unit = std::max<CGFloat>(1, _dog.bounds.size.width / 64);
     NSArray<NSValue *> *values;
     NSString *name;
     switch (_nextMotion++ % 3) {
@@ -247,11 +270,13 @@ CAKeyframeAnimation *Motion(NSArray<NSValue *> *values) {
             break;
         case 1:
             name = @"hop";
-            values = @[dogStart, Transform(0, 0, -1.6), Transform(0, 0, 0.35), Transform(0, 0, -0.15), rest];
+            values = @[dogStart, Transform(0, 0, -1.6 * unit), Transform(0, 0, 0.35 * unit),
+                Transform(0, 0, -0.15 * unit), rest];
             break;
         default:
             name = @"shake";
-            values = @[dogStart, Transform(-0.025, -1.2), Transform(0.025, 1.2), Transform(-0.01, -0.5), rest];
+            values = @[dogStart, Transform(-0.025, -1.2 * unit), Transform(0.025, 1.2 * unit),
+                Transform(-0.01, -0.5 * unit), rest];
             break;
     }
     CAKeyframeAnimation *motion = Motion(values);

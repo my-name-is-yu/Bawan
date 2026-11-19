@@ -1,65 +1,20 @@
 #import "SettingsViewController.h"
 #import "BawanAppearance.h"
+#import "SetupUI.h"
+#import "BawanChrome.h"
 #import "BawanMascotView.h"
 #import <CoreGraphics/CoreGraphics.h>
 
+#include <algorithm>
+#include <cmath>
 #include <set>
+#include <vector>
 
-@interface BawanSettingsPaper : NSView
-@end
-
-@interface BawanSettingsDocument : NSView
-@end
-
-@implementation BawanSettingsDocument
-- (BOOL)isFlipped { return YES; }
-@end
-
-@implementation BawanSettingsPaper
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
-- (void)drawRect:(NSRect)dirtyRect {
-    [BawanColor(BawanBackground) setFill];
-    NSRectFill(self.bounds);
-    BawanDrawPaper(self.bounds);
-}
-@end
-
-@interface BawanSettingsMasthead : BawanSettingsPaper
-@end
-
-@implementation BawanSettingsMasthead
-- (void)drawRect:(NSRect)dirtyRect { BawanDrawHeader(self.bounds); }
-@end
-
-@interface BawanSettingsGroup : NSBox
-@end
-
-@implementation BawanSettingsGroup
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.borderColor = BawanColor(BawanBorder);
-    self.fillColor = BawanColor(BawanSurface);
-    self.needsDisplay = YES;
-}
-@end
-
-@interface BawanShortcutButton : NSButton
+@interface BawanShortcutButton : BawanBorderlessButton
 @end
 
 @implementation BawanShortcutButton
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
-- (void)drawFocusRingMask {
-    [BawanInputPath(self.bounds) fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+- (NSBezierPath *)bawanFocusRingPath { return BawanInputPath(self.bounds); }
 - (void)drawRect:(NSRect)dirtyRect {
     BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
@@ -70,16 +25,7 @@
 @end
 
 @implementation BawanShortcutPressCount
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
-- (void)drawFocusRingMask {
-    [BawanInputPath(self.bounds) fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+BAWAN_BORDERLESS_CONTROL_METHODS(BawanInputPath(self.bounds))
 - (void)drawRect:(NSRect)dirtyRect {
     BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
@@ -87,84 +33,47 @@
 @end
 
 namespace {
-NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
-    NSTextField *label = [NSTextField wrappingLabelWithString:text];
-    label.font = weight >= NSFontWeightMedium ? BawanLabelFont(size) : BawanBodyFont(size);
-    label.textColor = color;
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    return label;
+NSString *RowID(bawan::ShortcutAction action, NSString *control) {
+    return [NSString stringWithFormat:@"shortcut-%@-%@", ShortcutSlug(action), control];
 }
 
-NSStackView *Stack(NSArray<NSView *> *views, NSUserInterfaceLayoutOrientation orientation, CGFloat spacing) {
-    NSStackView *stack = [NSStackView stackViewWithViews:views];
-    stack.orientation = orientation;
-    stack.alignment = orientation == NSUserInterfaceLayoutOrientationVertical ?
-        NSLayoutAttributeLeading : NSLayoutAttributeCenterY;
-    stack.spacing = spacing;
-    stack.detachesHiddenViews = YES;
-    stack.translatesAutoresizingMaskIntoConstraints = NO;
-    return stack;
-}
-
-NSImageView *Icon(NSString *name) {
-    NSImageView *icon = [[NSImageView alloc] init];
-    icon.image = BawanSymbol(name, nil, 17);
-    icon.contentTintColor = BawanAccentColor();
-    icon.translatesAutoresizingMaskIntoConstraints = NO;
-    [icon.widthAnchor constraintEqualToConstant:22].active = YES;
-    [icon.heightAnchor constraintEqualToConstant:22].active = YES;
-    [icon setAccessibilityElement:NO];
-    return icon;
-}
-
-NSBox *Group(NSView *content) {
-    NSBox *box = [[BawanSettingsGroup alloc] init];
-    box.boxType = NSBoxCustom;
-    box.titlePosition = NSNoTitle;
-    box.borderWidth = 1.5;
-    box.borderColor = BawanColor(BawanBorder);
-    box.fillColor = BawanColor(BawanSurface);
-    box.cornerRadius = 8;
-    box.contentViewMargins = NSZeroSize;
-    box.translatesAutoresizingMaskIntoConstraints = NO;
-    [box.contentView addSubview:content];
-    [NSLayoutConstraint activateConstraints:@[
-        [content.leadingAnchor constraintEqualToAnchor:box.contentView.leadingAnchor constant:18],
-        [content.trailingAnchor constraintEqualToAnchor:box.contentView.trailingAnchor constant:-18],
-        [content.topAnchor constraintEqualToAnchor:box.contentView.topAnchor constant:18],
-        [content.bottomAnchor constraintEqualToAnchor:box.contentView.bottomAnchor constant:-18]
-    ]];
-    return box;
-}
-
-NSString *RowID(NSUInteger index, NSString *control) {
-    return [NSString stringWithFormat:@"shortcut-%@-%@", index == 0 ? @"selection" : @"panel", control];
-}
+struct SettingsShortcutRow {
+    bawan::ShortcutAction action;
+    NSButton *enabled;
+    NSButton *record;
+    NSPopUpButton *pressCount;
+    NSButton *restore;
+    NSTextField *status;
+    NSButton *permission;
+};
 }
 
 @interface SettingsViewController () {
+    NSStackView *_updatesGroup;
+    NSButton *_updatesSwitch;
+    NSButton *_checkUpdatesButton;
     ShortcutPreferences *_preferences;
     ShortcutMonitor *_monitor;
-    NSMutableArray<NSSwitch *> *_enabledSwitches;
-    NSMutableArray<NSButton *> *_recordButtons;
-    NSMutableArray<NSPopUpButton *> *_pressCounts;
-    NSMutableArray<NSButton *> *_restoreButtons;
-    NSMutableArray<NSTextField *> *_statuses;
-    NSMutableArray<NSButton *> *_permissionButtons;
-    NSTextField *_permissionHint;
+    std::vector<SettingsShortcutRow> _shortcutRows;
     NSTextField *_reservation;
     NSTextField *_shortcutHint;
     NSTextField *_loginHint;
-    NSSwitch *_loginSwitch;
+    NSButton *_loginSwitch;
+    NSButton *_loginSettings;
     NSButton *_back;
-    NSBox *_updatesGroup;
-    NSSwitch *_updatesSwitch;
-    NSButton *_checkUpdatesButton;
+    NSScrollView *_scroll;
+    NSTextField *_modelStatus;
+    NSTextField *_modelHint;
+    BawanModelSetupPhase _modelPhase;
+    NSProgressIndicator *_modelProgress;
+    NSButton *_modelSetup;
+    NSImageView *_modelIcon;
     BawanMascotView *_mascot;
     id _eventMonitor;
     NSTimer *_releaseTimer;
     NSInteger _recordingAction;
     BOOL _finishingRecording;
+    BOOL _active;
     std::set<CGKeyCode> _heldKeys;
 }
 - (void)updateDocumentLayout;
@@ -173,6 +82,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
 - (NSEvent *)recordEvent:(NSEvent *)event;
 - (void)finishRecording;
 - (void)finishRecordingIfReleased;
+- (void)updateModelProgressAnimation;
 - (BOOL)isRecordingKeyDown:(CGKeyCode)key;
 @end
 
@@ -184,66 +94,36 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _preferences = preferences;
     _monitor = monitor;
     _recordingAction = NSNotFound;
-    _enabledSwitches = [NSMutableArray array];
-    _recordButtons = [NSMutableArray array];
-    _pressCounts = [NSMutableArray array];
-    _restoreButtons = [NSMutableArray array];
-    _statuses = [NSMutableArray array];
-    _permissionButtons = [NSMutableArray array];
-    NSView *root = [[BawanSettingsPaper alloc] initWithFrame:NSMakeRect(0, 0, 720, 500)];
+    BawanSurfaceView *root = BawanMakeWindowSurface(@"bawan-settings", NSMakeRect(0, 0, 720, 500));
     self.view = root;
-    root.identifier = @"bawan-settings";
 
-    BawanSettingsMasthead *masthead = [[BawanSettingsMasthead alloc] init];
-    masthead.identifier = @"settings-header";
-    masthead.translatesAutoresizingMaskIntoConstraints = NO;
-    [root addSubview:masthead];
-    BawanMascotView *mascot = [[BawanMascotView alloc] init];
-    _mascot = mascot;
-    mascot.identifier = @"settings-mascot";
-    mascot.translatesAutoresizingMaskIntoConstraints = NO;
-    [mascot setAccessibilityElement:NO];
-    [masthead addSubview:mascot];
-    NSTextField *subtitle = Label(@"Settings", 12, NSFontWeightRegular,
-                                  BawanColor(BawanHeaderText));
-    subtitle.identifier = @"settings-subtitle";
-    subtitle.selectable = NO;
-    subtitle.alignment = NSTextAlignmentLeft;
-    [masthead addSubview:subtitle];
-
-    NSButton *back = [NSButton buttonWithTitle:@"Translator" target:self action:@selector(goBack:)];
-    _back = back;
-    back.identifier = @"settings-back";
-    back.bordered = NO;
-    back.font = BawanLabelFont(13);
-    back.contentTintColor = BawanColor(BawanHeaderText);
-    back.image = BawanSymbol(@"chevron.left", nil, 13);
-    back.imagePosition = NSImageLeft;
-    back.imageHugsTitle = YES;
-    back.translatesAutoresizingMaskIntoConstraints = NO;
-    back.toolTip = @"Back to translator (Esc)";
-    [back setAccessibilityLabel:@"Back to translator"];
-    [masthead addSubview:back];
+    BawanChromeHeader header = BawanAddHeader(root, @"settings-header", @"settings-mascot");
+    _mascot = header.mascot;
+    // The gear sits where the translator's gear opens Settings, and closes it again.
+    BawanActionButton *close = BawanAddHeaderButton(header.header, @"settings-close", @"gearshape.fill",
+        @"Back to translator", self, @selector(goBack:));
+    close.toolTip = @"Back to translator (Esc)";
+    BawanChromeFooter footer = BawanAddFooter(root, @"settings-footer");
+    _back = BawanAddFooterPrimary(footer.footer, @"settings-back", @"Done  ⌘↵", self, @selector(goBack:));
+    _back.toolTip = @"Back to translator (⌘Return or Esc)";
+    [_back setAccessibilityLabel:@"Back to translator"];
+    BawanAddFooterHint(footer.footer, @"local-processing",
+        @"Shortcut permissions do not affect typing or pasting.", _back, nil);
 
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     scroll.identifier = @"settings-scroll";
+    _scroll = scroll;
     scroll.borderType = NSNoBorder;
     BawanConfigurePaperScrollView(scroll);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
-    NSView *document = [[BawanSettingsDocument alloc] initWithFrame:NSZeroRect];
+    BawanSetupDocument *document = [[BawanSetupDocument alloc] initWithFrame:NSZeroRect];
     document.identifier = @"settings-document";
     document.translatesAutoresizingMaskIntoConstraints = NO;
     scroll.documentView = document;
 
-    NSView *shortcutTitle = [[NSView alloc] init];
-    shortcutTitle.translatesAutoresizingMaskIntoConstraints = NO;
-    NSImageView *keyboard = Icon(@"keyboard");
-    NSTextField *shortcutName = Label(@"Global shortcuts", 14, NSFontWeightSemibold, BawanColor(BawanText));
-    NSTextField *keyHeading = Label(@"Shortcut (click)", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
-    keyHeading.identifier = @"shortcut-key-heading";
-    NSTextField *pressesHeading = Label(@"Presses", 12, NSFontWeightSemibold, BawanColor(BawanSecondaryText));
-    pressesHeading.identifier = @"shortcut-presses-heading";
+    NSTextField *heading = BawanSetupHeading(@"Shortcuts", BawanSetupSectionSize);
+    heading.identifier = @"shortcut-heading";
     NSButton *help = [NSButton buttonWithImage:BawanSymbol(@"questionmark.circle", nil, 17)
         target:self action:@selector(showShortcutHelp:)];
     help.identifier = @"shortcut-help";
@@ -252,36 +132,20 @@ NSString *RowID(NSUInteger index, NSString *control) {
     help.translatesAutoresizingMaskIntoConstraints = NO;
     help.toolTip = @"Shortcut help";
     [help setAccessibilityLabel:@"Shortcut help"];
-    for (NSView *view in @[keyboard, shortcutName, keyHeading, pressesHeading, help]) {
-        [shortcutTitle addSubview:view];
-    }
-    NSStackView *shortcutContent = Stack(@[shortcutTitle], NSUserInterfaceLayoutOrientationVertical, 6);
-    [NSLayoutConstraint activateConstraints:@[
-        [shortcutTitle.widthAnchor constraintEqualToAnchor:shortcutContent.widthAnchor],
-        [shortcutTitle.heightAnchor constraintEqualToConstant:22],
-        [keyboard.leadingAnchor constraintEqualToAnchor:shortcutTitle.leadingAnchor],
-        [keyboard.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
-        [shortcutName.leadingAnchor constraintEqualToAnchor:keyboard.trailingAnchor constant:10],
-        [shortcutName.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
-        [shortcutName.trailingAnchor constraintLessThanOrEqualToAnchor:keyHeading.leadingAnchor constant:-12],
-        [keyHeading.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
-        [pressesHeading.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
-        [help.trailingAnchor constraintEqualToAnchor:shortcutTitle.trailingAnchor],
-        [help.centerYAnchor constraintEqualToAnchor:shortcutTitle.centerYAnchor],
-        [help.widthAnchor constraintEqualToConstant:28],
-        [help.heightAnchor constraintEqualToConstant:22]
-    ]];
-    for (NSUInteger i = 0; i < 2; ++i) {
-        bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(i);
-        NSTextField *name = Label(ShortcutActionTitle(action), 13, NSFontWeightMedium, BawanColor(BawanText));
-        name.maximumNumberOfLines = 1;
-        [name.widthAnchor constraintEqualToConstant:152].active = YES;
-        NSSwitch *enabled = [[NSSwitch alloc] init];
+    [help.widthAnchor constraintEqualToConstant:28].active = YES;
+    [help.heightAnchor constraintEqualToConstant:28].active = YES;
+    NSStackView *headingRow = BawanSetupStack(@[heading, [[NSView alloc] init], help],
+        NSUserInterfaceLayoutOrientationHorizontal, 8);
+    NSMutableArray<NSView *> *shortcutRows = [NSMutableArray array];
+    for (bawan::ShortcutAction action : BawanShortcutActions) {
+        const auto actionTag = static_cast<NSInteger>(action);
+        BawanCheckbox *enabled = [[BawanCheckbox alloc] initWithFrame:NSZeroRect];
+        enabled.title = ShortcutActionTitle(action);
         enabled.target = self;
         enabled.action = @selector(toggleEnabled:);
-        enabled.tag = i;
-        enabled.identifier = RowID(i, @"enabled");
-        [enabled setAccessibilityLabel:[@"Enable " stringByAppendingString:ShortcutActionTitle(action)]];
+        enabled.tag = actionTag;
+        enabled.identifier = RowID(action, @"enabled");
+        [enabled setAccessibilityLabel:[@"Use shortcut for " stringByAppendingString:ShortcutActionTitle(action)]];
         NSButton *record = [[BawanShortcutButton alloc] initWithFrame:NSZeroRect];
         record.target = self;
         record.action = @selector(beginRecording:);
@@ -292,14 +156,14 @@ NSString *RowID(NSUInteger index, NSString *control) {
         record.font = BawanLabelFont(BawanInputFontSize);
         record.contentTintColor = BawanColor(BawanText);
         record.translatesAutoresizingMaskIntoConstraints = NO;
-        record.tag = i;
-        record.identifier = RowID(i, @"key");
+        record.tag = actionTag;
+        record.identifier = RowID(action, @"key");
         record.toolTip = @"Click, then press a new key combination once. Set Once or Twice separately. Esc cancels.";
-        [record.widthAnchor constraintEqualToConstant:128].active = YES;
+        [record.widthAnchor constraintEqualToConstant:BawanSetupKeyWidth].active = YES;
         [record.heightAnchor constraintEqualToConstant:BawanInputHeight].active = YES;
         [record setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" shortcut key"]];
         NSPopUpButton *count = [[BawanShortcutPressCount alloc] initWithFrame:NSZeroRect pullsDown:NO];
-        [count addItemsWithTitles:@[@"Once", @"Twice"]];
+        [count addItemsWithTitles:@[ShortcutPressCountTitle(1), ShortcutPressCountTitle(2)]];
         count.bordered = NO;
         count.focusRingType = NSFocusRingTypeExterior;
         count.font = BawanLabelFont(BawanInputFontSize);
@@ -307,167 +171,139 @@ NSString *RowID(NSUInteger index, NSString *control) {
         count.translatesAutoresizingMaskIntoConstraints = NO;
         count.target = self;
         count.action = @selector(changePressCount:);
-        count.tag = i;
-        count.identifier = RowID(i, @"count");
+        count.tag = actionTag;
+        count.identifier = RowID(action, @"count");
         count.toolTip = @"For Twice, release the key between presses and press again within 400 ms.";
-        [count.widthAnchor constraintEqualToConstant:80].active = YES;
+        [count.widthAnchor constraintEqualToConstant:BawanSetupCountWidth].active = YES;
         [count.heightAnchor constraintEqualToConstant:BawanInputHeight].active = YES;
         [count setAccessibilityLabel:[ShortcutActionTitle(action) stringByAppendingString:@" press count"]];
-        NSImage *restoreImage = BawanSymbol(@"arrow.counterclockwise", nil, 17);
-        NSButton *restore = [NSButton buttonWithImage:restoreImage target:self action:@selector(restoreShortcut:)];
-        restore.tag = i;
-        restore.identifier = RowID(i, @"reset");
+        NSButton *restore = [NSButton buttonWithImage:BawanSymbol(@"arrow.counterclockwise", nil, 15)
+            target:self action:@selector(restoreShortcut:)];
+        restore.translatesAutoresizingMaskIntoConstraints = NO;
+        restore.tag = actionTag;
+        restore.identifier = RowID(action, @"reset");
         restore.bordered = NO;
         restore.contentTintColor = BawanAccentColor();
         restore.toolTip = @"Restore the default key, press count, and enabled state.";
-        [restore.widthAnchor constraintEqualToConstant:28].active = YES;
+        [restore.widthAnchor constraintEqualToConstant:24].active = YES;
+        [restore.heightAnchor constraintEqualToConstant:28].active = YES;
         [restore setAccessibilityLabel:[@"Restore defaults for " stringByAppendingString:ShortcutActionTitle(action)]];
-        NSStackView *controls = Stack(@[name, enabled, record, count, restore], NSUserInterfaceLayoutOrientationHorizontal, 6);
-        NSTextField *status = Label(@"", 12, NSFontWeightMedium, BawanColor(BawanSecondaryText));
-        status.identifier = RowID(i, @"status");
-        [status setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
-                                       forOrientation:NSLayoutConstraintOrientationHorizontal];
-        NSButton *permission = [NSButton buttonWithTitle:@"" target:self action:@selector(requestPermission:)];
-        permission.tag = i;
-        permission.identifier = RowID(i, @"permission");
-        permission.bordered = NO;
-        permission.font = BawanLabelFont(12);
-        permission.contentTintColor = BawanAccentColor();
-        NSView *spacer = [[NSView alloc] init];
-        NSStackView *state = Stack(@[status, spacer, permission], NSUserInterfaceLayoutOrientationHorizontal, 10);
-        NSStackView *row = Stack(@[controls, state], NSUserInterfaceLayoutOrientationVertical, 4);
-        [controls.widthAnchor constraintEqualToAnchor:row.widthAnchor].active = YES;
-        [state.widthAnchor constraintEqualToAnchor:row.widthAnchor].active = YES;
-        [shortcutContent addArrangedSubview:row];
-        [row.widthAnchor constraintEqualToAnchor:shortcutContent.widthAnchor].active = YES;
-        if (i == 0) {
-            [NSLayoutConstraint activateConstraints:@[
-                [keyHeading.leadingAnchor constraintEqualToAnchor:record.leadingAnchor],
-                [keyHeading.widthAnchor constraintEqualToAnchor:record.widthAnchor],
-                [pressesHeading.leadingAnchor constraintEqualToAnchor:count.leadingAnchor],
-                [pressesHeading.widthAnchor constraintEqualToAnchor:count.widthAnchor]
-            ]];
-        }
-        [_enabledSwitches addObject:enabled];
-        [_recordButtons addObject:record];
-        [_pressCounts addObject:count];
-        [_restoreButtons addObject:restore];
-        [_statuses addObject:status];
-        [_permissionButtons addObject:permission];
+        NSTextField *status = BawanLabel(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+        status.identifier = RowID(action, @"status");
+        BawanActionButton *permission = BawanSetupButton(RowID(action, @"permission"), @"Set Up…",
+            BawanSetupActionWidth, self, @selector(requestPermission:));
+        permission.tag = actionTag;
+        NSView *row = BawanSetupRow(RowID(action, @"row"), enabled, status, @[record, count, restore, permission]);
+        if (shortcutRows.count) [shortcutRows addObject:BawanSetupRule()];
+        [shortcutRows addObject:row];
+        _shortcutRows.push_back({action, enabled, record, count, restore, status, permission});
     }
-    _permissionHint = Label(@"Allow Bawan in System Settings. Typing and pasting work without permissions.",
-        12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
-    _permissionHint.identifier = @"shortcut-permission-help";
-    _permissionHint.hidden = YES;
-    _reservation = Label(@"Custom shortcuts reserve their keys in other apps.",
-        12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    NSStackView *shortcutGroup = BawanSetupStack(shortcutRows, NSUserInterfaceLayoutOrientationVertical, 0);
+    shortcutGroup.identifier = @"shortcut-group";
+    for (NSView *view in shortcutRows) [view.widthAnchor constraintEqualToAnchor:shortcutGroup.widthAnchor].active = YES;
+    _reservation = BawanLabel(@"Custom shortcuts reserve their keys in other apps.",
+        BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _reservation.identifier = @"shortcut-reservation";
     _reservation.hidden = YES;
-    _shortcutHint = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _shortcutHint = BawanLabel(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _shortcutHint.identifier = @"shortcut-feedback";
     _shortcutHint.hidden = YES;
-    for (NSTextField *label in @[_permissionHint, _reservation, _shortcutHint]) {
-        [shortcutContent addArrangedSubview:label];
-        [label.widthAnchor constraintEqualToAnchor:shortcutContent.widthAnchor].active = YES;
-    }
-    NSBox *shortcutGroup = Group(shortcutContent);
-    shortcutGroup.identifier = @"shortcut-group";
 
-    _loginSwitch = [[NSSwitch alloc] init];
+    NSTextField *general = BawanSetupHeading(@"General", BawanSetupSectionSize);
+    general.identifier = @"general-heading";
+    _loginSwitch = [[BawanToggle alloc] initWithFrame:NSZeroRect];
     _loginSwitch.target = self;
     _loginSwitch.action = @selector(changeLogin:);
     _loginSwitch.identifier = @"launch-at-login";
     [_loginSwitch setAccessibilityLabel:@"Launch Bawan at login"];
-    NSView *loginSpacer = [[NSView alloc] init];
-    NSStackView *loginTitle = Stack(@[Icon(@"power"),
-        Label(@"Launch at login", 14, NSFontWeightSemibold, BawanColor(BawanText)), loginSpacer, _loginSwitch],
-        NSUserInterfaceLayoutOrientationHorizontal, 10);
-    NSTextField *loginDescription = Label(@"Open Bawan automatically when you sign in.",
-        13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
-    NSButton *loginSettings = [NSButton buttonWithTitle:@"Login Items…" target:self action:@selector(openLoginSettings:)];
-    loginSettings.identifier = @"login-items";
-    loginSettings.bordered = NO;
-    loginSettings.font = BawanLabelFont(12);
-    loginSettings.contentTintColor = BawanAccentColor();
-    loginSettings.alignment = NSTextAlignmentLeft;
-    [loginSettings setAccessibilityLabel:@"Open Login Items settings"];
-    _loginHint = Label(@"", 12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _loginSettings = BawanSetupButton(@"login-items", @"Login Items…", 112, self, @selector(openLoginSettings:));
+    _loginSettings.hidden = YES;
+    [_loginSettings setAccessibilityLabel:@"Open Login Items settings"];
+    NSTextField *loginTitle = BawanLabel(@"Launch at Login", BawanSetupRowTitleSize, NSFontWeightSemibold,
+        BawanColor(BawanText));
+    NSTextField *loginDescription = BawanLabel(@"Open Bawan automatically when you sign in.",
+        BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    NSView *loginRow = BawanSetupRow(@"login-row", loginTitle, loginDescription, @[_loginSettings, _loginSwitch]);
+    _loginHint = BawanLabel(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
     _loginHint.identifier = @"login-hint";
     _loginHint.hidden = YES;
-    NSStackView *loginContent = Stack(@[loginTitle, loginDescription, loginSettings, _loginHint],
-        NSUserInterfaceLayoutOrientationVertical, 10);
-    NSBox *loginGroup = Group(loginContent);
-    loginGroup.identifier = @"login-group";
-    for (NSView *view in @[loginTitle, loginDescription, _loginHint]) {
-        [view.widthAnchor constraintEqualToAnchor:loginContent.widthAnchor].active = YES;
+    NSStackView *loginContent = BawanSetupStack(@[loginRow, _loginHint], NSUserInterfaceLayoutOrientationVertical, 4);
+    loginContent.identifier = @"login-group";
+    [loginRow.widthAnchor constraintEqualToAnchor:loginContent.widthAnchor].active = YES;
+    [_loginHint.widthAnchor constraintEqualToAnchor:loginContent.widthAnchor].active = YES;
+
+    _modelIcon = [[NSImageView alloc] init];
+    _modelIcon.translatesAutoresizingMaskIntoConstraints = NO;
+    [_modelIcon.widthAnchor constraintEqualToConstant:16].active = YES;
+    [_modelIcon.heightAnchor constraintEqualToConstant:16].active = YES;
+    [_modelIcon setAccessibilityElement:NO];
+    NSTextField *modelTitle = BawanLabel(@"Translation Model", BawanSetupRowTitleSize, NSFontWeightSemibold,
+        BawanColor(BawanText));
+    _modelStatus = BawanLabel(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _modelStatus.identifier = @"settings-model-status";
+    NSStackView *modelState = BawanSetupStack(@[_modelIcon, _modelStatus], NSUserInterfaceLayoutOrientationHorizontal, 6);
+    NSButton *modelLicense = BawanSetupButton(@"settings-model-license", BawanModelLicenseTitle,
+        BawanSetupActionWidth + 32, self, @selector(openModelLicense:));
+    _modelSetup = BawanSetupButton(@"settings-model-setup", @"", BawanSetupModelActionWidth, self, @selector(prepareModel:));
+    NSView *modelRow = BawanSetupRow(@"settings-model-row", modelTitle, modelState, @[_modelSetup, modelLicense]);
+    _modelHint = BawanLabel(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    _modelHint.identifier = @"settings-model-message";
+    _modelHint.hidden = YES;
+    _modelProgress = [[BawanProgressBar alloc] init];
+    _modelProgress.style = NSProgressIndicatorStyleBar;
+    _modelProgress.indeterminate = NO;
+    _modelProgress.minValue = 0;
+    _modelProgress.maxValue = 1;
+    _modelProgress.hidden = YES;
+    _modelProgress.translatesAutoresizingMaskIntoConstraints = NO;
+    _modelProgress.identifier = @"settings-model-progress";
+    [_modelProgress setAccessibilityLabel:@"Model setup progress"];
+    [_modelProgress.heightAnchor constraintEqualToConstant:8].active = YES;
+    NSStackView *modelContent = BawanSetupStack(@[modelRow, _modelHint, _modelProgress],
+        NSUserInterfaceLayoutOrientationVertical, 6);
+    modelContent.identifier = @"settings-model-group";
+    for (NSView *view in @[modelRow, _modelHint, _modelProgress]) {
+        [view.widthAnchor constraintEqualToAnchor:modelContent.widthAnchor].active = YES;
     }
-    _updatesSwitch = [[NSSwitch alloc] init];
-    _updatesSwitch.target = self;
-    _updatesSwitch.action = @selector(changeAutomaticUpdates:);
+    _updatesSwitch = [NSButton checkboxWithTitle:@"" target:self action:@selector(changeAutomaticUpdates:)];
     _updatesSwitch.identifier = @"automatic-update-checks";
     [_updatesSwitch setAccessibilityLabel:@"Automatically check for updates"];
-    NSView *updatesSpacer = [[NSView alloc] init];
-    NSStackView *updatesTitle = Stack(@[Icon(@"arrow.triangle.2.circlepath"),
-        Label(@"App updates", 14, NSFontWeightSemibold, BawanColor(BawanText)), updatesSpacer, _updatesSwitch],
-        NSUserInterfaceLayoutOrientationHorizontal, 10);
-    NSTextField *updatesDescription = Label(@"Check GitHub once a day. You choose when to download and restart.",
-        13, NSFontWeightRegular, BawanColor(BawanSecondaryText));
-    _checkUpdatesButton = [NSButton buttonWithTitle:@"Check for Updates…" target:self action:@selector(checkForUpdates:)];
-    _checkUpdatesButton.identifier = @"check-for-updates";
-    _checkUpdatesButton.bordered = NO;
-    _checkUpdatesButton.font = BawanLabelFont(12);
-    _checkUpdatesButton.contentTintColor = BawanAccentColor();
-    _checkUpdatesButton.alignment = NSTextAlignmentLeft;
-    NSStackView *updatesContent = Stack(@[updatesTitle, updatesDescription, _checkUpdatesButton],
-        NSUserInterfaceLayoutOrientationVertical, 10);
-    for (NSView *view in @[updatesTitle, updatesDescription]) {
-        [view.widthAnchor constraintEqualToAnchor:updatesContent.widthAnchor].active = YES;
-    }
-    _updatesGroup = Group(updatesContent);
+    _checkUpdatesButton = BawanSetupButton(@"check-for-updates", @"Check for Updates…", 156,
+        self, @selector(checkForUpdates:));
+    NSTextField *updatesTitle = BawanLabel(@"Automatically check for updates", BawanSetupRowTitleSize,
+        NSFontWeightSemibold, BawanColor(BawanText));
+    NSTextField *updatesDescription = BawanLabel(@"Check daily for new versions of Bawan. Updates are installed only with your permission.",
+        BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    NSView *updatesRow = BawanSetupRow(@"updates-row", updatesTitle, updatesDescription,
+        @[_checkUpdatesButton, _updatesSwitch]);
+    _updatesGroup = BawanSetupStack(@[updatesRow], NSUserInterfaceLayoutOrientationVertical, 8);
     _updatesGroup.identifier = @"updates-group";
     _updatesGroup.hidden = YES;
-
-    NSImageView *privacyIcon = Icon(@"lock.shield");
-    privacyIcon.contentTintColor = BawanColor(BawanSecondaryText);
-    NSTextField *privacy = Label(@"Translation runs locally on your Mac.",
-        12, NSFontWeightRegular, BawanColor(BawanSecondaryText));
-    privacy.identifier = @"local-processing";
-    NSStackView *footer = Stack(@[privacyIcon, privacy], NSUserInterfaceLayoutOrientationHorizontal, 8);
-    NSStackView *content = Stack(@[shortcutGroup, loginGroup, _updatesGroup, footer],
-        NSUserInterfaceLayoutOrientationVertical, 16);
+    [updatesRow.widthAnchor constraintEqualToAnchor:_updatesGroup.widthAnchor].active = YES;
+    NSStackView *content = BawanSetupStack(@[headingRow, shortcutGroup, _reservation, _shortcutHint,
+        general, loginContent, _updatesGroup, BawanSetupRule(), modelContent],
+        NSUserInterfaceLayoutOrientationVertical, 8);
+    [content setCustomSpacing:24 afterView:_shortcutHint];
+    [content setCustomSpacing:24 afterView:shortcutGroup];
+    [content setCustomSpacing:24 afterView:_reservation];
     [document addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
-        [masthead.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
-        [masthead.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [masthead.topAnchor constraintEqualToAnchor:root.topAnchor],
-        [masthead.heightAnchor constraintEqualToConstant:BawanHeaderHeight],
-        [mascot.centerXAnchor constraintEqualToAnchor:masthead.centerXAnchor],
-        [mascot.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [mascot.widthAnchor constraintEqualToConstant:BawanBrandMarkSize],
-        [mascot.heightAnchor constraintEqualToConstant:BawanBrandMarkSize],
-        [subtitle.leadingAnchor constraintEqualToAnchor:masthead.leadingAnchor constant:24],
-        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:mascot.leadingAnchor constant:-24],
-        [subtitle.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [back.trailingAnchor constraintEqualToAnchor:masthead.trailingAnchor constant:-24],
-        [back.centerYAnchor constraintEqualToAnchor:masthead.centerYAnchor],
-        [back.widthAnchor constraintEqualToConstant:110],
-        [back.heightAnchor constraintEqualToConstant:36],
         [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
         [scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
-        [scroll.topAnchor constraintEqualToAnchor:masthead.bottomAnchor],
-        [scroll.bottomAnchor constraintEqualToAnchor:root.bottomAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:header.header.bottomAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:footer.divider.topAnchor],
         [document.leadingAnchor constraintEqualToAnchor:scroll.contentView.leadingAnchor],
         [document.topAnchor constraintEqualToAnchor:scroll.contentView.topAnchor],
         [document.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
         [content.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
         [content.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
         [content.topAnchor constraintEqualToAnchor:document.topAnchor constant:24],
-        [content.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-24],
-        [shortcutGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
-        [loginGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
-        [_updatesGroup.widthAnchor constraintEqualToAnchor:content.widthAnchor],
-        [footer.widthAnchor constraintEqualToAnchor:content.widthAnchor]
+        [content.bottomAnchor constraintEqualToAnchor:document.bottomAnchor constant:-24]
     ]];
+    for (NSView *view in content.arrangedSubviews) {
+        [view.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
+    }
+    [self setModelPhase:BawanModelSetupNeedsDownload message:@"" progress:0];
     [self refresh];
     return self;
 }
@@ -485,7 +321,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     [self updateDocumentLayout];
 }
 
-- (void)changeAutomaticUpdates:(NSSwitch *)sender {
+- (void)changeAutomaticUpdates:(NSButton *)sender {
     if (self.onAutomaticUpdatesChanged) self.onAutomaticUpdatesChanged(sender.state == NSControlStateValueOn);
 }
 
@@ -494,7 +330,9 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)setActive:(BOOL)active {
-    _monitor.settingsActive = active;
+    _active = active;
+    [self updateModelProgressAnimation];
+    _monitor.configurationActive = active;
     if (active) {
         [_monitor refresh];
         [self refresh];
@@ -505,61 +343,43 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)focusInitialControl {
-    NSWindow *window = self.view.window;
-    [window recalculateKeyViewLoop];
-    [window makeFirstResponder:_back];
+    BawanSetupPresentPage(self.view, _scroll);
 }
 
 - (void)refresh {
     BOOL recording = _eventMonitor != nil;
-    BOOL needsPermission = NO;
     BOOL reservesCustomKeys = NO;
     const auto defaults = bawan::defaultShortcuts();
-    for (NSUInteger i = 0; i < 2; ++i) {
-        bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(i);
-        bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
-        BOOL recordingRow = recording && _recordingAction == static_cast<NSInteger>(i);
-        _enabledSwitches[i].state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
-        _enabledSwitches[i].enabled = !recording;
-        _recordButtons[i].title = recordingRow && !_finishingRecording ? @"Press keys…" : ShortcutKeyLabel(binding);
-        _recordButtons[i].enabled = !_finishingRecording && (!recording || recordingRow);
-        [_pressCounts[i] selectItemAtIndex:binding.pressCount - 1];
-        _pressCounts[i].enabled = !recording;
-        _restoreButtons[i].enabled = !recording;
-        ShortcutAvailability availability = [_monitor availabilityForAction:action];
-        needsPermission |= availability == ShortcutAvailabilityNeedsInputMonitoring ||
-                           availability == ShortcutAvailabilityNeedsAccessibility;
-        BOOL custom = binding.keyCode != defaults[i].keyCode || binding.modifiers != defaults[i].modifiers ||
-                      binding.pressCount != defaults[i].pressCount;
+    for (const SettingsShortcutRow &row : _shortcutRows) {
+        bawan::ShortcutBinding binding = [_preferences bindingForAction:row.action];
+        const auto &defaultBinding = defaults[static_cast<NSUInteger>(row.action)];
+        BOOL recordingRow = recording && _recordingAction == static_cast<NSInteger>(row.action);
+        row.enabled.state = binding.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+        row.enabled.enabled = !recording;
+        row.record.title = recordingRow && !_finishingRecording ? @"Press keys…" : ShortcutKeyLabel(binding);
+        row.record.enabled = !_finishingRecording && (!recording || recordingRow);
+        [row.pressCount selectItemAtIndex:binding.pressCount - 1];
+        row.pressCount.enabled = !recording;
+        row.restore.enabled = !recording;
+        ShortcutAvailability availability = [_monitor availabilityForAction:row.action];
+        BOOL custom = binding.keyCode != defaultBinding.keyCode || binding.modifiers != defaultBinding.modifiers ||
+                      binding.pressCount != defaultBinding.pressCount;
         reservesCustomKeys |= binding.enabled && custom &&
-            (action != bawan::ShortcutAction::TranslateSelection || !bawan::isPassiveCopy(binding));
-        NSString *status = @"Off";
-        NSString *permission = @"Retry";
-        BawanColorRole statusRole = BawanSecondaryText;
-        switch (availability) {
-            case ShortcutAvailabilityOff: break;
-            case ShortcutAvailabilityAvailable:
-                status = @"Shortcut ready"; statusRole = BawanSuccess; break;
-            case ShortcutAvailabilityNeedsInputMonitoring:
-                status = @"Input Monitoring required"; permission = @"Open Input Monitoring…"; statusRole = BawanWarning; break;
-            case ShortcutAvailabilityNeedsAccessibility:
-                status = @"Accessibility required"; permission = @"Open Accessibility…"; statusRole = BawanWarning; break;
-            case ShortcutAvailabilityFailed:
-                status = @"Could not start monitoring"; statusRole = BawanError; break;
-        }
+            (row.action != bawan::ShortcutAction::TranslateSelection || !bawan::isPassiveCopy(binding));
+        BawanShortcutPresentation presentation = BawanPresentShortcut(availability);
+        NSString *status = presentation.status;
+        BawanColorRole statusRole = presentation.color;
         if (recording) {
             status = recordingRow ? (_finishingRecording ? @"Waiting for key release…" : @"Recording shortcut…") :
                 (binding.enabled ? @"Paused while recording" : @"Off");
             statusRole = BawanSecondaryText;
         }
-        _statuses[i].stringValue = status;
-        _statuses[i].textColor = BawanColor(statusRole);
-        _permissionButtons[i].title = permission;
-        [_permissionButtons[i] setAccessibilityLabel:[permission stringByAppendingFormat:@" for %@", ShortcutActionTitle(action)]];
-        _permissionButtons[i].hidden = availability == ShortcutAvailabilityOff || availability == ShortcutAvailabilityAvailable;
-        _permissionButtons[i].enabled = !recording;
+        row.status.stringValue = status;
+        row.status.textColor = BawanColor(statusRole);
+        BawanApplyShortcutAction(row.permission, presentation, ShortcutActionTitle(row.action));
+        row.permission.hidden = !presentation.needsAction;
+        row.permission.enabled = !recording;
     }
-    _permissionHint.hidden = !needsPermission;
     _reservation.hidden = !reservesCustomKeys;
     [self updateDocumentLayout];
 }
@@ -587,6 +407,8 @@ NSString *RowID(NSUInteger index, NSString *control) {
 }
 
 - (void)goBack:(id)sender { if (self.onBack) self.onBack(); }
+// ⌘Return could be the combination being recorded, so it only leaves when idle.
+- (void)performPrimaryAction { if (!_eventMonitor) [self goBack:nil]; }
 
 - (void)showShortcutHelp:(id)sender {
     NSWindow *window = self.view.window;
@@ -600,7 +422,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     [alert beginSheetModalForWindow:window completionHandler:nil];
 }
 
-- (void)toggleEnabled:(NSSwitch *)sender {
+- (void)toggleEnabled:(NSButton *)sender {
     bawan::ShortcutAction action = static_cast<bawan::ShortcutAction>(sender.tag);
     bawan::ShortcutBinding binding = [_preferences bindingForAction:action];
     binding.enabled = sender.state == NSControlStateValueOn;
@@ -690,7 +512,7 @@ NSString *RowID(NSUInteger index, NSString *control) {
     // listener while one of the recorder's swallowed keys remains down.
     if (!_releaseTimer) {
         __weak SettingsViewController *weakSelf = self;
-        _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *timer) {
+        _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(__unused NSTimer *timer) {
             [weakSelf finishRecordingIfReleased];
         }];
         [NSRunLoop.mainRunLoop addTimer:_releaseTimer forMode:NSRunLoopCommonModes];
@@ -729,23 +551,59 @@ NSString *RowID(NSUInteger index, NSString *control) {
     _loginHint.stringValue = hint;
     _loginHint.textColor = error ? BawanColor(BawanError) : BawanColor(BawanSecondaryText);
     _loginHint.hidden = hint.length == 0;
+    _loginSettings.hidden = !error && status != SMAppServiceStatusRequiresApproval;
     [self updateDocumentLayout];
     if (hint.length > 0 && (error || (changed && status == SMAppServiceStatusRequiresApproval))) {
         [self revealMessage:_loginHint];
     }
 }
 
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
+    BOOL changed = _modelPhase != phase || ![_modelHint.stringValue isEqualToString:message];
+    BOOL failed = phase == BawanModelSetupFailed || phase == BawanModelSetupResumableFailure;
+    _modelPhase = phase;
+    const BawanModelPresentation presentation = BawanPresentModel(phase);
+    _modelIcon.image = BawanSymbol(presentation.symbol, nil, 15);
+    _modelIcon.contentTintColor = BawanColor(presentation.symbolColor);
+    _modelStatus.stringValue = presentation.status;
+    _modelStatus.textColor = BawanColor(presentation.statusColor);
+    _modelSetup.hidden = presentation.actionTitle.length == 0;
+    _modelSetup.title = presentation.actionTitle;
+    _modelProgress.hidden = phase != BawanModelSetupPreparing && phase != BawanModelSetupDownloading &&
+        phase != BawanModelSetupPaused && phase != BawanModelSetupResumableFailure;
+    const bool determinate = progress && std::isfinite(*progress);
+    _modelProgress.indeterminate = !determinate;
+    _modelProgress.doubleValue = determinate ? std::clamp(*progress, 0.0, 1.0) : 0;
+    [self updateModelProgressAnimation];
+    _modelHint.stringValue = message;
+    _modelHint.hidden = message.length == 0 || phase == BawanModelSetupReady;
+    _modelHint.textColor = BawanColor(failed ? BawanError : BawanSecondaryText);
+    [self updateDocumentLayout];
+    // Refreshing an unchanged snapshot must preserve the user's reading position
+    // and must not repeat the accessibility announcement.
+    if (changed && failed && message.length) [self revealMessage:_modelHint];
+}
+
+- (void)updateModelProgressAnimation {
+    if (_active && !_modelProgress.hidden && _modelProgress.indeterminate) [_modelProgress startAnimation:nil];
+    else [_modelProgress stopAnimation:nil];
+}
+
+- (void)openModelLicense:(id)sender { if (self.onModelLicense) self.onModelLicense(); }
+- (void)prepareModel:(id)sender { if (self.onModelSetup) self.onModelSetup(); }
+
 - (void)openLoginSettings:(id)sender { if (self.onLoginSettings) self.onLoginSettings(); }
-- (void)changeLogin:(NSSwitch *)sender {
+- (void)changeLogin:(NSButton *)sender {
     if (self.onLoginChanged) self.onLoginChanged(sender.state == NSControlStateValueOn);
 }
 
 - (void)dealloc {
+    [_modelProgress stopAnimation:nil];
     [_releaseTimer invalidate];
     if (_eventMonitor) {
         [NSEvent removeMonitor:_eventMonitor];
         _monitor.suspended = NO;
     }
-    _monitor.settingsActive = NO;
+    _monitor.configurationActive = NO;
 }
 @end
