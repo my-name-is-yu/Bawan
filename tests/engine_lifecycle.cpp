@@ -216,6 +216,8 @@ void shutdownDiscardsOverlappingWork() {
     LoadingGate gate(events);
     bawan::TranslationEngine engine("/__bawan_tests__/missing-model.gguf",
         [&](bawan::EngineEvent event) { gate.push(std::move(event)); });
+    // Release Loading before the async future is destroyed during unwinding.
+    std::future<void> stopped;
     ReleaseLoadingOnExit release{gate};
     const auto active = engine.translate("Active");
     gate.wait();
@@ -225,7 +227,7 @@ void shutdownDiscardsOverlappingWork() {
     engine.cancel();
     const auto pending = engine.translate("Pending at shutdown");
     engine.warmUp();
-    auto stopped = std::async(std::launch::async, [&] {
+    stopped = std::async(std::launch::async, [&] {
         engine.shutdown();
     });
     // Shutdown consumes a revision. Observe that gap through public request
@@ -237,11 +239,9 @@ void shutdownDiscardsOverlappingWork() {
         if (current > previous + 1) { break; }
         previous = current;
         if (std::chrono::steady_clock::now() >= deadline) {
-            gate.release();
-            stopped.get();
             throw std::runtime_error("Shutdown did not invalidate the held worker");
         }
-        std::this_thread::yield();
+        std::this_thread::sleep_for(1ms);
     }
     const auto status = stopped.wait_for(0ms);
     gate.release();

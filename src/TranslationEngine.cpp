@@ -174,19 +174,23 @@ private:
         std::uint64_t update(Command command) {
             auto * request = std::get_if<Request>(&command);
             const auto id = request ? ++revision_ : 0;
-            const bool stop = std::holds_alternative<Stop>(command);
+            if (std::holds_alternative<Stop>(command)) {
+                if (stopped()) { return 0; }
+                // The worker checks these atomics without mutex_. Publish Stop
+                // before invalidating work so cancellation cannot emit callbacks.
+                stopped_ = true;
+                ++revision_;
+                ++cancellation_;
+                next_ = Stop{};
+                dropped_.clear();
+                return 0;
+            }
             const bool cancel = std::holds_alternative<Cancel>(command);
-            if (stop || cancel) {
+            if (cancel) {
                 ++revision_;
                 ++cancellation_;
             }
             if (stopped()) { return id; }
-            if (stop) {
-                stopped_ = true;
-                next_ = Stop{};
-                dropped_.clear();
-                return id;
-            }
             auto * translation = std::get_if<Translation>(&next_);
             const bool release = std::holds_alternative<Release>(next_) ||
                 (translation && translation->afterwards == Translation::Afterwards::Release);
