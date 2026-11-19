@@ -3,7 +3,7 @@
 #import "ShortcutMonitor.h"
 
 @protocol BawanModelSetupDisplay <NSObject>
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress;
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress;
 @end
 
 // Copy and color for the model's setup phase, shared by onboarding and Settings.
@@ -12,7 +12,7 @@ struct BawanModelPresentation {
     BawanColorRole statusColor;
     NSString *symbol;
     BawanColorRole symbolColor;
-    NSString *actionTitle;  // The setup or retry action; unused while preparing or ready.
+    NSString *actionTitle;
 };
 
 inline BawanModelPresentation BawanPresentModel(BawanModelSetupPhase phase) {
@@ -20,6 +20,12 @@ inline BawanModelPresentation BawanPresentModel(BawanModelSetupPhase phase) {
         case BawanModelSetupNeedsDownload:
             return {@"Not set up", BawanSecondaryText, @"arrow.down.circle", BawanSecondaryText,
                 @"Download Model…"};
+        case BawanModelSetupDownloading:
+            return {@"Downloading…", BawanSecondaryText, @"arrow.down.circle", BawanSecondaryText, @"Pause Download"};
+        case BawanModelSetupPaused:
+            return {@"Paused", BawanSecondaryText, @"pause.circle", BawanSecondaryText, @"Resume Download"};
+        case BawanModelSetupResumableFailure:
+            return {@"Needs attention", BawanError, @"exclamationmark.circle", BawanError, @"Resume Download"};
         case BawanModelSetupPreparing:
             return {@"Preparing…", BawanSecondaryText, @"arrow.down.circle", BawanSecondaryText, @""};
         case BawanModelSetupReady:

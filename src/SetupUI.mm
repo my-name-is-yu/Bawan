@@ -1,5 +1,6 @@
 #import "SetupUI.h"
 #import "BawanChrome.h"
+#import <QuartzCore/QuartzCore.h>
 
 #include <algorithm>
 #include <cmath>
@@ -62,26 +63,15 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     [super setTitle:title];
     [self invalidateIntrinsicContentSize];
 }
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (NSRect)focusRingMaskBounds { return [self boxRect]; }
-- (void)drawFocusRingMask { [BawanInputPath([self boxRect]) fill]; }
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+- (NSBezierPath *)bawanFocusRingPath { return BawanInputPath([self boxRect]); }
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect box = [self boxRect];
     BOOL on = self.state == NSControlStateValueOn;
     BOOL highlighted = self.cell.highlighted;
     if (on) {
         NSBezierPath *path = BawanInputPath(box);
-        NSColor *fill = BawanPrimaryButtonFill(highlighted);
-        [(self.enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
-        [path fill];
-        [BawanColor(BawanBorder) setStroke];
-        path.lineWidth = BawanChromeLineWidth;
-        [path stroke];
+        BawanDrawControlSurface(path, BawanPrimaryButtonFill(highlighted), self.enabled);
         NSBezierPath *check = [NSBezierPath bezierPath];
         [check moveToPoint:NSMakePoint(NSMinX(box) + 4.5, NSMidY(box))];
         [check lineToPoint:NSMakePoint(NSMinX(box) + 7.5, NSMaxY(box) - 5)];
@@ -89,13 +79,13 @@ static constexpr CGFloat BawanCheckboxGap = 8;
         check.lineWidth = 2;
         check.lineCapStyle = NSLineCapStyleRound;
         check.lineJoinStyle = NSLineJoinStyleRound;
-        [BawanRGB(0xF7E7BB) setStroke];
+        [BawanAccentForegroundColor() setStroke];
         [check stroke];
     } else {
         BawanDrawInputSurface(box, self.enabled, highlighted);
     }
     NSColor *color = BawanColor(BawanText);
-    if (!self.enabled) color = [BawanColor(BawanSecondaryText) colorWithAlphaComponent:0.65];
+    if (!self.enabled) color = [color colorWithAlphaComponent:BawanDisabledAlpha];
     NSDictionary *attributes = @{NSFontAttributeName:self.font, NSForegroundColorAttributeName:color};
     NSSize size = [self.title sizeWithAttributes:attributes];
     [self.title drawAtPoint:NSMakePoint(NSMaxX(box) + BawanCheckboxGap, floor((NSHeight(self.bounds) - size.height) / 2))
@@ -118,100 +108,207 @@ static constexpr CGFloat BawanCheckboxGap = 8;
     return self;
 }
 - (NSSize)intrinsicContentSize { return NSMakeSize(42, 24); }
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
 - (NSBezierPath *)trackPath {
     NSRect track = NSInsetRect(self.bounds, 1, 1);
     return [NSBezierPath bezierPathWithRoundedRect:track xRadius:NSHeight(track) / 2 yRadius:NSHeight(track) / 2];
 }
 - (NSRect)focusRingMaskBounds { return self.bounds; }
-- (void)drawFocusRingMask { [[self trackPath] fill]; }
+- (NSBezierPath *)bawanFocusRingPath { return [self trackPath]; }
 - (id)accessibilityValue { return @(self.state == NSControlStateValueOn); }
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
 - (void)drawRect:(NSRect)dirtyRect {
     BOOL on = self.state == NSControlStateValueOn;
     NSBezierPath *track = [self trackPath];
     NSColor *fill = on ? BawanPrimaryButtonFill(self.cell.highlighted) :
         BawanColor(self.cell.highlighted ? BawanButton : BawanBackground);
-    [(self.enabled ? fill : [fill colorWithAlphaComponent:0.4]) setFill];
-    [track fill];
-    [BawanColor(BawanBorder) setStroke];
-    track.lineWidth = BawanChromeLineWidth;
-    [track stroke];
+    BawanDrawControlSurface(track, fill, self.enabled);
     CGFloat diameter = NSHeight(self.bounds) - 8;
     CGFloat x = on ? NSMaxX(self.bounds) - 4 - diameter : 4;
     NSBezierPath *knob = [NSBezierPath bezierPathWithOvalInRect:
         NSMakeRect(x, floor((NSHeight(self.bounds) - diameter) / 2), diameter, diameter)];
-    [(on ? BawanRGB(0xF7E7BB) : BawanColor(BawanBorder)) setFill];
+    [(on ? BawanAccentForegroundColor() : BawanColor(BawanBorder)) setFill];
     [knob fill];
 }
 @end
 
+static char ProgressWindowVisibilityContext;
+
 @implementation BawanProgressBar {
-    NSTimer *_animation;
-    CGFloat _phase;
+    CALayer *_marqueeClip;
+    CALayer *_marquee;
+    CAShapeLayer *_marqueeBorder;
+    BOOL _animationRequested;
+    BOOL _windowClosing;
+    __weak NSWindow *_observedWindow;
+}
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.wantsLayer = YES;
+        _marqueeClip = [CALayer layer];
+        _marqueeClip.masksToBounds = YES;
+        _marquee = [CALayer layer];
+        [_marqueeClip addSublayer:_marquee];
+        _marqueeBorder = [CAShapeLayer layer];
+        _marqueeBorder.fillColor = nil;
+        [self.layer addSublayer:_marqueeClip];
+        [self.layer addSublayer:_marqueeBorder];
+        [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self
+            selector:@selector(accessibilityChanged:)
+            name:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification object:nil];
+        [self updateMarquee];
+    }
+    return self;
+}
+- (void)updateMarquee {
+    if (!_marquee) return;
+    NSRect track = NSInsetRect(self.bounds, BawanChromeLineWidth / 2, BawanChromeLineWidth / 2);
+    track.size.width = std::max(CGFloat(0), NSWidth(track));
+    track.size.height = std::max(CGFloat(0), NSHeight(track));
+    const CGFloat radius = std::min(NSWidth(track), NSHeight(track)) / 2;
+    const BOOL hasTrack = NSWidth(track) > 0 && NSHeight(track) > 0;
+    BOOL resized = !CGSizeEqualToSize(_marqueeClip.bounds.size, track.size);
+    NSWindow *window = self.window;
+    BOOL animate = _animationRequested && self.indeterminate && !self.hiddenOrHasHiddenAncestor &&
+        window.visible && (window.occlusionState & NSWindowOcclusionStateVisible) &&
+        !_windowClosing && hasTrack &&
+        !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _marqueeClip.hidden = _marqueeBorder.hidden = !self.indeterminate;
+    _marqueeClip.frame = track;
+    _marqueeClip.cornerRadius = radius;
+    _marquee.bounds = CGRectMake(0, 0, NSWidth(track) * 0.3, NSHeight(track));
+    // The model layer remains a visible, stationary unknown-length indicator.
+    _marquee.position = CGPointMake(NSWidth(track) / 2, NSHeight(track) / 2);
+    [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        self->_marquee.backgroundColor = BawanPrimaryButtonFill(NO).CGColor;
+        self->_marqueeBorder.strokeColor = BawanColor(BawanBorder).CGColor;
+    }];
+    _marqueeBorder.frame = self.bounds;
+    CGPathRef border = self.indeterminate && hasTrack ?
+        CGPathCreateWithRoundedRect(NSRectToCGRect(track), radius, radius, nullptr) : nullptr;
+    _marqueeBorder.path = border;
+    CGPathRelease(border);
+    _marqueeBorder.contentsScale = window.backingScaleFactor ?: 1;
+    _marqueeBorder.lineWidth = BawanChromeLineWidth;
+    if (!animate || resized) [_marquee removeAnimationForKey:@"bawan.marquee"];
+    if (animate && ![_marquee animationForKey:@"bawan.marquee"]) {
+        CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"position.x"];
+        animation.fromValue = @(-NSWidth(track) * 0.15);
+        animation.toValue = @(NSWidth(track) * 1.15);
+        animation.duration = 65.0 / 30.0;
+        animation.repeatCount = HUGE_VALF;
+        animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionLinear];
+        [_marquee addAnimation:animation forKey:@"bawan.marquee"];
+    }
+    [CATransaction commit];
+}
+- (void)layout {
+    [super layout];
+    [self updateMarquee];
 }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
+    [self updateMarquee];
     self.needsDisplay = YES;
+}
+- (void)viewDidChangeBackingProperties {
+    [super viewDidChangeBackingProperties];
+    [self updateMarquee];
 }
 - (void)startAnimation:(id)sender {
-    if (_animation || !self.indeterminate) return;
-    __weak BawanProgressBar *weakSelf = self;
-    _animation = [NSTimer scheduledTimerWithTimeInterval:1.0 / 30 repeats:YES block:^(__unused NSTimer *timer) {
-        BawanProgressBar *bar = weakSelf;
-        if (!bar) return;
-        bar->_phase = std::fmod(bar->_phase + 0.02, 1.3);
-        bar.needsDisplay = YES;
-    }];
+    _animationRequested = YES;
+    [self updateMarquee];
 }
 - (void)stopAnimation:(id)sender {
-    [_animation invalidate];
-    _animation = nil;
-    _phase = 0;
-    self.needsDisplay = YES;
+    _animationRequested = NO;
+    [self updateMarquee];
+}
+- (void)viewDidHide { [super viewDidHide]; [self updateMarquee]; }
+- (void)viewDidUnhide { [super viewDidUnhide]; [self updateMarquee]; }
+- (void)viewWillMoveToWindow:(NSWindow *)window {
+    [self stopObservingWindow];
+    [_marquee removeAnimationForKey:@"bawan.marquee"];
+    _windowClosing = NO;
+    [super viewWillMoveToWindow:window];
 }
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    if (!self.window) [self stopAnimation:nil];
+    NSWindow *window = self.window;
+    if (window) {
+        _observedWindow = window;
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowWillClose:)
+            name:NSWindowWillCloseNotification object:window];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowVisibilityChanged:)
+            name:NSWindowDidChangeOcclusionStateNotification object:window];
+        // Ordering can change visible while the occlusion state stays the same.
+        [window addObserver:self forKeyPath:@"visible" options:0 context:&ProgressWindowVisibilityContext];
+    }
+    [self updateMarquee];
 }
+- (void)stopObservingWindow {
+    NSWindow *window = _observedWindow;
+    if (!window) return;
+    [NSNotificationCenter.defaultCenter removeObserver:self name:nil object:window];
+    [window removeObserver:self forKeyPath:@"visible" context:&ProgressWindowVisibilityContext];
+    _observedWindow = nil;
+}
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
+                        change:(NSDictionary *)change context:(void *)context {
+    if (context == &ProgressWindowVisibilityContext) {
+        [self windowVisibilityChanged:nil];
+    } else {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    }
+}
+- (void)windowWillClose:(NSNotification *)notification {
+    _windowClosing = YES;
+    [self updateMarquee];
+}
+- (void)windowVisibilityChanged:(NSNotification *)notification {
+    if (self.window.visible) _windowClosing = NO;
+    [self updateMarquee];
+}
+- (void)accessibilityChanged:(NSNotification *)notification { [self updateMarquee]; }
 - (void)setDoubleValue:(double)value {
     [super setDoubleValue:value];
     self.needsDisplay = YES;
 }
 - (void)setIndeterminate:(BOOL)indeterminate {
+    // AppKit calls stopAnimation: from this setter; retain the caller's intent.
+    BOOL requested = _animationRequested;
     [super setIndeterminate:indeterminate];
-    if (!indeterminate) [self stopAnimation:nil];
+    _animationRequested = requested;
+    [self updateMarquee];
     self.needsDisplay = YES;
 }
+- (void)dealloc {
+    [self stopObservingWindow];
+    [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
+}
 - (void)drawRect:(NSRect)dirtyRect {
-    NSRect track = NSInsetRect(self.bounds, 0.75, 0.75);
-    CGFloat radius = NSHeight(track) / 2;
+    NSRect track = NSInsetRect(self.bounds, BawanChromeLineWidth / 2, BawanChromeLineWidth / 2);
+    if (NSIsEmptyRect(track)) return;
+    CGFloat radius = std::min(NSWidth(track), NSHeight(track)) / 2;
     NSBezierPath *trackPath = [NSBezierPath bezierPathWithRoundedRect:track xRadius:radius yRadius:radius];
     [BawanColor(BawanBackground) setFill];
     [trackPath fill];
     NSRect fill = track;
-    if (self.indeterminate) {
-        // A segment sweeps across the track while the length is unknown.
-        CGFloat width = NSWidth(track) * 0.3;
-        fill.origin.x = NSMinX(track) + (_phase - 0.3) * NSWidth(track);
-        fill.size.width = width;
-    } else {
+    if (!self.indeterminate) {
         double span = self.maxValue - self.minValue;
         double fraction = span > 0 ? std::clamp((self.doubleValue - self.minValue) / span, 0.0, 1.0) : 0;
         fill.size.width = NSWidth(track) * fraction;
+        [NSGraphicsContext saveGraphicsState];
+        [trackPath addClip];
+        [BawanPrimaryButtonFill(NO) setFill];
+        NSRectFill(fill);
+        [NSGraphicsContext restoreGraphicsState];
     }
-    [NSGraphicsContext saveGraphicsState];
-    [trackPath addClip];
-    [BawanPrimaryButtonFill(NO) setFill];
-    NSRectFill(fill);
-    [NSGraphicsContext restoreGraphicsState];
-    [BawanColor(BawanBorder) setStroke];
-    trackPath.lineWidth = BawanChromeLineWidth;
-    [trackPath stroke];
+    if (!self.indeterminate) {
+        [BawanColor(BawanBorder) setStroke];
+        trackPath.lineWidth = BawanChromeLineWidth;
+        [trackPath stroke];
+    }
 }
 @end
 
@@ -260,7 +357,7 @@ NSView *BawanSetupRule(void) {
 }
 
 BawanActionButton *BawanSetupButton(NSString *identifier, NSString *title, CGFloat width, id target, SEL action) {
-    BawanActionButton *button = BawanAddActionButton(nil, identifier, title, target, action, NO);
+    BawanActionButton *button = BawanAddActionButton(nil, identifier, title, target, action, BawanActionButtonStyleSecondary);
     button.font = BawanLabelFont(BawanSetupCaptionSize);
     [button.widthAnchor constraintEqualToConstant:width].active = YES;
     [button.heightAnchor constraintEqualToConstant:BawanSetupButtonHeight].active = YES;

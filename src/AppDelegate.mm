@@ -2,6 +2,7 @@
 #import "ModelStore.h"
 #import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
+#import "SelectionReader.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
 #import "OnboardingViewController.h"
@@ -10,6 +11,8 @@
 #include "TranslationEngine.h"
 #include "EngineEventMailbox.h"
 #include <memory>
+
+enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning };
 
 @interface AppDelegate () <NSMenuDelegate> {
     NSStatusItem *_statusItem;
@@ -35,7 +38,7 @@
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
-    BOOL _showingModelStatus;
+    StatusOwner _statusOwner;
     BawanModelState _model;
 }
 @end
@@ -81,6 +84,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_resume(_memoryPressure);
 
     _modelStore = [[ModelStore alloc] init];
+    _modelStore.onStateChange = ^(ModelStoreState state) {
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner modelDownloadStateDidChange:state];
+    };
     _modelStore.onProgress = ^(double progress, NSString *message) {
         AppDelegate *owner = weakSelf;
         if (owner && !owner->_terminating) [owner modelFileDidProgress:progress message:message];
@@ -94,19 +101,21 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
-    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
-    _shortcut.onText = ^(NSString *text) {
+    SelectionReader *selectionReader = [SelectionReader new];
+    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences selectionReader:selectionReader];
+    selectionReader.onText = ^(NSString *text) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
         [owner handleSelectionText:text];
     };
-    _shortcut.onProblem = ^(NSString *message) {
+    selectionReader.onProblem = ^(NSString *message) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner updateShortcutItem];
-        [owner->_translationPanel showWithoutChangingInput];
-        [owner showTranslationStatus:message kind:BawanStatusWarning];
-        owner->_statusItem.button.toolTip = message;
+        [owner handleShortcutProblem:message];
+    };
+    _shortcut.onSelectionTrial = ^(NSString *text) {
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner handleSelectionTrialText:text];
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
@@ -123,6 +132,18 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateShortcutItem];
     [self updateStatus];
     [self startInitialSetup];
+}
+
+- (void)modelDownloadStateDidChange:(ModelStoreState)state {
+    switch (state) {
+        case ModelStoreDownloading: _model.fileDownloading(); break;
+        case ModelStorePaused: _model.filePaused(); break;
+        case ModelStoreVerifying: _model.fileVerifying(); break;
+        case ModelStoreIdle:
+        case ModelStoreReady:
+        case ModelStoreFailed: return;
+    }
+    [self updateStatus];
 }
 
 - (void)modelFileDidProgress:(double)progress message:(NSString *)message {
@@ -145,7 +166,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_onboardingViewController cancelSelectionTrial];
     _selectionTrialAttempt = 0;
     _pendingTrialText = nil;
-    _model.fileFailed(message);
+    _model.fileFailed(message, _modelStore.canResume);
     _pendingText = nil;
     _warmUpWhenAvailable = NO;
     _busy = NO;
@@ -198,7 +219,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     if (!_onboardingViewController) {
         _onboardingViewController = [[OnboardingViewController alloc]
             initWithPreferences:_shortcutPreferences monitor:_shortcut];
-        _onboardingViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
+        _onboardingViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
         _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
         _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
         _onboardingViewController.onSelectionTrialInterrupted = ^{
@@ -251,8 +272,11 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 // Hidden pages are brought up to date when they are shown.
 - (void)refreshSetupPages {
-    if (_onboardingViewController.view.window) [self pushModelStateToPage:_onboardingViewController];
-    if (_settingsViewController.view.window) [self pushModelStateToPage:_settingsViewController];
+    switch (_translationPanel.currentPage) {
+        case BawanPanelPageOnboarding: [self pushModelStateToPage:_onboardingViewController]; break;
+        case BawanPanelPageSettings: [self pushModelStateToPage:_settingsViewController]; break;
+        case BawanPanelPageTranslation: break;
+    }
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -340,7 +364,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _panelShortcutItem = [self menuItem:@"Open Translator with Double ⌥T" action:@selector(toggleShortcut:) key:@""];
     _panelShortcutItem.tag = static_cast<NSInteger>(bawan::ShortcutAction::OpenPanel);
     [menu addItem:_panelShortcutItem];
-    _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(retryModel:) key:@""];
+    _retryItem = [self menuItem:@"Retry Model Setup" action:@selector(performModelAction:) key:@""];
     _retryItem.hidden = YES;
     [menu addItem:_retryItem];
     [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
@@ -380,24 +404,39 @@ static NSString *StringFromUTF8(const std::string &text) {
     _modelItem.title = _model.message();
     BOOL failed = [self modelFailed];
     BOOL available = [self hasVerifiedModelFile];
-    _retryItem.hidden = !failed;
-    _retryItem.enabled = failed;
+    const BawanModelSetupPhase phase = _model.phase();
+    const BOOL hasModelAction = failed || phase == BawanModelSetupDownloading || phase == BawanModelSetupPaused;
+    _retryItem.title = BawanPresentModel(phase).actionTitle;
+    _retryItem.hidden = !hasModelAction;
+    _retryItem.enabled = hasModelAction;
     _statusItem.button.toolTip = [@"Bawan — " stringByAppendingString:_modelItem.title];
-    BOOL hasModelMessage = _model.phase() != BawanModelSetupReady;
-    if (hasModelMessage || _showingModelStatus) {
-        // Ready clears a preceding model message, including Loading while busy.
-        // It must not erase a translation outcome or a shortcut warning.
-        _showingModelStatus = hasModelMessage;
-        [_translationPanel setAvailable:available busy:_busy status:hasModelMessage ? _modelItem.title : @""
-                                  kind:failed ? BawanStatusError : BawanStatusInformation];
-    } else {
-        [_translationPanel setAvailable:available busy:_busy];
+    if (_model.phase() != BawanModelSetupReady) {
+        [self showStatus:_modelItem.title kind:failed ? BawanStatusError : BawanStatusInformation
+                   owner:StatusOwner::ModelStatus];
+        return;
+    }
+    switch (_statusOwner) {
+        case StatusOwner::ModelStatus:
+            [self showStatus:@"" kind:BawanStatusInformation owner:StatusOwner::None];
+            break;
+        case StatusOwner::None:
+        case StatusOwner::TranslationOutcome:
+        case StatusOwner::ShortcutWarning:
+            [_translationPanel setAvailable:available busy:_busy];
+            break;
     }
 }
 
-- (void)showTranslationStatus:(NSString *)message kind:(BawanStatusKind)kind {
-    _showingModelStatus = NO;
+- (void)showStatus:(NSString *)message kind:(BawanStatusKind)kind owner:(StatusOwner)owner {
+    _statusOwner = message.length ? owner : StatusOwner::None;
     [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy status:message kind:kind];
+}
+
+- (void)handleShortcutProblem:(NSString *)message {
+    [self updateShortcutItem];
+    [_translationPanel showWithoutChangingInput];
+    [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
+    _statusItem.button.toolTip = message;
 }
 
 - (void)updateShortcutItem {
@@ -423,7 +462,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
     const BOOL cancelTrial = _selectionTrialAttempt &&
         ![_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt];
-    const BOOL onboardingUpdatedByCancellation = cancelTrial && _onboardingViewController.view.window != nil;
+    const BOOL onboardingUpdatedByCancellation = cancelTrial && _translationPanel.currentPage == BawanPanelPageOnboarding;
     if (cancelTrial) [self cancelTranslationKeepingPendingSelection:YES];
     [_settingsViewController refresh];
     if (!onboardingUpdatedByCancellation) [_onboardingViewController refresh];
@@ -518,7 +557,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _busy = YES;
     if (!attempt) {
         [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-        [self showTranslationStatus:@"" kind:BawanStatusInformation];
+        [self showStatus:@"" kind:BawanStatusInformation owner:StatusOwner::None];
     }
 }
 
@@ -559,19 +598,20 @@ static NSString *StringFromUTF8(const std::string &text) {
             _busy = NO;
             _activeRequestId = 0;
             [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [self showTranslationStatus:event.truncated ?
+            [self showStatus:event.truncated ?
                 @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
-                                      kind:event.truncated ? BawanStatusWarning : BawanStatusInformation];
+                        kind:event.truncated ? BawanStatusWarning : BawanStatusInformation
+                       owner:StatusOwner::TranslationOutcome];
             break;
         case Kind::Cancelled:
             _busy = NO;
             _activeRequestId = 0;
-            [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
+            [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
             break;
         case Kind::Error:
             _busy = NO;
             _activeRequestId = 0;
-            [self showTranslationStatus:StringFromUTF8(event.text) kind:BawanStatusError];
+            [self showStatus:StringFromUTF8(event.text) kind:BawanStatusError owner:StatusOwner::TranslationOutcome];
             break;
         default: break;
     }
@@ -590,7 +630,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     _activeRequestId = 0;
     _busy = _pendingText != nil;
     [self updateStatus];
-    if (showCancellation) [self showTranslationStatus:@"Translation cancelled" kind:BawanStatusInformation];
+    if (showCancellation) [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
 }
 
 - (void)cancelTranslation { [self cancelTranslationKeepingPendingSelection:NO]; }
@@ -609,12 +649,13 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self warmUpEngine];
 }
 
+- (void)handleSelectionTrialText:(NSString *)text {
+    if (![_onboardingViewController isSelectionTrialText:text]) return;
+    NSUInteger attempt = [_onboardingViewController beginSelectionTrial];
+    if (attempt) [self translateText:text direction:bawan::Direction::Automatic trialAttempt:attempt];
+}
+
 - (void)handleSelectionText:(NSString *)text {
-    if ([_onboardingViewController isSelectionTrialText:text]) {
-        NSUInteger attempt = [_onboardingViewController beginSelectionTrial];
-        if (attempt) [self translateText:text direction:bawan::Direction::Automatic trialAttempt:attempt];
-        return;
-    }
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [_onboardingViewController discardSelectionTrialResult];
     [_translationPanel showForSelection:text];
@@ -637,6 +678,27 @@ static NSString *StringFromUTF8(const std::string &text) {
         [_settingsViewController showError:error ?: @"Unable to enable this shortcut."];
     }
     [self updateShortcutItem];
+}
+
+- (void)performModelAction:(id)sender {
+    switch (_model.phase()) {
+        case BawanModelSetupDownloading:
+            [_modelStore pause];
+            return;
+        case BawanModelSetupPaused:
+        case BawanModelSetupResumableFailure:
+            _model.beginPreparing();
+            [self updateStatus];
+            [_modelStore resume];
+            return;
+        case BawanModelSetupPreparing:
+        case BawanModelSetupReady:
+            return;
+        case BawanModelSetupNeedsDownload:
+        case BawanModelSetupFailed:
+            [self beginModelSetup];
+            return;
+    }
 }
 
 - (void)retryModel:(id)sender {
@@ -670,7 +732,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
         _settingsViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
-        _settingsViewController.onModelSetup = ^{ [weakSelf beginModelSetup]; };
+        _settingsViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
     }
     [self refreshSettings];
     [_translationPanel showSettings:_settingsViewController];
@@ -688,8 +750,11 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
-    if (_settingsViewController.view.window.visible) [self refreshSettings];
-    else [_shortcut refresh];
+    if (_translationPanel.window.visible && _translationPanel.currentPage == BawanPanelPageSettings) {
+        [self refreshSettings];
+    } else {
+        [_shortcut refresh];
+    }
     [_onboardingViewController refresh];
 }
 

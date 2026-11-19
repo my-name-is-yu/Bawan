@@ -10,20 +10,11 @@
 #include <set>
 #include <vector>
 
-@interface BawanShortcutButton : NSButton
+@interface BawanShortcutButton : BawanBorderlessButton
 @end
 
 @implementation BawanShortcutButton
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
-- (void)drawFocusRingMask {
-    [BawanInputPath(self.bounds) fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+- (NSBezierPath *)bawanFocusRingPath { return BawanInputPath(self.bounds); }
 - (void)drawRect:(NSRect)dirtyRect {
     BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
@@ -34,16 +25,7 @@
 @end
 
 @implementation BawanShortcutPressCount
-- (NSRect)alignmentRectForFrame:(NSRect)frame { return frame; }
-- (NSRect)frameForAlignmentRect:(NSRect)rect { return rect; }
-- (NSRect)focusRingMaskBounds { return BawanInputPath(self.bounds).bounds; }
-- (void)drawFocusRingMask {
-    [BawanInputPath(self.bounds) fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-    [super viewDidChangeEffectiveAppearance];
-    self.needsDisplay = YES;
-}
+BAWAN_BORDERLESS_CONTROL_METHODS(BawanInputPath(self.bounds))
 - (void)drawRect:(NSRect)dirtyRect {
     BawanDrawInputSurface(self.bounds, self.enabled, self.cell.highlighted);
     [super drawRect:dirtyRect];
@@ -541,8 +523,9 @@ struct SettingsShortcutRow {
     }
 }
 
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
     BOOL changed = _modelPhase != phase || ![_modelHint.stringValue isEqualToString:message];
+    BOOL failed = phase == BawanModelSetupFailed || phase == BawanModelSetupResumableFailure;
     _modelPhase = phase;
     const BawanModelPresentation presentation = BawanPresentModel(phase);
     _modelIcon.image = BawanSymbol(presentation.symbol, nil, 15);
@@ -551,17 +534,19 @@ struct SettingsShortcutRow {
     _modelStatus.textColor = BawanColor(presentation.statusColor);
     _modelSetup.hidden = presentation.actionTitle.length == 0;
     _modelSetup.title = presentation.actionTitle;
-    _modelProgress.hidden = phase != BawanModelSetupPreparing;
-    _modelProgress.indeterminate = !std::isfinite(progress) || progress < 0;
-    _modelProgress.doubleValue = std::isfinite(progress) ? std::clamp(progress, 0.0, 1.0) : 0;
+    _modelProgress.hidden = phase != BawanModelSetupPreparing && phase != BawanModelSetupDownloading &&
+        phase != BawanModelSetupPaused && phase != BawanModelSetupResumableFailure;
+    const bool determinate = progress && std::isfinite(*progress);
+    _modelProgress.indeterminate = !determinate;
+    _modelProgress.doubleValue = determinate ? std::clamp(*progress, 0.0, 1.0) : 0;
     [self updateModelProgressAnimation];
     _modelHint.stringValue = message;
     _modelHint.hidden = message.length == 0 || phase == BawanModelSetupReady;
-    _modelHint.textColor = BawanColor(phase == BawanModelSetupFailed ? BawanError : BawanSecondaryText);
+    _modelHint.textColor = BawanColor(failed ? BawanError : BawanSecondaryText);
     [self updateDocumentLayout];
     // Refreshing an unchanged snapshot must preserve the user's reading position
     // and must not repeat the accessibility announcement.
-    if (changed && phase == BawanModelSetupFailed && message.length) [self revealMessage:_modelHint];
+    if (changed && failed && message.length) [self revealMessage:_modelHint];
 }
 
 - (void)updateModelProgressAnimation {

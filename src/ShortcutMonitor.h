@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import "ShortcutPreferences.h"
 
+@class SelectionReader;
 @class NSTextView;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -15,15 +16,15 @@ typedef NS_ENUM(NSInteger, ShortcutAvailability) {
 
 // Main-thread callbacks. Only the default copy gesture is a passive listener.
 @interface ShortcutMonitor : NSObject
-@property(nonatomic, copy, nullable) void (^onText)(NSString *text);
-@property(nonatomic, copy, nullable) void (^onProblem)(NSString *message);
 @property(nonatomic, copy, nullable) void (^onOpenPanel)(void);
 @property(nonatomic, copy, nullable) void (^onAvailabilityChanged)(void);
+@property(nonatomic, copy, nullable) void (^onSelectionTrial)(NSString *text);
 @property(nonatomic) BOOL suspended;
 @property(nonatomic) BOOL configurationActive;
 // While configuring, only this focused selection may exercise Translate Selection.
 @property(nonatomic, weak, nullable) NSTextView *selectionTrialView;
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences;
+- (instancetype)initWithPreferences:(ShortcutPreferences *)preferences selectionReader:(SelectionReader *)selectionReader;
 - (void)start;
 - (void)stop;
 - (void)refresh;

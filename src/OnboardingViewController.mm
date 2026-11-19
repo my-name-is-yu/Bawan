@@ -20,7 +20,8 @@ NSTextField *Label(NSString *text, CGFloat size, NSFontWeight weight, BawanColor
 // while the model downloads. The step follows the model phase, so a failed
 // download returns to the model step with Retry.
 bool IsModelStep(BawanModelSetupPhase phase) {
-    return phase == BawanModelSetupNeedsDownload || phase == BawanModelSetupFailed;
+    return phase == BawanModelSetupNeedsDownload || phase == BawanModelSetupFailed ||
+        phase == BawanModelSetupResumableFailure;
 }
 
 // The controls of one shortcut row, refreshed together from its binding.
@@ -61,6 +62,7 @@ struct ShortcutRow {
     NSTextField *_error;
     NSButton *_primary;
     NSButton *_modelLicense;
+    NSButton *_modelControl;
     NSTextField *_footerNote;
     NSString *_modelProgressMessage;
 }
@@ -81,8 +83,8 @@ struct ShortcutRow {
     BawanChromeHeader header = BawanAddHeader(root, @"onboarding-header", @"onboarding-mascot");
     _mascot = header.mascot;
 
-    // Both steps share the footer: one primary button whose title and action follow
-    // the step, a note in the middle, and Model License on the right during the model step.
+    // The shared footer keeps Continue available while downloading. Its trailing
+    // slot shows the license on the model step and Pause/Resume on the shortcut step.
     BawanChromeFooter footer = BawanAddFooter(root, @"onboarding-footer");
     _primary = BawanAddFooterPrimary(footer.footer, @"onboarding-primary", @"",
         self, @selector(performPrimaryAction));
@@ -91,6 +93,9 @@ struct ShortcutRow {
     _modelLicense.image = BawanSymbol(@"doc.text", @"", 13);
     _modelLicense.imagePosition = NSImageLeft;
     _modelLicense.imageHugsTitle = YES;
+    _modelControl = BawanAddFooterSecondary(footer.footer, @"onboarding-model-control", @"",
+        self, @selector(performModelAction:));
+    _modelControl.hidden = YES;
     _footerNote = BawanAddFooterHint(footer.footer, @"onboarding-footer-note", @"", _primary, _modelLicense);
 
     NSScrollView *scroll = [[NSScrollView alloc] init];
@@ -243,17 +248,19 @@ struct ShortcutRow {
 
 - (BOOL)showingModelStep { return IsModelStep(_modelPhase); }
 
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress {
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
     BOOL changed = _modelPhase != phase;
     BOOL wasModelStep = [self showingModelStep];
     _modelPhase = phase;
-    BOOL failed = phase == BawanModelSetupFailed;
+    BOOL failed = phase == BawanModelSetupFailed || phase == BawanModelSetupResumableFailure;
     BOOL modelStep = IsModelStep(phase);
     const BawanModelPresentation presentation = BawanPresentModel(phase);
 
     _modelStep.hidden = !modelStep;
     _shortcutStep.hidden = modelStep;
     _modelLicense.hidden = !modelStep;
+    _modelControl.hidden = phase != BawanModelSetupDownloading && phase != BawanModelSetupPaused;
+    _modelControl.title = presentation.actionTitle;
 
     _title.stringValue = failed ? @"Let’s Finish Setting Up" : @"Prepare Your Translator";
     _modelStatus.stringValue = presentation.status;
@@ -444,6 +451,7 @@ struct ShortcutRow {
         self.onFinish();
     }
 }
+- (void)performModelAction:(id)sender { if (self.onModelSetup) self.onModelSetup(); }
 - (void)openModelLicense:(id)sender { if (self.onModelLicense) self.onModelLicense(); }
 
 @end

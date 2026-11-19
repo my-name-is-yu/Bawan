@@ -23,6 +23,8 @@ struct EngineEvent {
 
 // Own one instance for the application. Callbacks run on the inference worker;
 // dispatch UI work to the main thread. Destroy/shutdown from the owning thread.
+// Callbacks must return promptly and must not wait on the owning thread during
+// shutdown. Callback exceptions are logged to stderr without retrying delivery.
 // Construction does not initialize the inference backend or load the model.
 // The first warmUp/translate loads it; inactivity releases it and the backend.
 // Each translation owns its context until completion, cancellation or error.
@@ -43,6 +45,10 @@ public:
     void cancel();
     // Unload the model now, or as soon as the active translation finishes.
     void releaseMemory();
+    // Cancel pending/active work and synchronously join the worker. This waits
+    // for any executing callback and non-interruptible backend operation; no
+    // fixed duration is guaranteed. On return worker resources are released
+    // and no further callbacks can run.
     void shutdown();
 
 private:

@@ -12,6 +12,7 @@
 #include <set>
 
 #import "WindowDragChecks.h"
+#import "ControlAppearanceChecks.h"
 
 @interface SmokeShortcutMonitor : ShortcutMonitor {
     ShortcutPreferences *_testPreferences;
@@ -387,6 +388,112 @@ static void CheckInputFaces(NSWindow *window) {
     window.appearance = previous;
 }
 
+static void CheckActionButtonStyles(NSWindow *window) {
+    BawanActionButton *close = (BawanActionButton *)FindView(window.contentView, @"settings-close");
+    BawanActionButton *back = (BawanActionButton *)FindView(window.contentView, @"settings-back");
+    BawanActionButton *setup = (BawanActionButton *)FindView(window.contentView, @"shortcut-selection-permission");
+    Require(close.style == BawanActionButtonStylePlain && back.style == BawanActionButtonStylePrimary &&
+        setup.style == BawanActionButtonStyleSecondary,
+        @"Header, footer and setup actions must each select one complete button style");
+    NSAppearance *previousAppearance = window.appearance;
+    NSColor *headerTint = close.contentTintColor;
+    BawanActionButton *automatic = BawanAddActionButton(nil, @"automatic-tint", @"Automatic", nil, nullptr,
+        BawanActionButtonStyleSecondary);
+    BawanActionButtonStyle styles[] = {BawanActionButtonStylePrimary, BawanActionButtonStyleGold,
+        BawanActionButtonStyleSecondary, BawanActionButtonStylePlain};
+    for (NSAppearanceName appearance in @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]) {
+        window.appearance = [NSAppearance appearanceNamed:appearance];
+        for (BawanActionButtonStyle style : styles) {
+            [close displayIfNeeded];
+            [close.layer displayIfNeeded];
+            close.needsDisplay = NO;
+            Require(!close.needsDisplay && !close.layer.needsDisplay,
+                @"A style change must start without a pending view or layer repaint");
+            close.style = style;
+            Require(close.needsDisplay || close.layer.needsDisplay,
+                @"Changing a button style must request a view or layer repaint");
+            RequireTint(window, close.contentTintColor, BawanColor(BawanHeaderText),
+                @"A header button's explicit tint must survive every style change");
+            for (NSUInteger state = 0; state < 3; ++state) {
+                close.enabled = state != 2;
+                [close highlight:state == 1];
+                NSBitmapImageRep *bitmap = ControlAppearanceChecks::Render(close);
+                // In this 36pt fixture, row 6 clears the face's stroke and the centered gear.
+                NSColor *face = BitmapColor(bitmap, bitmap.pixelsWide / 2, 6);
+                CGFloat expectedAlpha = style == BawanActionButtonStylePlain ? (state == 1 ? 0.12 : 0) :
+                    (state == 2 ? 0.4 : 1);
+                Require(std::abs(face.alphaComponent - expectedAlpha) < 0.02,
+                    @"Styles must retain their enabled, pressed and disabled face opacity");
+                if (style != BawanActionButtonStylePlain) {
+                    [window.effectiveAppearance performAsCurrentDrawingAppearance:^{
+                        NSColor *expected = style == BawanActionButtonStylePrimary ?
+                            BawanPrimaryButtonFill(state == 1) :
+                            BawanColor(style == BawanActionButtonStyleGold ? BawanGold : BawanBackground);
+                        if (state == 1 && style != BawanActionButtonStylePrimary)
+                            expected = [expected blendedColorWithFraction:0.12 ofColor:BawanColor(BawanText)];
+                        RequireTint(window, face, expected,
+                            @"A style change must update the entire normal, pressed or disabled face");
+                    }];
+                }
+                NSString *path = [NSString stringWithFormat:@"settings-smoke/action-%ld-%@-%lu.png",
+                    static_cast<long>(style), appearance, static_cast<unsigned long>(state)];
+                Require([[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+                    writeToFile:path atomically:YES], @"Could not save an action-style capture");
+            }
+            close.enabled = YES;
+            [close highlight:NO];
+        }
+        close.contentTintColor = nil;
+        for (BawanActionButtonStyle style : styles) {
+            close.style = style;
+            Require(close.contentTintColor == nil,
+                @"An explicit nil tint must retain native coloring across style changes");
+            automatic.style = style;
+            NSColor *expected = style == BawanActionButtonStylePrimary ? BawanAccentForegroundColor() :
+                BawanColor(style == BawanActionButtonStyleGold ? BawanGoldText : BawanText);
+            RequireTint(window, automatic.contentTintColor, expected,
+                @"A button without an explicit tint must follow its selected style's foreground");
+        }
+        close.contentTintColor = headerTint;
+    }
+    close.style = BawanActionButtonStylePlain;
+    close.enabled = NO;
+    NSView *settingsRoot = window.contentView;
+    [close performClick:nil];
+    Require(window.contentView == settingsRoot,
+        @"A disabled header action must not leave Settings");
+    close.enabled = YES;
+    window.appearance = previousAppearance;
+}
+
+static void CheckCustomControlAppearance(NSWindow *window) {
+    using namespace ControlAppearanceChecks;
+    NSButton *checkbox = (NSButton *)FindView(window.contentView, @"shortcut-selection-enabled");
+    NSButton *toggle = (NSButton *)FindView(window.contentView, @"launch-at-login");
+    NSControlStateValue checkboxState = checkbox.state, toggleState = toggle.state;
+    CGFloat boxY = std::floor((NSHeight(checkbox.bounds) - 18) / 2);
+    for (NSNumber *on in @[@YES, @NO]) {
+        checkbox.state = on.boolValue ? NSControlStateValueOn : NSControlStateValueOff;
+        toggle.state = checkbox.state;
+        Check(checkbox, NSMakePoint(9, boxY + 3), !on.boolValue, @"settings-smoke");
+        Check(toggle, NSMakePoint(NSMidX(toggle.bounds), 4), !on.boolValue, @"settings-smoke");
+    }
+    checkbox.state = checkboxState;
+    toggle.state = toggleState;
+    CheckFocus(checkbox, NSMakeRect(0, boxY, 18, 18), NSMakePoint(9, boxY + 9),
+        NSMakePoint(1, boxY + 1), NSMakePoint(28, NSMidY(checkbox.bounds)), @"settings-smoke");
+    CheckFocus(toggle, toggle.bounds, NSMakePoint(2, NSMidY(toggle.bounds)),
+        NSMakePoint(3, 3), NSMakePoint(0, NSMidY(toggle.bounds)), @"settings-smoke");
+    for (NSString *identifier in @[@"shortcut-selection-key", @"shortcut-panel-key",
+                                    @"shortcut-selection-count", @"shortcut-panel-count"]) {
+        NSButton *input = (NSButton *)FindView(window.contentView, identifier);
+        Check(input, NSMakePoint(NSMidX(input.bounds), 4), YES, @"settings-smoke");
+        CheckFocus(input, NSInsetRect(input.bounds, 1, 1),
+            NSMakePoint(NSMidX(input.bounds), NSMidY(input.bounds)), NSMakePoint(1, 1),
+            NSMakePoint(0, NSMidY(input.bounds)), @"settings-smoke");
+    }
+}
+
 static NSString *TextInView(NSView *view) {
     NSMutableString *text = [NSMutableString string];
     if ([view isKindOfClass:NSTextField.class]) [text appendString:((NSTextField *)view).stringValue];
@@ -541,6 +648,7 @@ static void RunSmoke(void) {
     }
     Require(ownedWindows == 1, @"Settings must not create a second Bawan window");
     NSButton *back = (NSButton *)FindView(settings.view, @"settings-back");
+    CheckActionButtonStyles(window);
     Capture(window, @"entry");
     CheckFrameDragging(window);
     NSScrollView *entryScroll = (NSScrollView *)FindView(settings.view, @"settings-scroll");
@@ -656,8 +764,13 @@ static void RunSmoke(void) {
     [settings setLoginStatus:SMAppServiceStatusRequiresApproval message:nil error:NO];
     Require(!loginItems.hidden, @"A pending login approval must expose its System Settings action");
     [loginItems performClick:nil];
-    login.state = NSControlStateValueOn;
-    SendControlAction(login);
+    [settings setLoginStatus:SMAppServiceStatusNotRegistered message:nil error:NO];
+    login.enabled = NO;
+    [login performClick:nil];
+    Require(loginChanges == 0 && login.state == NSControlStateValueOff,
+        @"A disabled login toggle must not change state or notify its owner");
+    login.enabled = YES;
+    [login performClick:nil];
     Require(loginSettings == 1 && loginChanges == 1 && requestedLogin,
         @"Login actions must forward exactly once without changing system services");
 
@@ -687,23 +800,55 @@ static void RunSmoke(void) {
         @"An unprepared model must expose setup without claiming readiness");
     [modelSetup performClick:nil];
     Require(modelSetups == 1, @"The model setup action must reach its owner");
+    [settings setModelPhase:BawanModelSetupDownloading message:@"Downloading the model… 37%" progress:0.37];
+    Require(!modelSetup.hidden && modelSetup.enabled && [modelSetup.title isEqualToString:@"Pause Download"] &&
+        !modelProgress.hidden && !modelProgress.indeterminate && std::abs(modelProgress.doubleValue - 0.37) < 0.001,
+        @"Downloading must expose Pause beside the current measurable progress");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 2, @"The model row's Pause action must reach its owner");
+    [settings setModelPhase:BawanModelSetupPaused message:@"Download paused · 37%" progress:0.37];
+    Require(!modelSetup.hidden && modelSetup.enabled && [modelSetup.title isEqualToString:@"Resume Download"] &&
+        !modelProgress.hidden && !modelProgress.indeterminate && std::abs(modelProgress.doubleValue - 0.37) < 0.001 &&
+        [modelMessage.stringValue containsString:@"paused"],
+        @"A paused download must retain its percentage and offer Resume");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 3, @"The model row's Resume action must reach its owner");
+    [settings setModelPhase:BawanModelSetupResumableFailure message:@"Connection lost. Resume the download." progress:0.37];
+    Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Resume Download"] &&
+        !modelMessage.hidden && [modelMessage.stringValue containsString:@"Connection lost"],
+        @"A recoverable connection failure must offer Resume while keeping the failure visible");
+    [modelSetup performClick:nil];
+    Require(modelSetups == 4, @"Resuming a failed transfer must reach its owner");
     [settings setModelPhase:BawanModelSetupPreparing message:@"Verifying the saved model…" progress:0.4];
-    Require(!modelProgress.hidden && std::abs(modelProgress.doubleValue - 0.4) < 0.001 && modelSetup.hidden &&
+    Require(!modelProgress.hidden && !modelProgress.indeterminate &&
+        std::abs(modelProgress.doubleValue - 0.4) < 0.001 && modelSetup.hidden &&
         [modelMessage.stringValue containsString:@"Verifying"],
         @"Model preparation must show progress and its current message without allowing duplicate setup");
     [settings setModelPhase:BawanModelSetupPreparing message:@"Checking the local model…"
         progress:std::numeric_limits<double>::quiet_NaN()];
     Require(modelProgress.indeterminate && std::isfinite(modelProgress.doubleValue),
         @"Unknown model progress must remain a finite indeterminate presentation");
-    [settings setModelPhase:BawanModelSetupPreparing message:@"Checking the local model…" progress:-1];
-    Require(modelProgress.indeterminate && modelProgress.doubleValue == 0,
-        @"A negative progress sentinel must not become a negative percentage");
+    BawanModelState loadingModel;
+    loadingModel.beginPreparing();
+    loadingModel.fileReady([NSURL fileURLWithPath:@"/__bawan_tests__/model.gguf"]);
+    loadingModel.engineLoading();
+    [settings setModelPhase:loadingModel.phase() message:loadingModel.message() progress:loadingModel.progress()];
+    Require(!modelProgress.hidden && modelProgress.indeterminate && modelProgress.doubleValue == 0 &&
+        [modelMessage.stringValue isEqualToString:BawanModelLoadingStatus],
+        @"Engine loading must show indeterminate progress from the model state");
+    loadingModel.stopLoading();
+    [settings setModelPhase:loadingModel.phase() message:loadingModel.message() progress:loadingModel.progress()];
+    Require(modelProgress.hidden && !modelProgress.indeterminate && modelProgress.doubleValue == 1,
+        @"Stopping an engine load must restore completed progress and hide the indicator");
+    [settings setModelPhase:BawanModelSetupPreparing message:@"Downloading the model… 0%" progress:0];
+    Require(!modelProgress.hidden && !modelProgress.indeterminate && modelProgress.doubleValue == 0,
+        @"Known zero progress must remain determinate after an engine load");
     [settings setModelPhase:BawanModelSetupFailed message:@"The model could not be verified. Please try again." progress:0];
     Require(!modelSetup.hidden && [modelSetup.title isEqualToString:@"Retry Model Setup"] && !modelMessage.hidden &&
         [modelStatus.stringValue isEqualToString:@"Needs attention"],
         @"Model setup failures must retain their message and expose Retry");
     [modelSetup performClick:nil];
-    Require(modelSetups == 2, @"Retrying model setup must reach the same owner action");
+    Require(modelSetups == 5, @"Retrying model setup must reach the same owner action");
     [settings setModelPhase:BawanModelSetupReady message:@"Ready" progress:1];
     Require(modelMessage.hidden && modelProgress.hidden && modelSetup.hidden,
         @"A recovered model must clear stale progress and error actions");
@@ -723,6 +868,7 @@ static void RunSmoke(void) {
     [settings refresh];
     Capture(window, @"light");
     CheckInputFaces(window);
+    CheckCustomControlAppearance(window);
     NSScrollView *scroll = (NSScrollView *)FindView(root, @"settings-scroll");
     NSView *document = FindView(root, @"settings-document");
     CGFloat baseHeight = document.bounds.size.height;
@@ -820,8 +966,7 @@ static void RunSmoke(void) {
     Capture(window, @"shortcut-error");
     [settings showError:@""];
 
-    selectionEnabled.state = NSControlStateValueOff;
-    SendControlAction(selectionEnabled);
+    [selectionEnabled performClick:nil];
     Require(![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
         [preferences bindingForAction:bawan::ShortcutAction::OpenPanel].enabled &&
         [selectionStatus.stringValue isEqualToString:@"Off"], @"Disabling one action must preserve the other");
@@ -862,8 +1007,7 @@ static void RunSmoke(void) {
     Require([selectionStatus.stringValue isEqualToString:@"Off"] &&
         [panelStatus.stringValue isEqualToString:@"Shortcut ready"],
         @"Key release must restore each row's actual enabled and ready state");
-    selectionEnabled.state = NSControlStateValueOn;
-    SendControlAction(selectionEnabled);
+    [selectionEnabled performClick:nil];
     Require(![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled &&
         selectionEnabled.state == NSControlStateValueOff && !feedback.hidden,
         @"A conflicting single/double assignment must reject enabling without changing the old setting");
@@ -873,8 +1017,7 @@ static void RunSmoke(void) {
     SendKey(settings, window, 40, customModifiers, YES, @"k");
     Require(monitor.suspended, @"An accepted key must remain suspended until release");
     SendKey(settings, window, 40, customModifiers, NO, @"k");
-    selectionEnabled.state = NSControlStateValueOn;
-    SendControlAction(selectionEnabled);
+    [selectionEnabled performClick:nil];
     bawan::ShortcutBinding custom = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
     Require(custom.enabled && custom.keyCode == 40 && custom.modifiers == (bawan::Control | bawan::Option) &&
         custom.pressCount == 1 && [selectionKey.title isEqualToString:ShortcutKeyLabel(custom)],

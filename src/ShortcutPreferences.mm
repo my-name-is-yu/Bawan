@@ -122,8 +122,9 @@ std::uint8_t ShortcutModifiersFromFlags(NSEventModifierFlags flags, std::uint16_
     return bawan::normalizeShortcutModifiers(result, keyCode);
 }
 
-static bool ReadInteger(id value, unsigned maximum, unsigned &result) {
-    if (![value isKindOfClass:NSNumber.class]) return false;
+static bool ReadInteger(id value, unsigned maximum, unsigned &result, bool allowBoolean = false) {
+    if (![value isKindOfClass:NSNumber.class] ||
+        (!allowBoolean && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID())) return false;
     double number = [value doubleValue];
     if (!std::isfinite(number) || number < 0 || number > maximum || std::floor(number) != number) return false;
     result = static_cast<unsigned>(number);
@@ -133,7 +134,7 @@ static bool ReadInteger(id value, unsigned maximum, unsigned &result) {
 static bool ReadBinding(id value, bawan::ShortcutBinding &binding) {
     if (![value isKindOfClass:NSDictionary.class]) return false;
     unsigned enabled, key, modifiers, count;
-    if (!ReadInteger(value[@"enabled"], 1, enabled) ||
+    if (!ReadInteger(value[@"enabled"], 1, enabled, true) ||
         !ReadInteger(value[@"keyCode"], UINT16_MAX, key) ||
         !ReadInteger(value[@"modifiers"], UINT8_MAX, modifiers) ||
         !ReadInteger(value[@"pressCount"], 2, count)) return false;
@@ -167,15 +168,18 @@ static NSDictionary *EncodeBinding(bawan::ShortcutBinding binding) {
     _defaults = defaults;
     _bindings = bawan::defaultShortcuts();
     id stored = [_defaults objectForKey:PreferencesKey];
-    if ([stored isKindOfClass:NSDictionary.class]) {
+    if (stored) {
+        if (![stored isKindOfClass:NSDictionary.class]) return self;
         unsigned version = 0;
         id rows = stored[@"bindings"];
-        if (ReadInteger(stored[@"version"], 1, version) && version == 1 && [rows isKindOfClass:NSDictionary.class]) {
-            ReadBinding(rows[@"translateSelection"], _bindings[0]);
-            ReadBinding(rows[@"openPanel"], _bindings[1]);
-        }
+        if (!ReadInteger(stored[@"version"], 1, version) || version != 1 ||
+            ![rows isKindOfClass:NSDictionary.class]) return self;
+        bawan::ShortcutBindings candidate = _bindings;
+        if (!ReadBinding(rows[@"translateSelection"], candidate[0]) ||
+            !ReadBinding(rows[@"openPanel"], candidate[1]) ||
+            bawan::validateShortcuts(candidate) != bawan::ShortcutError::None) return self;
+        _bindings = candidate;
     }
-    if (bawan::validateShortcuts(_bindings) == bawan::ShortcutError::Duplicate) _bindings[1].enabled = false;
     [self save];
     return self;
 }

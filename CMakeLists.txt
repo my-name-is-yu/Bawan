@@ -78,27 +78,38 @@ target_include_directories(bawan_gesture PUBLIC src)
 target_compile_options(bawan_gesture PRIVATE -Wall -Wextra -Wpedantic)
 
 set(BAWAN_UI_RESOURCES resources/BawanMascot.png resources/PaperGrain.png)
-set(BAWAN_SETUP_SOURCES src/SetupUI.mm src/OnboardingViewController.mm)
+
+if(APPLE AND (BAWAN_BUILD_APP OR BAWAN_BUILD_TESTS))
+    # Separate app/test archives keep compile-time resource paths consistent,
+    # including the inline image helpers in BawanAppearance.h.
+    function(add_bawan_ui target)
+        add_library(${target} STATIC
+            src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm
+            src/BawanAppearance.mm src/BawanMascotView.mm
+            src/ShortcutMonitor.mm src/SelectionReader.mm src/ShortcutPreferences.mm
+            src/SetupUI.mm src/OnboardingViewController.mm)
+        target_include_directories(${target} PUBLIC src)
+        target_link_libraries(${target} PUBLIC bawan_gesture
+            "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
+            "-framework CoreGraphics" "-framework ImageIO"
+            "-framework ApplicationServices" "-framework Carbon")
+        target_compile_options(${target} PUBLIC -fobjc-arc -Wall -Wextra)
+    endfunction()
+endif()
 
 if(BAWAN_BUILD_APP)
+    add_bawan_ui(bawan_ui)
     configure_file(LICENSE "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" COPYONLY)
     set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
         "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
     add_executable(Bawan MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm src/BawanAppearance.mm
-        src/BawanMascotView.mm
-        src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm
-        ${BAWAN_SETUP_SOURCES}
+        src/main.mm src/AppDelegate.mm src/ModelStore.mm
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES})
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES}
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_link_libraries(Bawan PRIVATE bawan_engine bawan_gesture
-        "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
-        "-framework CoreGraphics" "-framework ServiceManagement" "-framework ImageIO"
-        "-framework ApplicationServices" "-framework Carbon")
-    target_compile_options(Bawan PRIVATE -fobjc-arc -Wall -Wextra)
+    target_link_libraries(Bawan PRIVATE bawan_ui bawan_engine "-framework ServiceManagement")
     set_target_properties(Bawan PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER local.bawan.Bawan
@@ -113,6 +124,10 @@ endif()
 
 if(BAWAN_BUILD_TESTS)
     enable_testing()
+    add_executable(model_download_tests tests/model_download_tests.cpp)
+    target_include_directories(model_download_tests PRIVATE src)
+    target_compile_options(model_download_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_download_response COMMAND model_download_tests)
     add_executable(engine_event_mailbox_tests tests/engine_event_mailbox_tests.cpp)
     target_include_directories(engine_event_mailbox_tests PRIVATE src)
     target_link_libraries(engine_event_mailbox_tests PRIVATE Threads::Threads)
@@ -123,20 +138,31 @@ if(BAWAN_BUILD_TESTS)
     add_executable(short_input_tests tests/short_input_tests.cpp)
     target_include_directories(short_input_tests PRIVATE src)
     add_test(NAME short_english_input COMMAND short_input_tests)
+    add_executable(utf8_tests tests/utf8_tests.cpp)
+    target_include_directories(utf8_tests PRIVATE src)
+    add_test(NAME utf8 COMMAND utf8_tests)
     add_executable(engine_lifecycle tests/engine_lifecycle.cpp)
     target_link_libraries(engine_lifecycle PRIVATE bawan_engine)
     add_test(NAME engine_lifecycle COMMAND engine_lifecycle)
     set_tests_properties(engine_lifecycle PROPERTIES TIMEOUT 120)
     if(APPLE)
-        add_executable(shortcut_preferences_tests tests/shortcut_preferences_tests.mm src/ShortcutPreferences.mm)
-        target_link_libraries(shortcut_preferences_tests PRIVATE bawan_gesture
-            "-framework AppKit" "-framework Foundation" "-framework Carbon")
-        target_compile_options(shortcut_preferences_tests PRIVATE -fobjc-arc -Wall -Wextra)
+        add_bawan_ui(bawan_ui_test)
+        target_compile_definitions(bawan_ui_test PUBLIC
+            BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
+        add_executable(model_store_tests tests/model_store_tests.mm src/ModelStore.mm)
+        target_include_directories(model_store_tests PRIVATE src)
+        target_link_libraries(model_store_tests PRIVATE "-framework Foundation")
+        target_compile_options(model_store_tests PRIVATE -fobjc-arc -Wall -Wextra)
+        add_test(NAME model_store COMMAND model_store_tests)
+        set_tests_properties(model_store PROPERTIES TIMEOUT 90)
+        add_executable(shortcut_preferences_tests tests/shortcut_preferences_tests.mm)
+        target_link_libraries(shortcut_preferences_tests PRIVATE bawan_ui_test)
         add_test(NAME shortcut_preferences COMMAND shortcut_preferences_tests)
-        add_executable(shortcut_monitor_tests tests/shortcut_monitor_tests.mm src/ShortcutPreferences.mm src/ShortcutMonitor.mm)
-        target_link_libraries(shortcut_monitor_tests PRIVATE bawan_gesture "-framework AppKit"
-            "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon")
-        target_compile_options(shortcut_monitor_tests PRIVATE -fobjc-arc -Wall -Wextra)
+        add_executable(selection_reader_tests tests/selection_reader_tests.mm)
+        target_link_libraries(selection_reader_tests PRIVATE bawan_ui_test)
+        add_test(NAME selection_reader COMMAND selection_reader_tests)
+        add_executable(shortcut_monitor_tests tests/shortcut_monitor_tests.mm)
+        target_link_libraries(shortcut_monitor_tests PRIVATE bawan_ui_test)
         add_test(NAME shortcut_monitor COMMAND shortcut_monitor_tests)
         add_executable(model_setup_state_tests tests/model_setup_state_tests.mm)
         target_include_directories(model_setup_state_tests PRIVATE src)
@@ -148,68 +174,40 @@ if(BAWAN_BUILD_TESTS)
             get_filename_component(resource_name "${resource}" NAME)
             configure_file("${resource}" "${CMAKE_BINARY_DIR}/test-resources/${resource_name}" COPYONLY)
         endforeach()
-        add_executable(panel_smoke tests/panel_smoke.mm src/TranslationPanel.mm src/BawanChrome.mm src/BawanAppearance.mm src/BawanMascotView.mm)
-        target_include_directories(panel_smoke PRIVATE src)
-        target_compile_definitions(panel_smoke PRIVATE
-            BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(panel_smoke PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework ImageIO")
-        target_compile_options(panel_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_executable(panel_smoke tests/panel_smoke.mm)
+        target_link_libraries(panel_smoke PRIVATE bawan_ui_test)
         add_test(NAME translation_panel COMMAND panel_smoke)
         set_tests_properties(translation_panel PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 90)
-        add_executable(settings_smoke tests/settings_smoke.mm src/SettingsViewController.mm src/TranslationPanel.mm src/BawanChrome.mm src/BawanAppearance.mm
-            src/BawanMascotView.mm
-            src/ShortcutPreferences.mm src/ShortcutMonitor.mm ${BAWAN_SETUP_SOURCES})
-        target_include_directories(settings_smoke PRIVATE src)
-        target_compile_definitions(settings_smoke PRIVATE
-            BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(settings_smoke PRIVATE bawan_gesture "-framework AppKit" "-framework QuartzCore" "-framework ServiceManagement"
-            "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon" "-framework ImageIO")
-        target_compile_options(settings_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_executable(settings_smoke tests/settings_smoke.mm)
+        target_link_libraries(settings_smoke PRIVATE bawan_ui_test)
         add_test(NAME settings_navigation COMMAND settings_smoke)
         set_tests_properties(settings_navigation PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
-        add_executable(onboarding_smoke tests/onboarding_smoke.mm
-            src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm src/BawanAppearance.mm
-            src/BawanMascotView.mm src/ShortcutMonitor.mm src/ShortcutPreferences.mm
-            ${BAWAN_SETUP_SOURCES})
-        target_include_directories(onboarding_smoke PRIVATE src)
-        target_compile_definitions(onboarding_smoke PRIVATE
-            BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(onboarding_smoke PRIVATE bawan_gesture
-            "-framework AppKit" "-framework QuartzCore" "-framework ServiceManagement"
-            "-framework CoreGraphics" "-framework ApplicationServices" "-framework Carbon" "-framework ImageIO")
-        target_compile_options(onboarding_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_executable(onboarding_smoke tests/onboarding_smoke.mm)
+        target_link_libraries(onboarding_smoke PRIVATE bawan_ui_test)
         add_test(NAME onboarding COMMAND onboarding_smoke)
         set_tests_properties(onboarding PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 45)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
-            src/AppDelegate.mm src/TranslationPanel.mm src/BawanChrome.mm src/SettingsViewController.mm
-            src/BawanAppearance.mm src/BawanMascotView.mm
-            src/ShortcutMonitor.mm src/ShortcutPreferences.mm src/ModelStore.mm ${BAWAN_SETUP_SOURCES})
-        target_include_directories(app_delegate_smoke PRIVATE src)
-        target_compile_definitions(app_delegate_smoke PRIVATE
-            BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(app_delegate_smoke PRIVATE bawan_engine bawan_gesture
-            "-framework AppKit" "-framework Foundation" "-framework QuartzCore"
-            "-framework CoreGraphics" "-framework ServiceManagement" "-framework ImageIO"
-            "-framework ApplicationServices" "-framework Carbon")
-        target_compile_options(app_delegate_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+            src/AppDelegate.mm src/ModelStore.mm)
+        target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
         add_test(NAME onboarding_selection_trial COMMAND app_delegate_smoke --selection-trial)
         set_tests_properties(onboarding_selection_trial PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
-        add_executable(mascot_smoke tests/mascot_smoke.mm src/BawanMascotView.mm src/BawanAppearance.mm)
-        target_include_directories(mascot_smoke PRIVATE src)
-        target_compile_definitions(mascot_smoke PRIVATE
-            BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        target_link_libraries(mascot_smoke PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework ImageIO")
-        target_compile_options(mascot_smoke PRIVATE -fobjc-arc -Wall -Wextra)
+        add_executable(mascot_smoke tests/mascot_smoke.mm)
+        target_link_libraries(mascot_smoke PRIVATE bawan_ui_test)
         add_test(NAME mascot_hover COMMAND mascot_smoke)
         set_tests_properties(mascot_hover PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 15)
+        add_executable(progress_smoke tests/progress_smoke.mm)
+        target_link_libraries(progress_smoke PRIVATE bawan_ui_test)
+        add_test(NAME progress_motion COMMAND progress_smoke)
+        set_tests_properties(progress_motion PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 20)
     endif()
 endif()
 if(BAWAN_BUILD_SMOKE)

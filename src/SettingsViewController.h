@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^onLoginSettings)(void);
 @property(nonatomic, copy, nullable) void (^onLoginChanged)(BOOL enabled);
 @property(nonatomic, copy, nullable) void (^onModelLicense)(void);
+// Performs the current model action: download, retry, pause or resume.
 @property(nonatomic, copy, nullable) void (^onModelSetup)(void);
 - (instancetype)initWithPreferences:(ShortcutPreferences *)preferences monitor:(ShortcutMonitor *)monitor;
 // The host owns window focus; active means this screen is visible and key.
@@ -19,7 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)refresh;
 - (void)showError:(NSString *)message;
 - (void)setLoginStatus:(SMAppServiceStatus)status message:(nullable NSString *)message error:(BOOL)error;
-- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(double)progress;
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress;
 @end
 
 NS_ASSUME_NONNULL_END

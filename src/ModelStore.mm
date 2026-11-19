@@ -1,12 +1,17 @@
 #import "ModelStore.h"
+#include "ModelDownload.h"
 
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <fcntl.h>
+#include <unistd.h>
 #include <string>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <dispatch/dispatch.h>
@@ -24,7 +29,71 @@ static const char ModelSHA256[] =
 
 enum class Verification { Valid, Invalid, Failed, Cancelled };
 
+class PartialDownloadLock {
+public:
+    enum class Result { Acquired, Busy, Failed };
+
+    PartialDownloadLock() = default;
+    ~PartialDownloadLock() { release(); }
+    PartialDownloadLock(const PartialDownloadLock &) = delete;
+    PartialDownloadLock &operator=(const PartialDownloadLock &) = delete;
+
+    Result acquire(NSURL *url) {
+        const int fd = open(url.fileSystemRepresentation, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (fd < 0) return Result::Failed;
+        struct stat info {};
+        if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
+            close(fd);
+            return Result::Failed;
+        }
+        if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+            const int error = errno;
+            close(fd);
+            return error == EWOULDBLOCK ? Result::Busy : Result::Failed;
+        }
+        fd_ = fd;
+        return Result::Acquired;
+    }
+
+    void release() {
+        if (fd_ < 0) return;
+        // Keep the file so every instance locks the same inode. Closing releases the lock.
+        close(fd_);
+        fd_ = -1;
+    }
+
+private:
+    int fd_ = -1;
+};
+
 static const char VerifiedAttribute[] = "local.bawan.verified-sha256";
+
+static bool RemovePartialFile(NSURL *url) {
+    // Unlike NSFileManager removal, unlink never descends into a directory.
+    return unlink(url.fileSystemRepresentation) == 0 || errno == ENOENT;
+}
+
+static NSDictionary *ReadPartialMetadata(NSURL *url) {
+    constexpr off_t MaxMetadataBytes = 64 * 1024;
+    const int descriptor = open(url.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (descriptor < 0) return nil;
+    struct stat info {};
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_size <= 0 || info.st_size > MaxMetadataBytes) {
+        close(descriptor);
+        return nil;
+    }
+    std::unique_ptr<FILE, decltype(&std::fclose)> file(fdopen(descriptor, "rb"), &std::fclose);
+    if (!file) {
+        close(descriptor);
+        return nil;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:static_cast<NSUInteger>(info.st_size)];
+    if (std::fread(data.mutableBytes, 1, data.length, file.get()) != data.length) return nil;
+    id metadata = [NSPropertyListSerialization propertyListWithData:data
+        options:NSPropertyListImmutable format:nil error:nil];
+    return [metadata isKindOfClass:NSDictionary.class] ? metadata : nil;
+}
 
 static std::string VerificationStamp(const struct stat &info, const char *expectedSHA256) {
     char stamp[160];
@@ -103,19 +172,33 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     return generation.load() == expectedGeneration ? Verification::Valid : Verification::Cancelled;
 }
 
-@interface ModelStore () <NSURLSessionDownloadDelegate> {
+@interface ModelStore () <NSURLSessionDataDelegate> {
     std::atomic<uint64_t> _generation;
     NSURLSession *_session;
-    NSURLSessionDownloadTask *_task;
+    NSURLSessionDataTask *_task;
     NSURL *_modelURL;
+    NSURL *_partialURL;
+    NSURL *_metadataURL;
+    NSURL *_downloadURL;
+    NSURLSessionConfiguration *_configuration;
     NSFileManager *_files;
     int64_t _expectedSize;
     NSString *_expectedSHA256;
+    NSString *_etag;
+    FILE *_partialFile;
+    PartialDownloadLock _partialLock;
+    int64_t _receivedBytes;
+    int64_t _requestOffset;
+    BOOL _retriedRange;
+    ModelStoreState _state;
     dispatch_queue_t _verificationQueue;
     double _lastReportedFraction;
 }
 - (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
                             SHA256:(NSString *)expectedSHA256;
+- (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
+                            SHA256:(NSString *)expectedSHA256 downloadURL:(NSURL *)downloadURL
+              sessionConfiguration:(NSURLSessionConfiguration *)configuration;
 @end
 
 @implementation ModelStore
@@ -127,11 +210,21 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
 
 - (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
                             SHA256:(NSString *)expectedSHA256 {
+    return [self initWithFileManager:files expectedSize:expectedSize SHA256:expectedSHA256
+        downloadURL:[NSURL URLWithString:ModelDownloadURL]
+        sessionConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
+}
+
+- (instancetype)initWithFileManager:(NSFileManager *)files expectedSize:(int64_t)expectedSize
+                            SHA256:(NSString *)expectedSHA256 downloadURL:(NSURL *)downloadURL
+              sessionConfiguration:(NSURLSessionConfiguration *)configuration {
     self = [super init];
     if (self) {
         _files = files;
         _expectedSize = expectedSize;
         _expectedSHA256 = [expectedSHA256 copy];
+        _downloadURL = downloadURL;
+        _configuration = [configuration copy];
         _generation.store(0);
         _verificationQueue = dispatch_queue_create("local.bawan.model-verification",
             dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
@@ -139,63 +232,168 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     return self;
 }
 
-- (void)cancel {
-    NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
-    ++_generation;
+- (void)dealloc {
+    if (_partialFile) std::fclose(_partialFile);
+}
+
+- (ModelStoreState)state { return _state; }
+
+- (BOOL)canResume {
+    return _receivedBytes > 0 && _receivedBytes <= _expectedSize &&
+        (_receivedBytes == _expectedSize || bawan::isStrongModelETag(_etag.UTF8String ?: ""));
+}
+
+- (void)setState:(ModelStoreState)state {
+    _state = state;
+    if (self.onStateChange) self.onStateChange(state);
+}
+
+- (void)stopTransfer {
     [_task cancel];
     [_session invalidateAndCancel];
     _task = nil;
     _session = nil;
+    if (_partialFile) {
+        std::fclose(_partialFile);
+        _partialFile = nullptr;
+    }
 }
 
-- (void)prepare {
-    [self prepareTrustingVerifiedModel:YES];
+- (void)cancel {
+    NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
+    ++_generation;
+    [self stopTransfer];
+    _partialLock.release();
+    [self setState:ModelStoreIdle];
 }
 
-- (void)revalidate {
-    [self prepareTrustingVerifiedModel:NO];
+- (void)pause {
+    NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
+    if (_state != ModelStoreDownloading) return;
+    ++_generation;
+    const uint64_t generation = _generation.load();
+    [self stopTransfer];
+    _partialLock.release();
+    [self setState:ModelStorePaused];
+    [self reportProgress:static_cast<double>(_receivedBytes) / _expectedSize
+        message:self.canResume ? @"Model download paused. Resume to continue."
+                               : @"Model download paused. Resume to restart the download."
+        generation:generation];
+}
+
+- (void)resume {
+    NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
+    if (_state == ModelStorePaused || _state == ModelStoreFailed) [self prepare];
+}
+
+- (void)prepare { [self prepareTrustingVerifiedModel:YES]; }
+- (void)revalidate { [self prepareTrustingVerifiedModel:NO]; }
+
+- (BOOL)discardPartial {
+    const bool removedPartial = RemovePartialFile(_partialURL);
+    const bool removedMetadata = RemovePartialFile(_metadataURL);
+    _receivedBytes = 0;
+    _etag = nil;
+    return removedPartial && removedMetadata;
+}
+
+- (BOOL)loadPartial {
+    _receivedBytes = 0;
+    _etag = nil;
+    struct stat info {};
+    if (lstat(_partialURL.fileSystemRepresentation, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_size <= 0 || info.st_size > _expectedSize) return [self discardPartial];
+    NSDictionary *saved = ReadPartialMetadata(_metadataURL);
+    if (![saved[@"url"] isEqual:_downloadURL.absoluteString] ||
+        ![saved[@"size"] isKindOfClass:NSNumber.class] ||
+        [saved[@"size"] longLongValue] != _expectedSize ||
+        ![saved[@"sha256"] isEqual:_expectedSHA256] ||
+        ![saved[@"etag"] isKindOfClass:NSString.class]) return [self discardPartial];
+    NSString *etag = saved[@"etag"];
+    // A full file can be rehashed even without a validator. A prefix needs a
+    // strong validator so If-Range cannot join bytes from different versions.
+    if (info.st_size < _expectedSize && !bawan::isStrongModelETag(etag.UTF8String ?: ""))
+        return [self discardPartial];
+    _receivedBytes = info.st_size;
+    _etag = etag;
+    return YES;
 }
 
 - (void)prepareTrustingVerifiedModel:(BOOL)trustStamp {
     NSAssert(NSThread.isMainThread, @"ModelStore must be used on the main thread");
     [self cancel];
     const uint64_t generation = _generation.load();
+    _receivedBytes = 0;
+    _etag = nil;
     _lastReportedFraction = -1;
-    NSFileManager *files = _files;
+    _retriedRange = NO;
     NSError *error = nil;
-    NSURL *support = [files URLForDirectory:NSApplicationSupportDirectory
-                                 inDomain:NSUserDomainMask
-                        appropriateForURL:nil create:YES error:&error];
+    NSURL *support = [_files URLForDirectory:NSApplicationSupportDirectory
+                                   inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:&error];
     NSURL *directory = [support URLByAppendingPathComponent:@"local.bawan.Bawan" isDirectory:YES];
-    if (!support || ![files createDirectoryAtURL:directory withIntermediateDirectories:YES
-                                     attributes:nil error:&error]) {
+    if (!support || ![_files createDirectoryAtURL:directory withIntermediateDirectories:YES
+                                      attributes:nil error:&error]) {
         [self reportError:@"Unable to create the model folder." generation:generation];
         return;
     }
     _modelURL = [directory URLByAppendingPathComponent:ModelFilename];
-    for (NSURL *entry in [files contentsOfDirectoryAtURL:directory
-                            includingPropertiesForKeys:nil options:0 error:nil]) {
-        if ([entry.lastPathComponent hasPrefix:@"."] &&
-            [entry.lastPathComponent hasSuffix:@".partial"]) {
-            [files removeItemAtURL:entry error:nil];
+    _partialURL = [directory URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", ModelFilename]];
+    _metadataURL = [_partialURL URLByAppendingPathExtension:@"plist"];
+    BOOL hasSavedModel = [_files fileExistsAtPath:_modelURL.path];
+    if (!hasSavedModel) {
+        // Own the shared partial from inspection through transfer and installation.
+        const auto lock = _partialLock.acquire([_partialURL URLByAppendingPathExtension:@"lock"]);
+        // A peer may have installed the model while we were acquiring the lock.
+        hasSavedModel = [_files fileExistsAtPath:_modelURL.path];
+        if (lock != PartialDownloadLock::Result::Acquired && !hasSavedModel) {
+            [self reportError:lock == PartialDownloadLock::Result::Busy
+                ? @"Another Bawan instance is preparing the model. Pause it or wait for it to finish, then try again."
+                : @"Unable to lock the model download. Check the folder permissions and try again."
+                generation:generation];
+            return;
         }
     }
-    if ([files fileExistsAtPath:_modelURL.path]) {
+    if (hasSavedModel) {
+        [self setState:ModelStoreVerifying];
         [self reportProgress:0 message:@"Checking the saved model…" generation:generation];
-        [self verifyURL:_modelURL downloaded:NO trustStamp:trustStamp generation:generation];
+        if (_generation.load() == generation)
+            [self verifyURL:_modelURL downloaded:NO trustStamp:trustStamp generation:generation];
         return;
     }
-    [self reportProgress:0 message:@"Downloading the model…" generation:generation];
-    if (_generation.load() != generation) return;
-    NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    if (![self loadPartial]) {
+        [self reportError:@"Unable to remove the old partial download. Check for conflicting items or folder permissions and try again."
+              generation:generation];
+        return;
+    }
+    if (_receivedBytes == _expectedSize) {
+        [self finishDownload:generation];
+        return;
+    }
+    [self startDownload:generation];
+}
+
+- (void)startDownload:(uint64_t)generation {
+    NSURLSessionConfiguration *configuration = [_configuration copy];
     configuration.URLCache = nil;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.timeoutIntervalForRequest = 60;
     configuration.timeoutIntervalForResource = 60 * 60;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:_downloadURL];
+    [request setValue:@"identity" forHTTPHeaderField:@"Accept-Encoding"];
+    _requestOffset = _receivedBytes;
+    if (_requestOffset) {
+        [request setValue:[NSString stringWithFormat:@"bytes=%lld-", (long long)_requestOffset]
+            forHTTPHeaderField:@"Range"];
+        [request setValue:_etag forHTTPHeaderField:@"If-Range"];
+    }
     _session = [NSURLSession sessionWithConfiguration:configuration delegate:self
                                       delegateQueue:NSOperationQueue.mainQueue];
-    _task = [_session downloadTaskWithURL:[NSURL URLWithString:ModelDownloadURL]];
-    [_task resume];
+    _task = [_session dataTaskWithRequest:request];
+    [self setState:ModelStoreDownloading];
+    [self reportProgress:static_cast<double>(_receivedBytes) / _expectedSize
+        message:_requestOffset ? @"Resuming the model download…" : @"Downloading the model…"
+        generation:generation];
+    if (_generation.load() == generation) [_task resume];
 }
 
 - (void)reportProgress:(double)fraction message:(NSString *)message generation:(uint64_t)generation {
@@ -203,7 +401,24 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
 }
 
 - (void)reportError:(NSString *)message generation:(uint64_t)generation {
+    if (_generation.load() != generation) return;
+    _partialLock.release();
+    [self setState:ModelStoreFailed];
     if (_generation.load() == generation && self.onError) self.onError(message);
+}
+
+- (void)failTransfer:(NSString *)message discard:(BOOL)discard generation:(uint64_t)generation {
+    [self stopTransfer];
+    if (discard && ![self discardPartial])
+        message = @"Unable to remove the invalid partial download. Check the folder permissions and try again.";
+    [self reportError:message generation:generation];
+}
+
+- (void)finishDownload:(uint64_t)generation {
+    [self setState:ModelStoreVerifying];
+    [self reportProgress:1 message:@"Download complete. Verifying SHA256…" generation:generation];
+    if (_generation.load() == generation)
+        [self verifyURL:_partialURL downloaded:YES trustStamp:NO generation:generation];
 }
 
 - (void)verifyURL:(NSURL *)url downloaded:(BOOL)downloaded trustStamp:(BOOL)trustStamp
@@ -215,33 +430,34 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
             const Verification result = VerifyModel(url, self->_generation, generation,
                 self->_expectedSize, self->_expectedSHA256.UTF8String, trustStamp, &reason);
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSFileManager *files = self->_files;
-                if (self->_generation.load() != generation || result == Verification::Cancelled) {
-                    if (downloaded) [files removeItemAtURL:url error:nil];
-                    return;
-                }
+                if (self->_generation.load() != generation || result == Verification::Cancelled) return;
                 if (result != Verification::Valid) {
                     NSString *failureReason = reason ?: @"Model verification failed.";
-                    if (downloaded || result == Verification::Invalid) {
-                        NSError *removeError = nil;
-                        if (![files removeItemAtURL:url error:&removeError] &&
-                            [files fileExistsAtPath:url.path]) {
+                    if (downloaded) {
+                        if (![self discardPartial])
+                            failureReason = @"Unable to remove the invalid partial download. Check the folder permissions.";
+                        else
+                            failureReason = [failureReason stringByAppendingString:@" The partial download was discarded."];
+                    } else if (result == Verification::Invalid) {
+                        if (![self->_files removeItemAtURL:url error:nil])
                             failureReason = @"Unable to remove the invalid model file. Check the folder permissions.";
-                        }
                     }
-                    [self reportError:[failureReason stringByAppendingString:@" Please try again."]
+                    [self reportError:[failureReason stringByAppendingString:@" Please try again to download the model."]
                            generation:generation];
                     return;
                 }
                 if (downloaded) {
-                    NSError *moveError = nil;
-                    if (![files moveItemAtURL:url toURL:destination error:&moveError]) {
-                        [files removeItemAtURL:url error:nil];
-                        [self reportError:@"Unable to save the verified model. Please try again."
+                    if (![self->_files moveItemAtURL:url toURL:destination error:nil]) {
+                        [self reportError:@"Unable to save the verified model. Check the folder permissions and try again."
                                generation:generation];
                         return;
                     }
+                    RemovePartialFile(self->_metadataURL);
+                    self->_receivedBytes = 0;
+                    self->_etag = nil;
                 }
+                self->_partialLock.release();
+                [self setState:ModelStoreReady];
                 [self reportProgress:1 message:@"Model verification complete." generation:generation];
                 if (self->_generation.load() == generation && self.onReady) self.onReady(destination);
             });
@@ -249,57 +465,146 @@ static Verification VerifyModel(NSURL *url, const std::atomic<uint64_t>& generat
     });
 }
 
-- (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask
-    didWriteData:(int64_t)bytesWritten totalBytesWritten:(int64_t)totalBytesWritten
-    totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {
-    if (session != _session || downloadTask != _task) return;
-    const double fraction = std::min(1.0, static_cast<double>(totalBytesWritten) / _expectedSize);
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+    willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request
+    completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler {
+    if (session != _session || task != _task) {
+        completionHandler(nil);
+        return;
+    }
+    if (![request.URL.scheme.lowercaseString isEqualToString:@"https"]) {
+        completionHandler(nil);
+        [self failTransfer:@"The server redirected the model download to an insecure address. Please try again."
+                  discard:NO generation:_generation.load()];
+        return;
+    }
+    NSMutableURLRequest *redirect = [request mutableCopy];
+    for (NSString *header in @[@"Range", @"If-Range", @"Accept-Encoding"])
+        [redirect setValue:[task.originalRequest valueForHTTPHeaderField:header] forHTTPHeaderField:header];
+    completionHandler(redirect);
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+    if (session != _session || dataTask != _task) {
+        completionHandler(NSURLSessionResponseCancel);
+        return;
+    }
+    const uint64_t generation = _generation.load();
+    NSHTTPURLResponse *http = [response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response : nil;
+    NSString *contentRange = [http valueForHTTPHeaderField:@"Content-Range"] ?: @"";
+    NSString *etag = [http valueForHTTPHeaderField:@"ETag"] ?: @"";
+    NSString *encoding = [http valueForHTTPHeaderField:@"Content-Encoding"];
+    const auto decision = bawan::modelDownloadResponse((int)http.statusCode, _requestOffset,
+        _expectedSize, contentRange.UTF8String, _etag.UTF8String ?: "", etag.UTF8String,
+        response.expectedContentLength);
+    if (decision == bawan::DownloadResponse::RetryFromStart && !_retriedRange) {
+        completionHandler(NSURLSessionResponseCancel);
+        [self stopTransfer];
+        if (![self discardPartial]) {
+            [self reportError:@"Unable to restart the partial download. Check the folder permissions and try again."
+                  generation:generation];
+            return;
+        }
+        _retriedRange = YES;
+        [self startDownload:generation];
+        return;
+    }
+    if (decision == bawan::DownloadResponse::Reject || decision == bawan::DownloadResponse::RetryFromStart ||
+        (encoding.length && [encoding caseInsensitiveCompare:@"identity"] != NSOrderedSame)) {
+        completionHandler(NSURLSessionResponseCancel);
+        // Service errors preserve a good prefix; an incompatible Range response
+        // must be discarded so the next explicit retry can start from zero.
+        const BOOL discard = http.statusCode == 200 || http.statusCode == 206 || http.statusCode == 416;
+        NSString *message = discard ? @"The server returned an incompatible model download. The partial download was discarded. Please try again."
+            : [NSString stringWithFormat:@"Model download failed (HTTP %ld). %@", (long)http.statusCode,
+                self.canResume ? @"Resume to continue the download." : @"Please try again."];
+        [self failTransfer:message discard:discard generation:generation];
+        return;
+    }
+    const BOOL restart = decision == bawan::DownloadResponse::Restart || _requestOffset == 0;
+    const int flags = O_WRONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK |
+        (restart ? (O_CREAT | O_TRUNC) : O_APPEND);
+    int descriptor = open(_partialURL.fileSystemRepresentation, flags, 0600);
+    struct stat info {};
+    if (descriptor < 0 || fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_size != (restart ? 0 : _requestOffset)) {
+        if (descriptor >= 0) close(descriptor);
+        completionHandler(NSURLSessionResponseCancel);
+        [self failTransfer:@"Unable to open the partial download. Check disk space and folder permissions, then try again."
+                  discard:YES generation:generation];
+        return;
+    }
+    _partialFile = fdopen(descriptor, restart ? "wb" : "ab");
+    if (!_partialFile) {
+        close(descriptor);
+        completionHandler(NSURLSessionResponseCancel);
+        [self failTransfer:@"Unable to save the model download. Please try again." discard:YES generation:generation];
+        return;
+    }
+    _receivedBytes = restart ? 0 : _requestOffset;
+    if (restart) {
+        _etag = bawan::isStrongModelETag(etag.UTF8String) ? [etag copy] : @"";
+        NSDictionary *metadata = @{@"url":_downloadURL.absoluteString, @"size":@(_expectedSize),
+            @"sha256":_expectedSHA256, @"etag":_etag};
+        NSData *saved = [NSPropertyListSerialization dataWithPropertyList:metadata
+            format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+        if (!saved || ![saved writeToURL:_metadataURL options:NSDataWritingAtomic error:nil]) {
+            completionHandler(NSURLSessionResponseCancel);
+            [self failTransfer:@"Unable to save download progress. Check disk space and folder permissions, then try again."
+                      discard:YES generation:generation];
+            return;
+        }
+    }
+    completionHandler(NSURLSessionResponseAllow);
+    if (restart && _requestOffset) {
+        _lastReportedFraction = -1;
+        [self reportProgress:0 message:@"The server restarted the download from the beginning."
+                  generation:generation];
+    }
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
+    if (session != _session || dataTask != _task || !_partialFile || data.length == 0) return;
+    const uint64_t generation = _generation.load();
+    if (data.length > static_cast<uint64_t>(_expectedSize - _receivedBytes)) {
+        [self failTransfer:@"The model download has an incorrect size. The partial download was discarded. Please try again."
+                  discard:YES generation:generation];
+        return;
+    }
+    if (std::fwrite(data.bytes, 1, data.length, _partialFile) != data.length || std::fflush(_partialFile) != 0) {
+        [self failTransfer:@"Unable to save the model download. Check free disk space and try again."
+                  discard:NO generation:generation];
+        return;
+    }
+    _receivedBytes += data.length;
+    const double fraction = static_cast<double>(_receivedBytes) / _expectedSize;
     if (fraction - _lastReportedFraction >= 0.01 || fraction == 1) {
         _lastReportedFraction = fraction;
         [self reportProgress:fraction
-                     message:[NSString stringWithFormat:@"Downloading the model… %.0f%%", fraction * 100]
-                  generation:_generation.load()];
+            message:[NSString stringWithFormat:@"Downloading the model… %.0f%%", fraction * 100]
+            generation:generation];
     }
 }
 
-- (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask
-    didFinishDownloadingToURL:(NSURL *)location {
-    if (session != _session || downloadTask != _task) return;
-    const uint64_t generation = _generation.load();
-    NSHTTPURLResponse *response = (NSHTTPURLResponse *)downloadTask.response;
-    const NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? response.statusCode : 0;
-    _task = nil;
-    _session = nil;
-    [session finishTasksAndInvalidate];
-    if (status < 200 || status >= 300) {
-        [self reportError:[NSString stringWithFormat:@"Model download failed (HTTP %ld). Please try again.", (long)status]
-               generation:generation];
-        return;
-    }
-    // NSURLSession removes its temporary file after this delegate returns.
-    // Move it into Application Support now; verify on the utility queue before
-    // atomically renaming it to the final filename on the same filesystem.
-    NSURL *temporary = [[_modelURL URLByDeletingLastPathComponent]
-        URLByAppendingPathComponent:[NSString stringWithFormat:@".%@.partial", NSUUID.UUID.UUIDString]];
-    NSError *error = nil;
-    if (![_files moveItemAtURL:location toURL:temporary error:&error]) {
-        [self reportError:@"Unable to save the downloaded model. Check free disk space and folder permissions."
-               generation:generation];
-        return;
-    }
-    [self reportProgress:1 message:@"Download complete. Verifying SHA256…" generation:generation];
-    [self verifyURL:temporary downloaded:YES trustStamp:NO generation:generation];
-}
-
-- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
-    didCompleteWithError:(NSError *)error {
-    if (session != _session || task != _task || !error) return;
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    if (session != _session || task != _task) return;
     const uint64_t generation = _generation.load();
     _task = nil;
     _session = nil;
     [session finishTasksAndInvalidate];
-    [self reportError:[NSString stringWithFormat:@"Model download failed. %@ Please try again.", error.localizedDescription]
-           generation:generation];
+    if (_partialFile) {
+        std::fclose(_partialFile);
+        _partialFile = nullptr;
+    }
+    if (error || _receivedBytes != _expectedSize) {
+        NSString *message = [NSString stringWithFormat:@"Model download interrupted. %@ %@",
+            error.localizedDescription ?: @"The server sent an incomplete file.",
+            self.canResume ? @"Resume to continue the download." : @"Please try again."];
+        [self reportError:message generation:generation];
+        return;
+    }
+    [self finishDownload:generation];
 }
 
 @end
