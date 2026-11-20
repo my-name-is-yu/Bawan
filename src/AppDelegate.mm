@@ -11,8 +11,17 @@
 #include "TranslationEngine.h"
 #include "EngineEventMailbox.h"
 #include <memory>
+#include <optional>
+#include <utility>
 
 enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning };
+
+struct CompletedPractice {
+    NSString *source;
+    NSString *output;
+    bawan::Direction direction;
+    bawan::ShortcutBinding binding;
+};
 
 @interface AppDelegate () <NSMenuDelegate> {
     NSStatusItem *_statusItem;
@@ -35,9 +44,7 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     bawan::Direction _pendingDirection;
     NSString *_pendingTrialText;
     NSUInteger _selectionTrialAttempt;
-    NSString *_practiceOutput;
-    bawan::ShortcutBinding _practiceBinding;
-    bawan::Direction _practiceDirection;
+    std::optional<CompletedPractice> _completedPractice;
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
@@ -214,6 +221,15 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_modelStore prepare];
 }
 
+- (void)discardUnavailablePractice {
+    if (!_completedPractice) return;
+    constexpr auto action = bawan::ShortcutAction::TranslateSelection;
+    if (!_model.canFinishSetup() || _completedPractice->binding != [_shortcutPreferences bindingForAction:action] ||
+        [_shortcut availabilityForAction:action] != ShortcutAvailabilityAvailable) {
+        _completedPractice.reset();
+    }
+}
+
 - (void)showOnboarding {
     __weak AppDelegate *weakSelf = self;
     OnboardingViewController *onboarding = _onboardingViewController;
@@ -229,16 +245,13 @@ static NSString *StringFromUTF8(const std::string &text) {
         };
         onboarding.onSelectionTrialDiscarded = ^{
             AppDelegate *owner = weakSelf;
-            if (owner) owner->_practiceOutput = nil;
+            if (owner) owner->_completedPractice.reset();
         };
         _onboardingViewController = onboarding;
     }
-    if (_practiceOutput &&
-        _practiceBinding != [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]) {
-        _practiceOutput = nil;
-    }
+    [self discardUnavailablePractice];
     [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOnboarding]; }];
-    if (created && _practiceOutput) [onboarding restoreCompletedSelectionTrial];
+    if (created && _completedPractice) [onboarding restoreCompletedSelectionTrial];
 }
 
 // The shortcut step's button: leave for the translator even while the model is
@@ -253,14 +266,14 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_onboardingViewController refresh];
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [self markOnboardingComplete];
-    if (_onboardingViewController.selectionTrialComplete) {
+    [self discardUnavailablePractice];
+    if (auto practice = std::exchange(_completedPractice, std::nullopt)) {
         // Accepting the successful practice result explicitly replaces the old selection.
         _pendingText = nil;
         _busy = NO;
-        [_translationPanel showForSelection:_onboardingViewController.selectionTrialText];
-        [_translationPanel setOutput:_practiceOutput direction:_practiceDirection];
+        [_translationPanel showForSelection:practice->source];
+        [_translationPanel setOutput:practice->output direction:practice->direction];
     }
-    _practiceOutput = nil;
     [_translationPanel showForManualInput];
     if (![self submitPendingTranslationIfReady]) [self updateStatus];
 }
@@ -613,9 +626,9 @@ static NSString *StringFromUTF8(const std::string &text) {
                 [[NSString alloc] initWithBytes:event.text.data() length:event.text.size()
                     encoding:NSUTF8StringEncoding] : nil;
             if ([_onboardingViewController finishSelectionTrial:attempt output:output direction:event.direction]) {
-                _practiceOutput = output;
-                _practiceBinding = [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-                _practiceDirection = event.direction;
+                _completedPractice = CompletedPractice{
+                    [_onboardingViewController.selectionTrialText copy], output, event.direction,
+                    [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]};
             }
             [self updateStatus];
         }
@@ -689,7 +702,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)handleSelectionText:(NSString *)text {
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [_onboardingViewController discardSelectionTrialResult];
-    _practiceOutput = nil;
+    _completedPractice.reset();
     [_translationPanel showForSelection:text];
     const BOOL needsOnboarding = [self needsOnboarding];
     if (needsOnboarding || _model.setupNotStarted()) {

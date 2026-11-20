@@ -747,11 +747,13 @@ static void CheckSelectionTrial(void) {
                       Truncated, Empty, Error, Cancelled, Binding, Permission, Revisit,
                       Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
                       CallbackNone, CallbackPanelBinding,
-                      CallbackSelectionBinding, CallbackPermission, Reopen, StaleReopen };
+                      CallbackSelectionBinding, CallbackPermission, Reopen, StaleReopen, OpenTranslatorAfterClose };
     for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
             Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
             Case::Binding, Case::Permission, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
-            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission, Case::Reopen, Case::StaleReopen}) {
+            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding,
+            Case::CallbackSelectionBinding, Case::CallbackPermission, Case::Reopen, Case::StaleReopen,
+            Case::OpenTranslatorAfterClose}) {
         const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
             scenario == Case::SkipActiveWithSelection;
         const BOOL checkRefreshes = scenario == Case::CallbackPanelBinding || scenario == Case::CallbackSelectionBinding ||
@@ -802,7 +804,8 @@ static void CheckSelectionTrial(void) {
                 callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
             }
             NSWindow *window = panel.window;
-            OnboardingViewController *onboarding = [delegate valueForKey:@"onboardingViewController"];
+            OnboardingViewController *onboarding;
+            @autoreleasepool { onboarding = [delegate valueForKey:@"onboardingViewController"]; }
             NSTextView *sample = (NSTextView *)FindView(window.contentView, @"onboarding-trial-sample");
             NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
             NSTextField *trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
@@ -1003,7 +1006,7 @@ static void CheckSelectionTrial(void) {
             const BOOL success = scenario == Case::Success || scenario == Case::Queued ||
                 scenario == Case::LaterExternalSelection || scenario == Case::FocusChange ||
                 scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding || scenario == Case::Reopen ||
-                scenario == Case::StaleReopen;
+                scenario == Case::StaleReopen || scenario == Case::OpenTranslatorAfterClose;
             const BOOL terminalFailure = scenario == Case::Truncated || scenario == Case::Empty ||
                 scenario == Case::Error || scenario == Case::Cancelled;
             Kind kind = scenario == Case::Error ? Kind::Error :
@@ -1074,13 +1077,24 @@ static void CheckSelectionTrial(void) {
             [delegate handleSelectionTrialText:sample.string];
             Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
                 @"Repeated completion and sample triggers must not replay a successful trial");
-            [primary performClick:nil];
+            if (scenario == Case::OpenTranslatorAfterClose) {
+                @autoreleasepool {
+                    [window close];
+                    onboarding = nil;
+                    [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+                }
+                Require([delegate valueForKey:@"onboardingViewController"] == nil,
+                    @"Closing onboarding after a trial must release its page");
+                [delegate openTranslation:nil];
+            } else {
+                [primary performClick:nil];
+            }
             NSButton *swap = (NSButton *)FindView(window.contentView, @"swap");
             Require([defaults boolForKey:@"firstLaunchShown"] &&
                 [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
                 [source.string isEqualToString:sample.string] &&
                 [output.string isEqualToString:@"小さな一歩が、新しい世界を開く。"] && swap.enabled,
-                @"Start Translating must hand the exact practice source and completed result to the real translator");
+                @"Opening the translator must hand it the exact practice source and completed result");
             __block bawan::Direction reversed = bawan::Direction::Automatic;
             panel.onTranslate = ^(NSString *, bawan::Direction direction) { reversed = direction; };
             [swap performClick:nil];

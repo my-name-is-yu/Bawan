@@ -43,7 +43,7 @@ if(BAWAN_PRECOMPILED_METAL)
     execute_process(COMMAND xcrun -sdk macosx metal --version
         RESULT_VARIABLE BAWAN_METAL_COMPILER_STATUS OUTPUT_QUIET ERROR_QUIET)
     if(NOT BAWAN_METAL_COMPILER_STATUS EQUAL 0)
-        message(FATAL_ERROR "BAWAN_PRECOMPILED_METAL needs Xcode's Metal compiler (xcrun metal). Install Xcode, or configure with -DBAWAN_PRECOMPILED_METAL=OFF to compile kernels at runtime; that build keeps ~30 MiB more after the model unloads and exceeds scripts/memory-budget.json.")
+        message(FATAL_ERROR "BAWAN_PRECOMPILED_METAL needs Xcode's Metal compiler (xcrun metal). Select Xcode and install the Metal Toolchain with xcodebuild -downloadComponent MetalToolchain if needed. With Command Line Tools, configure with -DBAWAN_PRECOMPILED_METAL=OFF to compile kernels at runtime; that build keeps ~30 MiB more after the model unloads and exceeds scripts/memory-budget.json.")
     endif()
 endif()
 if(BAWAN_PRECOMPILED_METAL)
@@ -81,13 +81,53 @@ endif()
 
 find_package(Threads REQUIRED)
 
-function(bawan_copy_metal_libraries target destination)
-    if(BAWAN_PRECOMPILED_METAL)
-        add_dependencies(${target} ggml-metal-lib)
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_BINARY_DIR}/bin -DDESTINATION=${destination}
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyMetalLibraries.cmake
+function(bawan_stage_metal_libraries target destination)
+    set(staged_files)
+    foreach(library IN LISTS BAWAN_METAL_LIBRARIES)
+        get_filename_component(name "${library}" NAME)
+        set(output "${destination}/${name}")
+        if(output STREQUAL library)
+            continue()
+        endif()
+        add_custom_command(OUTPUT "${output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${destination}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${library}" "${output}"
+            DEPENDS "${library}"
             VERBATIM)
+        list(APPEND staged_files "${output}")
+    endforeach()
+    add_custom_target(${target} DEPENDS ${staged_files})
+    add_dependencies(${target} ggml-metal-lib)
+    if(ARGV2)
+        set(${ARGV2} "${staged_files}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+if(BAWAN_PRECOMPILED_METAL)
+    get_directory_property(BAWAN_METAL_LIBRARIES
+        DIRECTORY "${llama_SOURCE_DIR}/ggml/src/ggml-metal" DEFINITION METALLIB_FILES)
+    if(NOT BAWAN_METAL_LIBRARIES)
+        message(FATAL_ERROR "llama.cpp did not configure any precompiled Metal libraries.")
+    endif()
+    if(CMAKE_CONFIGURATION_TYPES)
+        set(BAWAN_CONFIGURATION_DIR "/$<CONFIG>")
+    endif()
+    if(BAWAN_BUILD_TESTS OR BAWAN_BUILD_SMOKE)
+        set(BAWAN_TOOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}${BAWAN_CONFIGURATION_DIR}")
+        if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+            cmake_path(ABSOLUTE_PATH CMAKE_RUNTIME_OUTPUT_DIRECTORY NORMALIZE
+                BASE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" OUTPUT_VARIABLE BAWAN_TOOL_OUTPUT_DIR)
+            if(NOT BAWAN_TOOL_OUTPUT_DIR MATCHES "[$]<")
+                string(APPEND BAWAN_TOOL_OUTPUT_DIR "${BAWAN_CONFIGURATION_DIR}")
+            endif()
+        endif()
+        bawan_stage_metal_libraries(bawan_tool_metal_libraries "${BAWAN_TOOL_OUTPUT_DIR}")
+    endif()
+endif()
+
+function(bawan_use_tool_metal_libraries target)
+    if(BAWAN_PRECOMPILED_METAL)
+        add_dependencies(${target} bawan_tool_metal_libraries)
     endif()
 endfunction()
 
@@ -141,7 +181,13 @@ if(BAWAN_BUILD_APP)
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
     set(BAWAN_SIGNING_IDENTITY "-" CACHE STRING "Codesign identity; '-' is ad-hoc signing for personal use")
-    bawan_copy_metal_libraries(Bawan "$<TARGET_BUNDLE_CONTENT_DIR:Bawan>/Resources")
+    if(BAWAN_PRECOMPILED_METAL)
+        bawan_stage_metal_libraries(bawan_app_metal_libraries
+            "${CMAKE_BINARY_DIR}${BAWAN_CONFIGURATION_DIR}/Bawan.app/Contents/Resources" BAWAN_BUNDLED_METAL_LIBRARIES)
+        add_dependencies(Bawan bawan_app_metal_libraries)
+        # Relinking runs codesign after the updated resources are in the bundle.
+        set_property(TARGET Bawan APPEND PROPERTY LINK_DEPENDS "${BAWAN_BUNDLED_METAL_LIBRARIES}")
+    endif()
     add_custom_command(TARGET Bawan POST_BUILD
         COMMAND /usr/bin/codesign --force --sign "${BAWAN_SIGNING_IDENTITY}" "$<TARGET_BUNDLE_DIR:Bawan>"
         COMMENT "Signing Bawan.app" VERBATIM)
@@ -168,7 +214,7 @@ if(BAWAN_BUILD_TESTS)
     add_test(NAME utf8 COMMAND utf8_tests)
     add_executable(engine_lifecycle tests/engine_lifecycle.cpp)
     target_link_libraries(engine_lifecycle PRIVATE bawan_engine)
-    bawan_copy_metal_libraries(engine_lifecycle "$<TARGET_FILE_DIR:engine_lifecycle>")
+    bawan_use_tool_metal_libraries(engine_lifecycle)
     add_test(NAME engine_lifecycle COMMAND engine_lifecycle)
     set_tests_properties(engine_lifecycle PROPERTIES TIMEOUT 120)
     if(APPLE)
@@ -218,7 +264,7 @@ if(BAWAN_BUILD_TESTS)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
             src/AppDelegate.mm ${BAWAN_MODEL_SOURCES})
         target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
-        bawan_copy_metal_libraries(app_delegate_smoke "$<TARGET_FILE_DIR:app_delegate_smoke>")
+        bawan_use_tool_metal_libraries(app_delegate_smoke)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
@@ -240,8 +286,8 @@ endif()
 if(BAWAN_BUILD_SMOKE)
     add_executable(engine_smoke tests/engine_smoke.cpp)
     target_link_libraries(engine_smoke PRIVATE bawan_engine)
-    bawan_copy_metal_libraries(engine_smoke "$<TARGET_FILE_DIR:engine_smoke>")
+    bawan_use_tool_metal_libraries(engine_smoke)
     add_executable(engine_profile tests/engine_profile.cpp)
     target_link_libraries(engine_profile PRIVATE bawan_engine)
-    bawan_copy_metal_libraries(engine_profile "$<TARGET_FILE_DIR:engine_profile>")
+    bawan_use_tool_metal_libraries(engine_profile)
 endif()
