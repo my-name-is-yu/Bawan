@@ -56,10 +56,10 @@ struct ShortcutRow {
     bawan::ShortcutBinding _trialBinding;
     BOOL _selectionReady;
     TrialPhase _trialPhase;
-    NSUInteger _trialAttempt;
     NSString *_trialOutput;
     bawan::Direction _trialDirection;
     NSTextField *_error;
+    BOOL _selectionCopyErrorShown;
     NSButton *_primary;
     NSButton *_modelLicense;
     NSButton *_modelControl;
@@ -109,10 +109,14 @@ struct ShortcutRow {
 
     _modelStep = [self buildModelStep];
     _shortcutStep = [self buildShortcutStep];
-    NSStackView *content = BawanSetupStack(@[_modelStep, _shortcutStep], NSUserInterfaceLayoutOrientationVertical, 0);
+    _error = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanError);
+    _error.identifier = @"onboarding-error";
+    _error.hidden = YES;
+    NSStackView *content = BawanSetupStack(@[_error, _modelStep, _shortcutStep], NSUserInterfaceLayoutOrientationVertical, 0);
+    [content setCustomSpacing:10 afterView:_error];
     [document addSubview:content];
-    for (NSView *step in @[_modelStep, _shortcutStep]) {
-        [step.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
+    for (NSView *view in content.arrangedSubviews) {
+        [view.widthAnchor constraintEqualToAnchor:content.widthAnchor].active = YES;
     }
     [NSLayoutConstraint activateConstraints:@[
         [scroll.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
@@ -208,10 +212,6 @@ struct ShortcutRow {
     for (NSView *view in trial.arrangedSubviews) [view.widthAnchor constraintEqualToAnchor:trial.widthAnchor].active = YES;
     _selectionTrial = trial;
     [views addObject:trial];
-    _error = Label(@"", BawanSetupCaptionSize, NSFontWeightRegular, BawanError);
-    _error.identifier = @"onboarding-error";
-    _error.hidden = YES;
-    [views addObject:_error];
     NSStackView *step = BawanSetupStack(views, NSUserInterfaceLayoutOrientationVertical, 10);
     [step setCustomSpacing:16 afterView:hero];
     step.identifier = @"onboarding-step-shortcut";
@@ -353,43 +353,40 @@ struct ShortcutRow {
 - (BOOL)selectionTrialComplete { return _trialPhase == TrialPhase::Complete && _selectionReady; }
 
 - (void)resetSelectionTrial {
-    ++_trialAttempt;
     _trialPhase = TrialPhase::Ready;
     _trialOutput = nil;
     _trialStatus.stringValue = @"";
     _trialStatus.hidden = YES;
 }
 
-- (BOOL)isSelectionTrialText:(NSString *)text {
+- (BOOL)beginSelectionTrialForText:(NSString *)text {
     if (!_active) return NO;
     [self refresh];
-    return _selectionReady && ![self showingModelStep] &&
-        _selectionSample.window.isKeyWindow && _selectionSample.window.firstResponder == _selectionSample &&
-        NSEqualRanges(_selectionSample.selectedRange, NSMakeRange(0, _selectionSample.string.length)) &&
-        [text isEqualToString:_selectionSample.string];
-}
-
-- (NSUInteger)beginSelectionTrial {
-    if (![self isSelectionTrialText:_selectionSample.string] || _trialPhase != TrialPhase::Ready) return 0;
-    ++_trialAttempt;
+    if (_trialPhase != TrialPhase::Ready || !_selectionReady || [self showingModelStep] ||
+        !_selectionSample.window.isKeyWindow || _selectionSample.window.firstResponder != _selectionSample ||
+        !NSEqualRanges(_selectionSample.selectedRange, NSMakeRange(0, _selectionSample.string.length)) ||
+        ![text isEqualToString:_selectionSample.string]) return NO;
+    [self clearSelectionCopyError];
     _trialPhase = TrialPhase::Translating;
     _trialStatus.stringValue = @"Translating… The model may need to finish preparing first.";
     _trialStatus.textColor = BawanColor(BawanSecondaryText);
     _trialStatus.hidden = NO;
     [self.view layoutSubtreeIfNeeded];
-    return _trialAttempt;
+    return YES;
 }
 
-- (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt {
+- (BOOL)canFinishSelectionTrial {
     const auto binding = [_preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
-    return attempt && attempt == _trialAttempt &&
-        ![self showingModelStep] && _trialPhase == TrialPhase::Translating &&
+    return ![self showingModelStep] && _trialPhase == TrialPhase::Translating &&
         binding == _trialBinding && binding.enabled &&
         [_monitor availabilityForAction:bawan::ShortcutAction::TranslateSelection] == ShortcutAvailabilityAvailable;
 }
 
-- (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(NSString *)output direction:(bawan::Direction)direction {
-    if (![self isSelectionTrialCurrent:attempt]) return NO;
+- (BOOL)finishSelectionTrialWithOutput:(NSString *)output direction:(bawan::Direction)direction {
+    if (![self canFinishSelectionTrial]) {
+        [self cancelSelectionTrial];
+        return NO;
+    }
     BOOL complete = [output stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     _trialPhase = complete ? TrialPhase::Complete : TrialPhase::Ready;
     _trialOutput = complete ? [output copy] : nil;
@@ -419,6 +416,34 @@ struct ShortcutRow {
     BawanSetupPresentPage(self.view, _scroll);
 }
 
+- (void)showShortcutError:(NSString *)message selectionCopy:(BOOL)selectionCopy {
+    _selectionCopyErrorShown = selectionCopy;
+    _error.stringValue = message;
+    _error.hidden = NO;
+    [self.view layoutSubtreeIfNeeded];
+    [_error scrollRectToVisible:_error.bounds];
+    if (self.view.window.visible) {
+        NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
+            NSAccessibilityAnnouncementKey: message,
+            NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
+        });
+    }
+}
+
+- (void)clearShortcutError {
+    _selectionCopyErrorShown = NO;
+    _error.hidden = YES;
+    _error.stringValue = @"";
+}
+
+- (void)showSelectionCopyError:(NSString *)message {
+    [self showShortcutError:message selectionCopy:YES];
+}
+
+- (void)clearSelectionCopyError {
+    if (_selectionCopyErrorShown) [self clearShortcutError];
+}
+
 - (void)setUpShortcut:(NSButton *)sender {
     auto action = static_cast<bawan::ShortcutAction>(sender.tag);
     auto binding = [_preferences bindingForAction:action];
@@ -426,21 +451,11 @@ struct ShortcutRow {
     if (!binding.enabled) {
         binding.enabled = true;
         if (![_preferences setBinding:binding forAction:action error:&error]) {
-            _error.stringValue = error ?: @"Unable to enable this shortcut.";
-            _error.hidden = NO;
-            [self.view layoutSubtreeIfNeeded];
-            [_error scrollRectToVisible:_error.bounds];
-            if (self.view.window.visible) {
-                NSAccessibilityPostNotificationWithUserInfo(NSApp, NSAccessibilityAnnouncementRequestedNotification, @{
-                    NSAccessibilityAnnouncementKey: _error.stringValue,
-                    NSAccessibilityPriorityKey: @(NSAccessibilityPriorityMedium)
-                });
-            }
+            [self showShortcutError:error ?: @"Unable to enable this shortcut." selectionCopy:NO];
             return;
         }
     }
-    _error.hidden = YES;
-    _error.stringValue = @"";
+    [self clearShortcutError];
     [_monitor requestPermissionForAction:action];
     [self refresh];
 }

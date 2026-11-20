@@ -18,17 +18,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setActive:(BOOL)active;
 - (void)focusInitialControl;
 - (void)refresh;
+- (void)showSelectionCopyError:(NSString *)message;
+- (void)clearSelectionCopyError;
 @property(nonatomic, readonly) NSString *selectionTrialText;
 @property(nonatomic, readonly, nullable) NSString *selectionTrialOutput;
 @property(nonatomic, readonly) bawan::Direction selectionTrialDirection;
 @property(nonatomic, readonly) BOOL selectionTrialComplete;
-// Only the real selection callback may begin a trial; selection or setup alone cannot finish it.
-- (BOOL)isSelectionTrialText:(NSString *)text;
-- (NSUInteger)beginSelectionTrial;
-// Reads live binding/availability without refreshing the page.
-- (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt;
-- (BOOL)finishSelectionTrial:(NSUInteger)attempt output:(nullable NSString *)output
-                  direction:(bawan::Direction)direction;
+- (BOOL)beginSelectionTrialForText:(NSString *)text;
+- (BOOL)finishSelectionTrialWithOutput:(nullable NSString *)output direction:(bawan::Direction)direction;
 - (void)cancelSelectionTrial;
 - (void)discardSelectionTrialResult;
 @end

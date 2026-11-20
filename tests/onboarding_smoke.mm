@@ -10,6 +10,10 @@
 #include <iostream>
 #include <stdexcept>
 
+@interface OnboardingViewController (SmokeTest)
+- (BOOL)canFinishSelectionTrial;
+@end
+
 @interface OnboardingSmokeMonitor : ShortcutMonitor {
     ShortcutPreferences *_testPreferences;
 }
@@ -332,10 +336,13 @@ static void RunSmoke(void) {
         [onboarding refresh];
         Require([selectionStatus.stringValue isEqualToString:@"Off"],
             @"A disabled selection shortcut must read Off without asking for permission");
+        [onboarding showSelectionCopyError:@"The selected text could not be copied."];
         [selectionSetup performClick:nil];
         Require(monitor.permissionRequests == 2 && IsShown(shortcutError) && shortcutError.stringValue.length &&
             ![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled && primary.enabled,
             @"A shortcut conflict must stay local, keep the old preference and never block continuing");
+        [onboarding clearSelectionCopyError];
+        Require(IsShown(shortcutError), @"A successful selection must preserve a shortcut configuration conflict");
         Require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:&error],
             @"The window shortcut must be restorable after the conflict");
         [onboarding refresh];
@@ -384,38 +391,36 @@ static void RunSmoke(void) {
             @"Ready settings must offer a selectable sample with current instructions without claiming it was tried");
         [window makeFirstResponder:sample];
         sample.selectedRange = NSMakeRange(0, sample.string.length);
-        Require([onboarding isSelectionTrialText:sample.string] && !onboarding.selectionTrialComplete &&
+        Require(!onboarding.selectionTrialComplete &&
             [primary.title hasPrefix:@"Set Up Later"],
             @"Selecting the sample alone must not complete the trial");
-        Require(![onboarding isSelectionTrialText:@"A different sentence"],
-            @"A different selected sentence cannot count as this practice sentence");
-        NSUInteger attempt = [onboarding beginSelectionTrial];
-        Require(attempt && [onboarding beginSelectionTrial] == 0 && IsShown(trialStatus) &&
-            [primary.title hasPrefix:@"Set Up Later"],
-            @"The real shortcut may start one trial at a time and must wait for translation");
+        [onboarding showSelectionCopyError:@"The selected text could not be copied."];
+        Require(![onboarding beginSelectionTrialForText:@"A different sentence"] && IsShown(shortcutError),
+            @"A different selected sentence cannot start practice or clear the copy warning");
+        BOOL started = [onboarding beginSelectionTrialForText:sample.string];
+        Require(started && ![onboarding beginSelectionTrialForText:sample.string] && IsShown(trialStatus) &&
+            [primary.title hasPrefix:@"Set Up Later"] && !IsShown(shortcutError),
+            @"Starting practice must clear the old copy warning and wait for translation");
         onboarding.refreshes = 0;
-        Require([onboarding isSelectionTrialCurrent:attempt] && [onboarding isSelectionTrialCurrent:attempt] &&
+        Require([onboarding canFinishSelectionTrial] && [onboarding canFinishSelectionTrial] &&
             onboarding.refreshes == 0,
             @"Checking the active trial must not render the page");
         [onboarding refresh];
-        Require([onboarding isSelectionTrialCurrent:attempt] && onboarding.refreshes == 1 &&
+        Require([onboarding canFinishSelectionTrial] && onboarding.refreshes == 1 &&
             IsShown(trialStatus) && [primary.title hasPrefix:@"Set Up Later"],
             @"One explicit state refresh followed by a trial check must render once and preserve the pending trial");
         CheckBounds(window);
         Capture(window, @"trial-translating");
-        Require(![onboarding finishSelectionTrial:attempt + 1 output:@"Unrelated output"
-            direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
-            @"An unrelated completion must not finish the current trial");
-        Require(![onboarding finishSelectionTrial:attempt output:@"  " direction:bawan::Direction::EnglishToJapanese] &&
+        Require(![onboarding finishSelectionTrialWithOutput:@"  " direction:bawan::Direction::EnglishToJapanese] &&
             !onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
             @"An empty or failed translation must leave the trial retryable");
-        attempt = [onboarding beginSelectionTrial];
-        Require(attempt && [onboarding finishSelectionTrial:attempt output:@"小さな一歩が新しい世界を開く。"
+        started = [onboarding beginSelectionTrialForText:sample.string];
+        Require(started && [onboarding finishSelectionTrialWithOutput:@"小さな一歩が新しい世界を開く。"
             direction:bawan::Direction::EnglishToJapanese] && IsShown(trialStatus) &&
             [trialStatus.stringValue containsString:@"successfully"] &&
             [primary.title hasPrefix:@"Start Translating"] && onboarding.selectionTrialComplete &&
             [onboarding.selectionTrialOutput isEqualToString:@"小さな一歩が新しい世界を開く。"] &&
-            [onboarding beginSelectionTrial] == 0,
+            ![onboarding beginSelectionTrialForText:sample.string],
             @"Only the practice request's successful result may complete the trial, once");
         CheckBounds(window);
         Capture(window, @"trial-complete");
@@ -448,45 +453,45 @@ static void RunSmoke(void) {
             @"Changing the binding must reset success and describe the custom key/count even if the panel lacks permission");
         [window makeFirstResponder:sample];
         sample.selectedRange = NSMakeRange(0, sample.string.length);
-        attempt = [onboarding beginSelectionTrial];
-        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The revisit fixture must start a practice request");
+        started = [onboarding beginSelectionTrialForText:sample.string];
+        Require(started && [onboarding canFinishSelectionTrial], @"The revisit fixture must start a practice request");
         [onboarding setActive:NO];
-        Require([onboarding isSelectionTrialCurrent:attempt] && monitor.selectionTrialView == nil,
+        Require([onboarding canFinishSelectionTrial] && monitor.selectionTrialView == nil,
             @"Losing focus must keep the pending trial while disarming its shortcut");
         [panel showForManualInput];
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
-        Require(![onboarding finishSelectionTrial:attempt output:@"Late page output"
+        Require(![onboarding finishSelectionTrialWithOutput:@"Late page output"
             direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
             @"Leaving a pending trial must reject its late completion when the page is revisited");
         [window makeFirstResponder:sample];
         sample.selectedRange = NSMakeRange(0, sample.string.length);
-        attempt = [onboarding beginSelectionTrial];
-        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The changed-binding fixture must start a practice request");
+        started = [onboarding beginSelectionTrialForText:sample.string];
+        Require(started && [onboarding canFinishSelectionTrial], @"The changed-binding fixture must start a practice request");
         onboarding.refreshes = 0;
         selection.pressCount = 2;
         Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
             @"Changing press count during inference must be valid");
-        Require(![onboarding isSelectionTrialCurrent:attempt] &&
-            ![onboarding finishSelectionTrial:attempt output:@"Old binding output"
+        Require(![onboarding canFinishSelectionTrial] &&
+            ![onboarding finishSelectionTrialWithOutput:@"Old binding output"
                 direction:bawan::Direction::EnglishToJapanese] && onboarding.refreshes == 0,
             @"The live binding must reject stale completion before the page renders again");
         [onboarding refresh];
-        Require(![onboarding isSelectionTrialCurrent:attempt] && onboarding.refreshes == 1 &&
+        Require(![onboarding canFinishSelectionTrial] && onboarding.refreshes == 1 &&
             [instructions.stringValue containsString:@"twice"],
             @"An explicit refresh must update the guide and invalidate the old practice attempt once");
         [window makeFirstResponder:sample];
         sample.selectedRange = NSMakeRange(0, sample.string.length);
-        attempt = [onboarding beginSelectionTrial];
-        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The revoked-permission fixture must start a practice request");
+        started = [onboarding beginSelectionTrialForText:sample.string];
+        Require(started && [onboarding canFinishSelectionTrial], @"The revoked-permission fixture must start a practice request");
         onboarding.refreshes = 0;
         monitor.selectionAvailability = ShortcutAvailabilityNeedsAccessibility;
-        Require(![onboarding isSelectionTrialCurrent:attempt] &&
-            ![onboarding finishSelectionTrial:attempt output:@"Revoked permission output"
+        Require(![onboarding canFinishSelectionTrial] &&
+            ![onboarding finishSelectionTrialWithOutput:@"Revoked permission output"
                 direction:bawan::Direction::EnglishToJapanese] && onboarding.refreshes == 0,
             @"Live permission loss must reject completion before a page refresh without rendering from the query");
         [onboarding refresh];
         Require(!IsShown(trial) && monitor.selectionTrialView == nil && onboarding.refreshes == 1 &&
-            ![onboarding finishSelectionTrial:attempt output:@"Revoked permission output"
+            ![onboarding finishSelectionTrialWithOutput:@"Revoked permission output"
                 direction:bawan::Direction::EnglishToJapanese] && [primary.title hasPrefix:@"Set Up Later"],
             @"Revoking permission must hide practice and reject its pending result");
         for (ShortcutAvailability availability : {ShortcutAvailabilityOff, ShortcutAvailabilityNeedsInputMonitoring,
@@ -500,14 +505,14 @@ static void RunSmoke(void) {
         [onboarding refresh];
         [window makeFirstResponder:sample];
         sample.selectedRange = NSMakeRange(0, sample.string.length);
-        attempt = [onboarding beginSelectionTrial];
-        Require(attempt && [onboarding isSelectionTrialCurrent:attempt], @"The disabled-binding fixture must start a practice request");
+        started = [onboarding beginSelectionTrialForText:sample.string];
+        Require(started && [onboarding canFinishSelectionTrial], @"The disabled-binding fixture must start a practice request");
         onboarding.refreshes = 0;
         selection.enabled = false;
         Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
             @"The shortcut may be disabled while monitoring permission remains granted");
-        Require(![onboarding isSelectionTrialCurrent:attempt] &&
-            ![onboarding finishSelectionTrial:attempt output:@"Disabled shortcut output"
+        Require(![onboarding canFinishSelectionTrial] &&
+            ![onboarding finishSelectionTrialWithOutput:@"Disabled shortcut output"
                 direction:bawan::Direction::EnglishToJapanese] && onboarding.refreshes == 0,
             @"A disabled live binding must reject completion before the next page refresh");
         [onboarding refresh];
