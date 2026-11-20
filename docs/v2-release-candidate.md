@@ -12,18 +12,22 @@ The planned release label is `v2.0.0-rc.1`. The project short version is numeric
 
 The current cloud has zero valid code-signing identities, no configured notarization/Sparkle release credentials, and no signed `2.0.0` baseline artifact. Run the steps below only on an already-authorized signing environment that has the existing Developer ID private key, notary profile, and Sparkle key in its Keychain. Do not export keys, generate a replacement Sparkle key, or use Local Hands.
 
-After the PR is reviewed, set the branch and full SHA from the approved PR head, then fetch and compare `FETCH_HEAD` before checking out the frozen source:
+After the PR is reviewed, fill in the full SHA from the approved PR head, then run this block to fetch and compare `FETCH_HEAD` before checking out the frozen source. The block refuses a dirty checkout and stops if the fetched SHA does not match:
 
 ```sh
-PR_BRANCH='approved-pr-branch'
-REVIEWED_SHA='approved-40-character-PR-head-sha'
-git fetch origin "$PR_BRANCH"
-FETCHED_SHA=$(git rev-parse --verify FETCH_HEAD)
-printf 'Fetched PR SHA: %s\n' "$FETCHED_SHA"
-test "$FETCHED_SHA" = "$REVIEWED_SHA"
-git switch --detach "$FETCHED_SHA"
-git rev-parse HEAD
-test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+(
+  set -eu
+  PR_BRANCH='devin/1795182518-v2-rc-handoff'
+  REVIEWED_SHA='approved-40-character-PR-head-sha'
+  test -z "$(git status --porcelain)"
+  git fetch origin "$PR_BRANCH"
+  FETCHED_SHA=$(git rev-parse --verify FETCH_HEAD)
+  printf 'Fetched PR SHA: %s\n' "$FETCHED_SHA"
+  test "$FETCHED_SHA" = "$REVIEWED_SHA"
+  git switch --detach "$FETCHED_SHA"
+  test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+  test -z "$(git status --porcelain)"
+)
 ```
 
 Use the existing Developer ID identity from `security find-identity -v -p codesigning`. From the pinned Sparkle 2.10.1 tools, retrieve only the existing Sparkle public key with `<SPARKLE_BIN>/generate_keys --account bawan-updates -p`; stop if the existing key is unavailable. Do not run key-generation mode. Set the existing identity, public key, and notary profile in the release environment; keep private keys in Keychain.
