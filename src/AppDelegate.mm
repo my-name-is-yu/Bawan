@@ -6,6 +6,8 @@
 #import "ShortcutMonitor.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
+#import "AppUpdater.h"
+#import "ApplicationRunLoop.h"
 #import "OnboardingViewController.h"
 #import <ServiceManagement/ServiceManagement.h>
 
@@ -30,6 +32,10 @@ struct CompletedPractice {
     NSMenuItem *_shortcutItem;
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
+    NSMenuItem *_checkUpdatesItem;
+    NSMenuItem *_mainCheckUpdatesItem;
+    AppUpdater *_updater;
+    NSAlert *_updateResultAlert;
     __weak SettingsViewController *_settingsViewController;
     __weak OnboardingViewController *_onboardingViewController;
     NSUserDefaults *_defaults;
@@ -42,6 +48,9 @@ struct CompletedPractice {
     Session _translationSession;
     std::optional<CompletedPractice> _completedPractice;
     BOOL _terminating;
+    BOOL _terminationReplyPending;
+    BOOL _terminationReplyCancelled;
+    uint64_t _terminationReplyGeneration;
     StatusOwner _statusOwner;
     BawanModelState _model;
     MemoryProbe *_memoryProbe;
@@ -50,10 +59,17 @@ struct CompletedPractice {
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults launchMode:(bawan::LaunchMode)mode;
 - (Session &)translationSession;
 - (void)applyTranslationEvent:(Session::Event)event;
-- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy;
+- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy wasRunning:(BOOL)wasRunning;
 - (void)synchronizeTranslationModel;
 - (void)invalidateSelectionTrial;
 - (void)handleEngineLifecycle:(const bawan::engine::Lifecycle &)state;
+- (void)refreshUpdateControls;
+- (void)updaterStateDidChange;
+- (BOOL)canAcceptTranslation;
+- (void)offerUpdateResult:(NSString *)result;
+- (void)cancelDeferredTermination;
+- (void)enqueueTerminationReply:(BOOL)shouldTerminate;
+- (void)sendTerminationReply:(BOOL)shouldTerminate;
 @end
 
 static NSString *const BawanOnboardingCompletedKey = @"firstLaunchShown";
@@ -107,9 +123,11 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
+    _updater = [[AppUpdater alloc] init];
     [self buildMenus];
     [self connectTranslationPanel:[[TranslationPanel alloc] init]];
     __weak AppDelegate *weakSelf = self;
+    _updater.onStateChanged = ^{ [weakSelf updaterStateDidChange]; };
 
     _memoryPressure = dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
         DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL, dispatch_get_main_queue());
@@ -171,6 +189,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     } else {
         [self startInitialSetup];
     }
+    [_updater start];
 }
 
 - (void)modelStoreDidChange:(const ModelStoreSnapshot &)snapshot {
@@ -261,6 +280,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)enterTranslatorFromOnboarding {
+    if (![self canAcceptTranslation]) return;
     [_onboardingViewController refresh];
     [self discardUnavailablePractice];
     const auto practice = std::exchange(_completedPractice, std::nullopt);
@@ -399,6 +419,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     [menu addItem:_retryItem];
     [menu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [menu addItem:[self menuItem:@"Model License…" action:@selector(showModelLicense:) key:@""]];
+#if BAWAN_ENABLE_UPDATES
+    _checkUpdatesItem = [self menuItem:@"Check for Updates…" action:@selector(checkForUpdates:) key:@""];
+    [menu addItem:_checkUpdatesItem];
+#endif
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     _statusItem.menu = menu;
@@ -409,6 +433,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Bawan"];
     [appMenu addItem:[self menuItem:@"Settings…" action:@selector(openSettings:) key:@","]];
     [appMenu addItem:[self menuItem:@"Model License…" action:@selector(showModelLicense:) key:@""]];
+#if BAWAN_ENABLE_UPDATES
+    _mainCheckUpdatesItem = [self menuItem:@"Check for Updates…" action:@selector(checkForUpdates:) key:@""];
+    [appMenu addItem:_mainCheckUpdatesItem];
+#endif
     [appMenu addItem:NSMenuItem.separatorItem];
     [appMenu addItem:[self menuItem:@"Quit Bawan" action:@selector(quit:) key:@"q"]];
     appItem.submenu = appMenu;
@@ -427,6 +455,37 @@ static NSString *StringFromUTF8(const std::string &text) {
     editItem.submenu = edit;
     [main addItem:editItem];
     NSApp.mainMenu = main;
+    [self refreshUpdateControls];
+}
+
+- (void)refreshUpdateControls {
+    _checkUpdatesItem.enabled = _updater.canCheckForUpdates;
+    _mainCheckUpdatesItem.enabled = _updater.canCheckForUpdates;
+    [_settingsViewController setUpdatesAvailable:_updater.available canCheck:_updater.canCheckForUpdates
+        automaticallyChecks:_updater.automaticallyChecksForUpdates];
+}
+
+- (void)updaterStateDidChange {
+    [self refreshUpdateControls];
+    if (_updater.installingUpdate || _updater.relaunchPostponed) return;
+    [self cancelDeferredTermination];
+    NSAlert *alert = _updateResultAlert;
+    if (alert) {
+        _updateResultAlert = nil;
+        if (NSApp.modalWindow == alert.window) [NSApp abortModal];
+        _updater.translationBusy = [self busy];
+    }
+    if (_translationSession.phase() == Session::Phase::Queued) [self synchronizeTranslationModel];
+}
+
+- (void)checkForUpdates:(id)sender { [_updater checkForUpdates:sender]; }
+
+- (BOOL)validateMenuItem:(NSMenuItem *)item {
+    return item.action != @selector(checkForUpdates:) || _updater.canCheckForUpdates;
+}
+
+- (BOOL)canAcceptTranslation {
+    return !_terminating && !_updater.installingUpdate && !_updater.relaunchPostponed;
 }
 
 - (void)updateStatus {
@@ -511,6 +570,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)submitText:(NSString *)text direction:(bawan::Direction)direction origin:(Session::Origin)origin {
+    if (![self canAcceptTranslation]) return;
     if (const char *utf8 = text.UTF8String) {
         std::string source(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
         [self applyTranslationEvent:Session::Submit{{std::move(source), direction}, std::move(origin)}];
@@ -524,18 +584,23 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applyTranslationEvent:(Session::Event)event {
     if (_terminating) return;
     const BOOL wasBusy = [self busy];
+    const BOOL wasRunning = _translationSession.activeRequestId().has_value();
     [self applyTranslationEffects:_translationSession.reduce(std::move(event), [self modelAvailability])
-                         wasBusy:wasBusy];
+                         wasBusy:wasBusy wasRunning:wasRunning];
 }
 
 - (void)synchronizeTranslationModel {
     if (_terminating) return;
     const BOOL wasBusy = [self busy];
-    [self applyTranslationEffects:_translationSession.synchronizeModel([self modelAvailability])
-                         wasBusy:wasBusy];
+    const BOOL wasRunning = _translationSession.activeRequestId().has_value();
+    const auto availability = [self modelAvailability];
+    if (availability == Session::ModelAvailability::Available && ![self canAcceptTranslation]) return;
+    [self applyTranslationEffects:_translationSession.synchronizeModel(availability)
+                         wasBusy:wasBusy wasRunning:wasRunning];
 }
 
-- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy {
+- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy wasRunning:(BOOL)wasRunning {
+    NSString *result = nil;
     while (!effects.empty()) {
         Session::Effects next;
         for (auto &effect : effects) {
@@ -560,7 +625,8 @@ static NSString *StringFromUTF8(const std::string &text) {
                     [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
                 },
                 [&](const Session::Output &output) {
-                    [_translationPanel setOutput:StringFromUTF8(output.text) direction:output.direction];
+                    result = StringFromUTF8(output.text);
+                    [_translationPanel setOutput:result direction:output.direction];
                 },
                 [&](Session::Status outcome) {
                     switch (outcome) {
@@ -586,6 +652,7 @@ static NSString *StringFromUTF8(const std::string &text) {
                         length:trial.output->text.size() encoding:NSUTF8StringEncoding] : nil;
                     OnboardingViewController *onboarding = _onboardingViewController;
                     if ([onboarding finishSelectionTrialWithOutput:output]) {
+                        result = output;
                         _completedPractice = CompletedPractice{
                             [onboarding.selectionTrialText copy], output, trial.output->direction,
                             [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]};
@@ -599,6 +666,12 @@ static NSString *StringFromUTF8(const std::string &text) {
         effects = std::move(next);
     }
     if (wasBusy != [self busy]) [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:[self busy]];
+    const BOOL running = _translationSession.activeRequestId().has_value();
+    _updater.translationActive = running;
+    if (wasRunning && !running) [self offerUpdateResult:result];
+    if (_updater && !_updateResultAlert && _updater.translationBusy != [self busy]) {
+        _updater.translationBusy = [self busy];
+    }
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
@@ -644,12 +717,14 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)handleSelectionTrialText:(NSString *)text {
+    if (![self canAcceptTranslation]) return;
     if ([_onboardingViewController beginSelectionTrialForText:text]) {
         [self submitText:text direction:bawan::Direction::Automatic origin:Session::Trial{}];
     }
 }
 
 - (void)handleSelectionText:(NSString *)text {
+    if (![self canAcceptTranslation]) return;
     [_onboardingViewController clearSelectionCopyError];
     [_onboardingViewController discardSelectionTrialResult];
     _completedPractice.reset();
@@ -722,6 +797,11 @@ static NSString *StringFromUTF8(const std::string &text) {
         settings = [[SettingsViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
         settings.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
         settings.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        settings.onCheckForUpdates = ^{ [weakSelf checkForUpdates:nil]; };
+        settings.onAutomaticUpdatesChanged = ^(BOOL enabled) {
+            AppDelegate *owner = weakSelf;
+            if (owner) owner->_updater.automaticallyChecksForUpdates = enabled;
+        };
         settings.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
         settings.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
         _settingsViewController = settings;
@@ -734,6 +814,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
+    [self refreshUpdateControls];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
@@ -748,6 +829,98 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
     [self openTranslation:nil];
     return YES;
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    if (!_terminationReplyPending &&
+        (!_updater.installingUpdate || (!_translationSession.activeRequestId() && !_updateResultAlert))) {
+        return NSTerminateNow;
+    }
+    if (!_terminationReplyPending) {
+        _terminationReplyPending = YES;
+        _terminationReplyCancelled = NO;
+        ++_terminationReplyGeneration;
+    }
+    return NSTerminateLater;
+}
+
+- (NSModalResponse)presentUpdateResultAlert:(NSAlert *)alert {
+    [NSApp activateIgnoringOtherApps:YES];
+    return [alert runModal];
+}
+
+- (NSPasteboard *)updateResultPasteboard {
+    return NSPasteboard.generalPasteboard;
+}
+
+- (BOOL)copyUpdateResult:(NSString *)result {
+    NSPasteboard *pasteboard = [self updateResultPasteboard];
+    [pasteboard clearContents];
+    return [pasteboard setString:result forType:NSPasteboardTypeString];
+}
+
+- (void)offerUpdateResult:(NSString *)result {
+    if (_updateResultAlert || _terminationReplyCancelled ||
+        (!_updater.installingUpdate && !_updater.relaunchPostponed)) return;
+    NSWindow *window = _translationPanel.window;
+    [window.contentView layoutSubtreeIfNeeded];
+    [window displayIfNeeded];
+    if (!result.length) {
+        [_updater resumePostponedRelaunch];
+        [self enqueueTerminationReply:YES];
+        return;
+    }
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Translation ready";
+    alert.informativeText = @"Bawan is ready to install the update. Copy your translation to keep it after restarting.";
+    [alert addButtonWithTitle:@"Copy and Restart"];
+    [alert addButtonWithTitle:@"Restart"];
+    _updateResultAlert = alert;
+
+    __weak AppDelegate *weakSelf = self;
+    PerformInApplicationRunLoop(^{
+        AppDelegate *owner = weakSelf;
+        while (owner && owner->_updateResultAlert == alert) {
+            const NSModalResponse choice = [owner presentUpdateResultAlert:alert];
+            if (owner->_updateResultAlert != alert) return;
+            if (choice == NSAlertFirstButtonReturn && ![owner copyUpdateResult:result]) {
+                alert.informativeText = @"Bawan couldn't copy the translation. Try again, or choose Restart.";
+                continue;
+            }
+            if (choice != NSAlertFirstButtonReturn && choice != NSAlertSecondButtonReturn) continue;
+            owner->_updateResultAlert = nil;
+            owner->_updater.translationBusy = [owner busy];
+            [owner->_updater resumePostponedRelaunch];
+            [owner enqueueTerminationReply:YES];
+        }
+    });
+}
+
+- (void)cancelDeferredTermination {
+    if (!_terminationReplyPending || _terminationReplyCancelled) return;
+    _terminationReplyCancelled = YES;
+    ++_terminationReplyGeneration;
+    [self enqueueTerminationReply:NO];
+}
+
+- (void)enqueueTerminationReply:(BOOL)shouldTerminate {
+    if (!_terminationReplyPending || (shouldTerminate && _terminationReplyCancelled)) return;
+    const uint64_t generation = _terminationReplyGeneration;
+    __weak AppDelegate *weakSelf = self;
+    PerformInApplicationRunLoop(^{
+        AppDelegate *owner = weakSelf;
+        if (!owner || !owner->_terminationReplyPending ||
+            owner->_terminationReplyGeneration != generation ||
+            (shouldTerminate && owner->_terminationReplyCancelled)) return;
+        owner->_terminationReplyPending = NO;
+        owner->_terminationReplyCancelled = NO;
+        [owner sendTerminationReply:shouldTerminate];
+    });
+}
+
+- (void)sendTerminationReply:(BOOL)shouldTerminate {
+    [NSApp replyToApplicationShouldTerminate:shouldTerminate];
 }
 
 - (void)quit:(id)sender { [NSApp terminate:nil]; }

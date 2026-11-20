@@ -94,6 +94,10 @@ Builds use ad-hoc signing by default. To sign with your own identity:
 ./scripts/build.sh -DBAWAN_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
 ```
 
+Use the same development identity for local rebuilds to give macOS a stable app identity for shortcut permissions. Switching from an ad-hoc build may require granting the permissions once more.
+
+Public release preparation, Developer ID certificates, notarization and signed Sparkle updates are described in [Signing and releasing Bawan](docs/releasing.md). Updater support is configured separately from ordinary source builds; the existing v1.0.0 download does not gain an updater automatically.
+
 To clean build artifacts, quit Bawan and delete `build/`. The downloaded model in Application Support and your macOS permissions are stored separately.
 
 ### Memory regression check (macOS)

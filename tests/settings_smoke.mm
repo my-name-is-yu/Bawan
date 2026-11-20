@@ -590,6 +590,52 @@ static void SendControlAction(NSControl *control) {
     [NSApp sendAction:control.action to:control.target from:control];
 }
 
+static void CheckUpdateSettings(SettingsViewController *settings, NSWindow *window) {
+    NSView *root = settings.view;
+    NSView *group = FindView(root, @"updates-group");
+    NSButton *automatic = (NSButton *)FindView(root, @"automatic-update-checks");
+    NSButton *check = (NSButton *)FindView(root, @"check-for-updates");
+    Require(group != nil && automatic != nil && check != nil && group.hidden,
+        @"Builds without an updater must hide the app update settings");
+    [settings setUpdatesAvailable:YES canCheck:NO automaticallyChecks:YES];
+    Settle(window);
+    Require(!group.hidden && automatic.state == NSControlStateValueOn && !check.enabled,
+        @"Updater state must expose automatic checks while disabling an unavailable manual check");
+    NSView *login = FindView(root, @"login-row");
+    NSView *privacy = FindView(root, @"local-processing");
+    NSView *document = FindView(root, @"settings-document");
+    NSRect frame = [group convertRect:group.bounds toView:document];
+    Require(frame.size.width > 0 && frame.size.height > 0 &&
+        NSContainsRect(NSInsetRect(document.bounds, -0.5, -0.5), frame) &&
+        !NSIntersectsRect(FrameInRoot(login), FrameInRoot(group)) &&
+        !NSIntersectsRect(FrameInRoot(group), FrameInRoot(privacy)),
+        @"The visible app update group must fit the document without overlapping neighboring content");
+
+    __block NSUInteger automaticChanges = 0, checks = 0;
+    __block BOOL requestedAutomaticChecks = YES;
+    settings.onAutomaticUpdatesChanged = ^(BOOL enabled) {
+        ++automaticChanges;
+        requestedAutomaticChecks = enabled;
+    };
+    settings.onCheckForUpdates = ^{ ++checks; };
+    automatic.state = NSControlStateValueOff;
+    SendControlAction(automatic);
+    [check performClick:nil];
+    Require(automaticChanges == 1 && !requestedAutomaticChecks && checks == 0,
+        @"The automatic-check switch must forward its preference once and a disabled check must not run");
+    [settings setUpdatesAvailable:YES canCheck:YES automaticallyChecks:NO];
+    [check performClick:nil];
+    Require(check.enabled && automatic.state == NSControlStateValueOff && checks == 1,
+        @"A manual update check must become available again and forward exactly once");
+    [group scrollRectToVisible:group.bounds];
+    Capture(window, @"updates");
+    [settings setUpdatesAvailable:NO canCheck:NO automaticallyChecks:NO];
+    [document scrollPoint:NSZeroPoint];
+    Require(group.hidden, @"Removing updater availability must hide its settings again");
+    settings.onAutomaticUpdatesChanged = nil;
+    settings.onCheckForUpdates = nil;
+}
+
 static void RunSmoke(void) {
     [NSFileManager.defaultManager createDirectoryAtPath:@"settings-smoke"
         withIntermediateDirectories:YES attributes:nil error:nil];
@@ -700,6 +746,7 @@ static void RunSmoke(void) {
             @"Settings captures must load the real mascot and paper assets");
     NSView *root = window.contentView;
     NSButton *login = (NSButton *)FindView(root, @"launch-at-login");
+    CheckUpdateSettings(settings, window);
     NSTextField *hint = (NSTextField *)FindView(root, @"login-hint");
     NSTextField *selectionStatus = (NSTextField *)FindView(root, @"shortcut-selection-status");
     NSTextField *panelStatus = (NSTextField *)FindView(root, @"shortcut-panel-status");

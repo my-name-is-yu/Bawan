@@ -49,6 +49,9 @@ struct SettingsShortcutRow {
 }
 
 @interface SettingsViewController () {
+    NSStackView *_updatesGroup;
+    NSButton *_updatesSwitch;
+    NSButton *_checkUpdatesButton;
     ShortcutPreferences *_preferences;
     ShortcutMonitor *_monitor;
     std::vector<SettingsShortcutRow> _shortcutRows;
@@ -262,8 +265,23 @@ struct SettingsShortcutRow {
     for (NSView *view in @[modelRow, _modelHint, _modelProgress]) {
         [view.widthAnchor constraintEqualToAnchor:modelContent.widthAnchor].active = YES;
     }
+    _updatesSwitch = [NSButton checkboxWithTitle:@"" target:self action:@selector(changeAutomaticUpdates:)];
+    _updatesSwitch.identifier = @"automatic-update-checks";
+    [_updatesSwitch setAccessibilityLabel:@"Automatically check for updates"];
+    _checkUpdatesButton = BawanSetupButton(@"check-for-updates", @"Check for Updates…", 156,
+        self, @selector(checkForUpdates:));
+    NSTextField *updatesTitle = BawanLabel(@"Automatically check for updates", BawanSetupRowTitleSize,
+        NSFontWeightSemibold, BawanColor(BawanText));
+    NSTextField *updatesDescription = BawanLabel(@"Check daily for new versions of Bawan. Updates are installed only with your permission.",
+        BawanSetupCaptionSize, NSFontWeightRegular, BawanColor(BawanSecondaryText));
+    NSView *updatesRow = BawanSetupRow(@"updates-row", updatesTitle, updatesDescription,
+        @[_checkUpdatesButton, _updatesSwitch]);
+    _updatesGroup = BawanSetupStack(@[updatesRow], NSUserInterfaceLayoutOrientationVertical, 8);
+    _updatesGroup.identifier = @"updates-group";
+    _updatesGroup.hidden = YES;
+    [updatesRow.widthAnchor constraintEqualToAnchor:_updatesGroup.widthAnchor].active = YES;
     NSStackView *content = BawanSetupStack(@[headingRow, shortcutGroup, _reservation, _shortcutHint,
-        general, loginContent, BawanSetupRule(), modelContent],
+        general, loginContent, _updatesGroup, BawanSetupRule(), modelContent],
         NSUserInterfaceLayoutOrientationVertical, 8);
     [content setCustomSpacing:24 afterView:_shortcutHint];
     [content setCustomSpacing:24 afterView:shortcutGroup];
@@ -292,6 +310,23 @@ struct SettingsShortcutRow {
 
 - (void)updateDocumentLayout {
     [self.view layoutSubtreeIfNeeded];
+}
+
+- (void)setUpdatesAvailable:(BOOL)available canCheck:(BOOL)canCheck automaticallyChecks:(BOOL)automaticallyChecks {
+    _updatesGroup.hidden = !available;
+    _updatesSwitch.state = automaticallyChecks ? NSControlStateValueOn : NSControlStateValueOff;
+    _checkUpdatesButton.enabled = canCheck;
+    _checkUpdatesButton.toolTip = canCheck ? @"Check for a new version of Bawan" :
+        @"Available when translation and any current update check finish.";
+    [self updateDocumentLayout];
+}
+
+- (void)changeAutomaticUpdates:(NSButton *)sender {
+    if (self.onAutomaticUpdatesChanged) self.onAutomaticUpdatesChanged(sender.state == NSControlStateValueOn);
+}
+
+- (void)checkForUpdates:(id)sender {
+    if (self.onCheckForUpdates) self.onCheckForUpdates();
 }
 
 - (void)setActive:(BOOL)active {

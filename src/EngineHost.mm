@@ -1,5 +1,6 @@
 #import "EngineHost.h"
 
+#import "ApplicationRunLoop.h"
 #include "EngineEventMailbox.h"
 #include "TranslationEngine.h"
 
@@ -59,7 +60,7 @@ struct Running {
         [weakSelf, mailbox](bawan::EngineEvent event) {
             if (!mailbox->push(std::move(event))) return;
             @autoreleasepool {
-                dispatch_async(dispatch_get_main_queue(), ^{
+                PerformInApplicationRunLoop(^{
                     [weakSelf deliverEventsFromMailbox:mailbox];
                 });
             }
