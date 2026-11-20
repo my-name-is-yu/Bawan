@@ -213,6 +213,14 @@ if(BAWAN_BUILD_TESTS)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
         set_tests_properties(app_delegate_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
+        if(BAWAN_ENABLE_UPDATES)
+            add_test(NAME app_delegate_update_termination COMMAND app_delegate_smoke --update-termination-probe)
+            set_tests_properties(app_delegate_update_termination PROPERTIES
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 15)
+            add_test(NAME app_delegate_update_termination_behavior COMMAND app_delegate_smoke --update-termination-behavior)
+            set_tests_properties(app_delegate_update_termination_behavior PROPERTIES
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)
+        endif()
         add_test(NAME onboarding_selection_trial COMMAND app_delegate_smoke --selection-trial)
         set_tests_properties(onboarding_selection_trial PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 60)

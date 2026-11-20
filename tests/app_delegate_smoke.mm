@@ -5,6 +5,8 @@
 #import "OnboardingViewController.h"
 #import "SettingsViewController.h"
 #import "BawanAppearance.h"
+#import "ShortcutPreferences.h"
+#import "SetupPresentation.h"
 #if BAWAN_ENABLE_UPDATES
 #import <Sparkle/Sparkle.h>
 
@@ -18,9 +20,12 @@
 #endif
 
 
+#include "EngineEventMailbox.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
+#include <dispatch/dispatch.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
@@ -48,6 +53,10 @@
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 - (void)handleSelectionText:(NSString *)text;
 - (void)handleSelectionTrialText:(NSString *)text;
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender;
+- (void)updaterStateDidChange;
+- (void)scheduleEngineEventDrain:(std::shared_ptr<bawan::EngineEventMailbox>)mailbox generation:(uint64_t)generation;
+- (void)sendTerminationReply:(BOOL)shouldTerminate;
 - (void)handleShortcutProblem:(NSString *)message;
 - (void)modelFileDidProgress:(double)progress message:(NSString *)message;
 - (void)modelFileDidBecomeReady:(NSURL *)fileURL;
@@ -99,6 +108,61 @@
 - (void)refresh {}
 - (void)cancelSelectionTrial {}
 @end
+
+@interface UpdateTerminationSmokeDelegate : SmokeAppDelegate
+@property(nonatomic, strong) NSMutableArray<NSDictionary<NSString *, id> *> *terminationReplies;
+@end
+
+@implementation UpdateTerminationSmokeDelegate
+- (void)sendTerminationReply:(BOOL)shouldTerminate {
+    TranslationPanel *panel = [self valueForKey:@"translationPanel"];
+    NSTextView *output = [panel valueForKey:@"output"];
+    NSTextField *status = [panel valueForKey:@"status"];
+    OnboardingViewController *onboarding = [self valueForKey:@"onboardingViewController"];
+    [self.terminationReplies addObject:@{
+        @"terminate": @(shouldTerminate),
+        @"output": output.string ?: @"",
+        @"status": status.stringValue ?: @"",
+        @"trialOutput": onboarding.selectionTrialOutput ?: @""
+    }];
+}
+@end
+
+@interface UpdateTerminationTrialController : OnboardingViewController
+@end
+
+@implementation UpdateTerminationTrialController
+- (BOOL)isSelectionTrialCurrent:(NSUInteger)attempt { return attempt != 0; }
+@end
+
+static BOOL UpdateTerminationProbePassed;
+
+@interface UpdateTerminationProbeDelegate : SmokeAppDelegate
+@property(nonatomic, copy) NSString *expectedOutput;
+@property(nonatomic, strong) NSUserDefaults *probeDefaults;
+@property(nonatomic, copy) NSString *defaultsSuite;
+@end
+
+@implementation UpdateTerminationProbeDelegate
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    (void)notification;
+}
+
+- (void)applicationWillTerminate:(NSNotification *)notification {
+    TranslationPanel *panel = [self valueForKey:@"translationPanel"];
+    NSTextView *output = [panel valueForKey:@"output"];
+    if (![output.string isEqualToString:self.expectedOutput]) {
+        std::cerr << "FAIL: termination preceded final output: " << output.string.UTF8String << '\n';
+        std::cerr.flush();
+        std::exit(EXIT_FAILURE);
+    }
+    UpdateTerminationProbePassed = YES;
+    std::cout << "PASS: NSTerminateLater drained streamed and final translation output before termination\n";
+    std::cout.flush();
+    [self.probeDefaults removePersistentDomainForName:self.defaultsSuite];
+    [super applicationWillTerminate:notification];
+}
+@end
 #endif
 
 @interface SetupSmokeDelegate : SmokeAppDelegate
@@ -125,6 +189,16 @@
 
 @implementation SelectionSetupSmokeDelegate
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion { completion(YES); }
+@end
+
+@interface FirstRunSelectionSmokeDelegate : SelectionSetupSmokeDelegate
+@end
+
+@implementation FirstRunSelectionSmokeDelegate
+- (void)scheduleEngineEventDrain:(std::shared_ptr<bawan::EngineEventMailbox>)mailbox generation:(uint64_t)generation {
+    (void)generation;
+    mailbox->drain();
+}
 @end
 
 @interface TrialRefreshSmokeDelegate : SelectionSetupSmokeDelegate
@@ -621,7 +695,7 @@ static void CheckFirstRunSelection(void) {
         SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
         SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
         const BOOL existingUser = change == Change::ExistingUserDeclined;
-        AppDelegate *delegate = existingUser ? [[SetupSmokeDelegate alloc] init] : [[SelectionSetupSmokeDelegate alloc] init];
+        AppDelegate *delegate = existingUser ? [[SetupSmokeDelegate alloc] init] : [[FirstRunSelectionSmokeDelegate alloc] init];
         if (existingUser) [defaults setBool:YES forKey:@"firstLaunchShown"];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:defaults forKey:@"defaults"];
@@ -731,7 +805,6 @@ static void CheckFirstRunSelection(void) {
                 }
                 SetAvailableModel(delegate);
             }
-            ScopedEngineCallbackSuppression callbacks(delegate);
             const uint64_t request = [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue];
             Require((request != 0) == shouldTranslate && Flag(delegate, @"busy") == shouldTranslate &&
                 [delegate valueForKey:@"pendingText"] == nil && [source.string isEqualToString:expectedSource] &&
@@ -1653,6 +1726,270 @@ static void CheckUpdateInstallAdmission(void) {
         [defaults removePersistentDomainForName:suite];
     }
 }
+
+static UpdateTerminationSmokeDelegate *MakeUpdateTerminationDelegate(
+    NSUserDefaults *defaults, TranslationPanel *panel, AppUpdater *updater) {
+    UpdateTerminationSmokeDelegate *delegate = [[UpdateTerminationSmokeDelegate alloc] init];
+    delegate.terminationReplies = [NSMutableArray array];
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate setValue:updater forKey:@"updater"];
+    [delegate buildMenus];
+    __weak UpdateTerminationSmokeDelegate *weakDelegate = delegate;
+    updater.onStateChanged = ^{ [weakDelegate updaterStateDidChange]; };
+    return delegate;
+}
+
+static void BeginUpdateInstall(AppUpdater *updater) {
+    [updater updater:nil willInstallUpdate:nil];
+}
+
+static void AbortUpdateInstall(AppUpdater *updater) {
+    [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"update-termination-test" code:1 userInfo:nil]];
+}
+
+static void SetActiveUpdateRequest(UpdateTerminationSmokeDelegate *delegate, uint64_t request) {
+    [delegate setValue:@(request) forKey:@"activeRequestId"];
+    [delegate setTranslationBusy:YES];
+}
+
+static void CheckUpdateTerminationBehavior(void) {
+    NSString *suite = [@"local.bawan.UpdateTerminationSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults setBool:YES forKey:@"firstLaunchShown"];
+    [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    AppUpdater *updater = [[AppUpdater alloc] init];
+    UpdateTerminationSmokeDelegate *delegate = MakeUpdateTerminationDelegate(defaults, panel, updater);
+
+    @try {
+        [panel showForManualInput];
+        SetActiveUpdateRequest(delegate, 201);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateNow &&
+            delegate.terminationReplies.count == 0,
+            @"Ordinary Quit must not be deferred for an active translation");
+        [delegate cancelTranslation];
+
+        [delegate queueTranslation:@"Queued before update installation" direction:bawan::Direction::Automatic];
+        Require(Flag(delegate, @"busy") &&
+            [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
+            @"The queue-only fixture must be busy without an active request");
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateNow &&
+            delegate.terminationReplies.count == 0,
+            @"Queue-only busy work must not defer termination");
+        [delegate cancelTranslation];
+        AbortUpdateInstall(updater);
+
+        [panel setOutput:@"" direction:bawan::Direction::Automatic];
+        SetActiveUpdateRequest(delegate, 202);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater &&
+            [delegate applicationShouldTerminate:NSApp] == NSTerminateLater &&
+            !Flag(delegate, @"terminating"),
+            @"An active translation during installation must defer termination idempotently");
+        [delegate translateText:@"New request during installation" direction:bawan::Direction::Automatic];
+        Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 202 &&
+            [delegate valueForKey:@"pendingText"] == nil,
+            @"The update guard must reject new translation admission without replacing active work");
+        bawan::EngineEvent streamed{bawan::EngineEvent::Kind::Text, 202, "Partial streamed result"};
+        [delegate handleEngineEvent:streamed];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 0,
+            @"Streaming output must not release the pending termination reply");
+        bawan::EngineEvent complete{bawan::EngineEvent::Kind::Complete, 202, "Partial streamed result, completed"};
+        [delegate handleEngineEvent:complete];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            [delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [delegate.terminationReplies[0][@"output"] isEqualToString:@"Partial streamed result, completed"],
+            @"The completion reply must observe the final output after streaming and handler delivery");
+        AbortUpdateInstall(updater);
+        [delegate.terminationReplies removeAllObjects];
+
+        [panel setOutput:@"" direction:bawan::Direction::Automatic];
+        SetActiveUpdateRequest(delegate, 209);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"An empty completion fixture must defer termination while its request is active");
+        bawan::EngineEvent emptyComplete{bawan::EngineEvent::Kind::Complete, 209, ""};
+        [delegate handleEngineEvent:emptyComplete];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            [delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [delegate.terminationReplies[0][@"output"] isEqualToString:@""],
+            @"An empty terminal output must still complete the deferred termination response");
+        AbortUpdateInstall(updater);
+        [delegate.terminationReplies removeAllObjects];
+
+        [panel setOutput:@"" direction:bawan::Direction::Automatic];
+        SetActiveUpdateRequest(delegate, 203);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"An error result fixture must hold termination");
+        bawan::EngineEvent errorText{bawan::EngineEvent::Kind::Text, 203, "Output before error"};
+        [delegate handleEngineEvent:errorText];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 0,
+            @"An error request must not release termination before its terminal event");
+        bawan::EngineEvent error{bawan::EngineEvent::Kind::Error, 203, "Synthetic engine error"};
+        [delegate handleEngineEvent:error];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            [delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [delegate.terminationReplies[0][@"output"] isEqualToString:@"Output before error"] &&
+            [[delegate.terminationReplies[0][@"status"] lowercaseString] containsString:@"error"],
+            @"An error reply must follow delivery of existing output and error status");
+        AbortUpdateInstall(updater);
+        [delegate.terminationReplies removeAllObjects];
+
+        SetActiveUpdateRequest(delegate, 204);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"An engine cancellation fixture must hold termination");
+        bawan::EngineEvent cancelled{bawan::EngineEvent::Kind::Cancelled, 204, ""};
+        [delegate handleEngineEvent:cancelled];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            [delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [[delegate.terminationReplies[0][@"status"] lowercaseString] containsString:@"cancel"],
+            @"An engine cancellation reply must follow cancellation status delivery");
+        AbortUpdateInstall(updater);
+        [delegate.terminationReplies removeAllObjects];
+
+        SetActiveUpdateRequest(delegate, 205);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"An explicit cancellation fixture must hold termination");
+        [delegate cancelTranslation];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            [delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [[delegate.terminationReplies[0][@"status"] lowercaseString] containsString:@"cancel"],
+            @"Explicit cancellation must release after its synchronous status update");
+        AbortUpdateInstall(updater);
+        [delegate.terminationReplies removeAllObjects];
+
+        SetActiveUpdateRequest(delegate, 206);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"The abort fixture must defer termination while a request is active");
+        AbortUpdateInstall(updater);
+        Require([[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 206 && Flag(delegate, @"busy"),
+            @"An updater abort must preserve the active translation");
+        bawan::EngineEvent afterAbort{bawan::EngineEvent::Kind::Complete, 206, "Completed after update abort"};
+        [delegate handleEngineEvent:afterAbort];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            ![delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [delegate.terminationReplies[0][@"output"] isEqualToString:@"Completed after update abort"] &&
+            !Flag(delegate, @"terminationReplyPending"),
+            @"An updater abort must reply NO once and suppress any stale YES after the active result completes");
+        [delegate.terminationReplies removeAllObjects];
+
+        SetActiveUpdateRequest(delegate, 208);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"The queued-reply abort fixture must defer termination");
+        bawan::EngineEvent finishedBeforeAbort{bawan::EngineEvent::Kind::Complete, 208, "Finished before update abort"};
+        [delegate handleEngineEvent:finishedBeforeAbort];
+        AbortUpdateInstall(updater);
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            ![delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [delegate.terminationReplies[0][@"output"] isEqualToString:@"Finished before update abort"],
+            @"An updater abort must invalidate an already-queued YES and reply NO instead");
+        [delegate.terminationReplies removeAllObjects];
+
+        ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+        bawan::ShortcutBinding selectionBinding = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+        selectionBinding.enabled = true;
+        NSString *bindingError = nil;
+        Require([preferences setBinding:selectionBinding forAction:bawan::ShortcutAction::TranslateSelection error:&bindingError],
+            @"The trial UI fixture must enable selection translation");
+        SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+        monitor.selectionAvailable = YES;
+        UpdateTerminationTrialController *onboarding =
+            [[UpdateTerminationTrialController alloc] initWithPreferences:preferences monitor:monitor];
+        [delegate setValue:onboarding forKey:@"onboardingViewController"];
+        [panel showOnboarding:onboarding onBack:^{}];
+        SetAvailableModel(delegate);
+        [delegate setValue:@3 forKey:@"selectionTrialAttempt"];
+        SetActiveUpdateRequest(delegate, 207);
+        BeginUpdateInstall(updater);
+        Require([delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"The selection-trial fixture must defer termination");
+        bawan::EngineEvent trialText{bawan::EngineEvent::Kind::Text, 207, "Trial partial"};
+        [delegate handleEngineEvent:trialText];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 0,
+            @"Selection-trial streaming must not release termination early");
+        bawan::EngineEvent trialComplete{bawan::EngineEvent::Kind::Complete, 207, "Trial result"};
+        [delegate handleEngineEvent:trialComplete];
+        DrainMainQueue();
+        Require(delegate.terminationReplies.count == 1 &&
+            [delegate.terminationReplies[0][@"terminate"] boolValue] &&
+            [delegate.terminationReplies[0][@"trialOutput"] isEqualToString:@"Trial result"] &&
+            [onboarding.selectionTrialOutput isEqualToString:@"Trial result"],
+            @"The selection-trial reply must follow its real onboarding result UI update");
+        AbortUpdateInstall(updater);
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
+static int RunUpdateTerminationProbe(void) {
+    NSString *suite = [@"local.bawan.UpdateTerminationProbe." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults setBool:YES forKey:@"firstLaunchShown"];
+    [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    AppUpdater *updater = [[AppUpdater alloc] init];
+    UpdateTerminationProbeDelegate *delegate = [[UpdateTerminationProbeDelegate alloc] init];
+    delegate.expectedOutput = @"A deterministic test result delivered in modal termination mode";
+    delegate.probeDefaults = defaults;
+    delegate.defaultsSuite = suite;
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate setValue:updater forKey:@"updater"];
+    [delegate buildMenus];
+    [NSApp setDelegate:delegate];
+    [panel showForManualInput];
+    [panel setOutput:@"" direction:bawan::Direction::Automatic];
+    [delegate setValue:@301 forKey:@"activeRequestId"];
+    [delegate setTranslationBusy:YES];
+    BeginUpdateInstall(updater);
+
+    auto mailbox = std::make_shared<bawan::EngineEventMailbox>();
+    const uint64_t generation = [[delegate valueForKey:@"engineGeneration"] unsignedLongLongValue];
+    NSTimer *delivery = [NSTimer timerWithTimeInterval:0.05 repeats:NO block:^(NSTimer *) {
+        if (!mailbox->push({bawan::EngineEvent::Kind::Text, 301, "A deterministic test result"})) {
+            std::cerr << "FAIL: termination probe could not schedule its mailbox drain\n";
+            std::exit(EXIT_FAILURE);
+        }
+        mailbox->push({bawan::EngineEvent::Kind::Complete, 301, delegate.expectedOutput.UTF8String});
+        [delegate scheduleEngineEventDrain:mailbox generation:generation];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:delivery forMode:NSModalPanelRunLoopMode];
+    NSTimer *watchdog = [NSTimer timerWithTimeInterval:8 repeats:NO block:^(NSTimer *) {
+        std::cerr << "FAIL: bounded NSApp termination probe did not deliver its final result\n";
+        std::cerr.flush();
+        std::exit(EXIT_FAILURE);
+    }];
+    [NSRunLoop.mainRunLoop addTimer:watchdog forMode:NSModalPanelRunLoopMode];
+    [NSRunLoop.mainRunLoop addTimer:watchdog forMode:NSDefaultRunLoopMode];
+    dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+    [NSApp run];
+    [panel close];
+    [defaults removePersistentDomainForName:suite];
+    if (!UpdateTerminationProbePassed) {
+        std::cerr << "FAIL: NSApp exited without applicationWillTerminate verifying final output\n";
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
 #endif
 
 static void CheckMemoryProbe(void) {
@@ -1697,6 +2034,21 @@ int main(int argc, const char *argv[]) {
             return EXIT_FAILURE;
         }
         [NSApp finishLaunching];
+#if BAWAN_ENABLE_UPDATES
+        if (argc == 2 && std::string(argv[1]) == "--update-termination-probe") {
+            return RunUpdateTerminationProbe();
+        }
+        if (argc == 2 && std::string(argv[1]) == "--update-termination-behavior") {
+            try {
+                CheckUpdateTerminationBehavior();
+                std::cout << "PASS: update termination behavior assertions\n";
+                return EXIT_SUCCESS;
+            } catch (const std::exception &error) {
+                std::cerr << "FAIL: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+#endif
         if (argc == 2 && std::string(argv[1]) == "--first-run-selection") {
             try {
                 CheckFirstRunSelection();
@@ -1742,6 +2094,7 @@ int main(int argc, const char *argv[]) {
 #if BAWAN_ENABLE_UPDATES
                 CheckUpdateInstallAdmission();
                 CheckUpdateRestartSafety(delegate);
+                CheckUpdateTerminationBehavior();
 #endif
                 CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);

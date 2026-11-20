@@ -8,6 +8,7 @@
 #import "AppUpdater.h"
 #import "OnboardingViewController.h"
 #import <ServiceManagement/ServiceManagement.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 #include "TranslationEngine.h"
 #include "EngineEventMailbox.h"
@@ -42,6 +43,9 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
     BOOL _warmUpWhenAvailable;
     BOOL _busy;
     BOOL _terminating;
+    BOOL _terminationReplyPending;
+    BOOL _terminationReplyCancelled;
+    uint64_t _terminationReplyGeneration;
     StatusOwner _statusOwner;
     BawanModelState _model;
     NSString *_memoryProbeDirectory;
@@ -49,6 +53,12 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
 - (void)refreshUpdateControls;
 - (void)setTranslationBusy:(BOOL)busy;
 - (BOOL)canAcceptTranslation;
+- (void)scheduleEngineEventDrain:(std::shared_ptr<bawan::EngineEventMailbox>)mailbox generation:(uint64_t)generation;
+- (void)updaterStateDidChange;
+- (void)cancelDeferredTermination;
+- (void)replyToDeferredTerminationAfterResultInSelectionTrial:(BOOL)selectionTrial;
+- (void)enqueueTerminationReply:(BOOL)shouldTerminate;
+- (void)sendTerminationReply:(BOOL)shouldTerminate;
 @end
 
 static NSString *const BawanOnboardingCompletedKey = @"firstLaunchShown";
@@ -74,13 +84,20 @@ static NSString *StringFromUTF8(const std::string &text) {
                                  encoding:NSUTF8StringEncoding] ?: @"Unable to display the text.";
 }
 
+static void PerformInCommonAndModalRunLoopModes(dispatch_block_t block) {
+    CFRunLoopRef runLoop = CFRunLoopGetMain();
+    NSArray<NSString *> *modes = @[(__bridge NSString *)kCFRunLoopCommonModes, NSModalPanelRunLoopMode];
+    CFRunLoopPerformBlock(runLoop, (__bridge CFArrayRef)modes, block);
+    CFRunLoopWakeUp(runLoop);
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
     _updater = [[AppUpdater alloc] init];
     [self buildMenus];
     _translationPanel = [[TranslationPanel alloc] init];
     __weak AppDelegate *weakSelf = self;
-    _updater.onStateChanged = ^{ [weakSelf refreshUpdateControls]; };
+    _updater.onStateChanged = ^{ [weakSelf updaterStateDidChange]; };
     _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
         [weakSelf translateText:text direction:direction];
     };
@@ -460,6 +477,11 @@ static NSString *StringFromUTF8(const std::string &text) {
         automaticallyChecks:_updater.automaticallyChecksForUpdates];
 }
 
+- (void)updaterStateDidChange {
+    [self refreshUpdateControls];
+    if (!_updater.installingUpdate) [self cancelDeferredTermination];
+}
+
 - (void)checkForUpdates:(id)sender { [_updater checkForUpdates:sender]; }
 
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
@@ -561,15 +583,23 @@ static NSString *StringFromUTF8(const std::string &text) {
         std::string(modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
             if (!mailbox->push(std::move(event))) return;
             @autoreleasepool {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    AppDelegate *owner = weakSelf;
-                    const auto events = mailbox->drain();
-                    if (owner && !owner->_terminating && owner->_engineGeneration == generation) {
-                        for (const auto &queued : events) [owner handleEngineEvent:queued];
-                    }
-                });
+                AppDelegate *owner = weakSelf;
+                if (owner) [owner scheduleEngineEventDrain:mailbox generation:generation];
             }
         });
+}
+
+- (void)scheduleEngineEventDrain:(std::shared_ptr<bawan::EngineEventMailbox>)mailbox generation:(uint64_t)generation {
+    __weak AppDelegate *weakSelf = self;
+    PerformInCommonAndModalRunLoopModes(^{
+        @autoreleasepool {
+            AppDelegate *owner = weakSelf;
+            const auto events = mailbox->drain();
+            if (owner && !owner->_terminating && owner->_engineGeneration == generation) {
+                for (const auto &queued : events) [owner handleEngineEvent:queued];
+            }
+        }
+    });
 }
 
 - (void)warmUpEngine {
@@ -672,6 +702,7 @@ static NSString *StringFromUTF8(const std::string &text) {
                     encoding:NSUTF8StringEncoding] : nil;
             [_onboardingViewController finishSelectionTrial:attempt output:output direction:event.direction];
             [self updateStatus];
+            [self replyToDeferredTerminationAfterResultInSelectionTrial:YES];
         }
         return;
     }
@@ -700,9 +731,13 @@ static NSString *StringFromUTF8(const std::string &text) {
             break;
         default: break;
     }
+    if (event.kind == Kind::Complete || event.kind == Kind::Cancelled || event.kind == Kind::Error) {
+        [self replyToDeferredTerminationAfterResultInSelectionTrial:NO];
+    }
 }
 
 - (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection {
+    const BOOL cancellingActiveRequest = _activeRequestId != 0;
     const BOOL cancellingTrial = _selectionTrialAttempt != 0;
     [_onboardingViewController cancelSelectionTrial];
     _selectionTrialAttempt = 0;
@@ -716,6 +751,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self setTranslationBusy:_pendingText != nil];
     [self updateStatus];
     if (showCancellation) [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
+    if (cancellingActiveRequest) [self replyToDeferredTerminationAfterResultInSelectionTrial:cancellingTrial];
 }
 
 - (void)cancelTranslation { [self cancelTranslationKeepingPendingSelection:NO]; }
@@ -854,6 +890,56 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
     [self openTranslation:nil];
     return YES;
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    if (!_updater.installingUpdate || _activeRequestId == 0) return NSTerminateNow;
+    if (!_terminationReplyPending) {
+        _terminationReplyPending = YES;
+        _terminationReplyCancelled = NO;
+        ++_terminationReplyGeneration;
+    }
+    return NSTerminateLater;
+}
+
+- (void)replyToDeferredTerminationAfterResultInSelectionTrial:(BOOL)selectionTrial {
+    if (!_terminationReplyPending || _terminationReplyCancelled) return;
+    NSWindow *window = _translationPanel.window;
+    if (selectionTrial) {
+        NSView *resultView = _onboardingViewController.view;
+        [resultView layoutSubtreeIfNeeded];
+        window = resultView.window;
+    }
+    if (!window) window = _translationPanel.window;
+    [window.contentView layoutSubtreeIfNeeded];
+    [window displayIfNeeded];
+    [self enqueueTerminationReply:YES];
+}
+
+- (void)cancelDeferredTermination {
+    if (!_terminationReplyPending) return;
+    _terminationReplyCancelled = YES;
+    ++_terminationReplyGeneration;
+    [self enqueueTerminationReply:NO];
+}
+
+- (void)enqueueTerminationReply:(BOOL)shouldTerminate {
+    if (!_terminationReplyPending || (shouldTerminate && _terminationReplyCancelled)) return;
+    const uint64_t generation = _terminationReplyGeneration;
+    __weak AppDelegate *weakSelf = self;
+    PerformInCommonAndModalRunLoopModes(^{
+        AppDelegate *owner = weakSelf;
+        if (!owner || !owner->_terminationReplyPending ||
+            owner->_terminationReplyGeneration != generation ||
+            (shouldTerminate && owner->_terminationReplyCancelled)) return;
+        owner->_terminationReplyPending = NO;
+        owner->_terminationReplyCancelled = NO;
+        [owner sendTerminationReply:shouldTerminate];
+    });
+}
+
+- (void)sendTerminationReply:(BOOL)shouldTerminate {
+    [NSApp replyToApplicationShouldTerminate:shouldTerminate];
 }
 
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
