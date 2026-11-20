@@ -849,8 +849,12 @@ static NSString *StringFromUTF8(const std::string &text) {
     return [alert runModal];
 }
 
+- (NSPasteboard *)updateResultPasteboard {
+    return NSPasteboard.generalPasteboard;
+}
+
 - (BOOL)copyUpdateResult:(NSString *)result {
-    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+    NSPasteboard *pasteboard = [self updateResultPasteboard];
     [pasteboard clearContents];
     return [pasteboard setString:result forType:NSPasteboardTypeString];
 }

@@ -43,6 +43,9 @@
 - (void)start {
 #if BAWAN_ENABLE_UPDATES
     if (_controller) return;
+    NSBundle *bundle = NSBundle.mainBundle;
+    if (![[bundle objectForInfoDictionaryKey:@"SUFeedURL"] length] ||
+        ![[bundle objectForInfoDictionaryKey:@"SUPublicEDKey"] length]) return;
     _controller = [[SPUStandardUpdaterController alloc] initWithStartingUpdater:NO
         updaterDelegate:self userDriverDelegate:nil];
     for (NSString *key in @[@"canCheckForUpdates", @"automaticallyChecksForUpdates"]) {

@@ -63,6 +63,7 @@ using namespace bawan::engine;
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender;
 - (void)updaterStateDidChange;
 - (NSModalResponse)presentUpdateResultAlert:(NSAlert *)alert;
+- (NSPasteboard *)updateResultPasteboard;
 - (BOOL)copyUpdateResult:(NSString *)result;
 - (void)sendTerminationReply:(BOOL)shouldTerminate;
 - (void)handleShortcutProblem:(NSString *)message;
@@ -141,6 +142,7 @@ static BOOL UpdateTerminationProbePassed;
 @property(nonatomic, copy) NSString *expectedOutput;
 @property(nonatomic, strong) NSUserDefaults *probeDefaults;
 @property(nonatomic, copy) NSString *defaultsSuite;
+@property(nonatomic, strong) NSPasteboard *probePasteboard;
 @end
 
 @implementation UpdateTerminationProbeDelegate
@@ -148,13 +150,15 @@ static BOOL UpdateTerminationProbePassed;
     (void)notification;
 }
 
+- (NSPasteboard *)updateResultPasteboard { return self.probePasteboard; }
+
 - (NSModalResponse)presentUpdateResultAlert:(NSAlert *)alert {
     NSTimer *click = [NSTimer timerWithTimeInterval:0.05 repeats:NO block:^(NSTimer *) {
         if (NSApp.modalWindow != alert.window) {
             std::cerr << "FAIL: restart choice was not presented during update termination\n";
             std::exit(EXIT_FAILURE);
         }
-        [alert.buttons.lastObject performClick:nil];
+        [alert.buttons.firstObject performClick:nil];
     }];
     [NSRunLoop.mainRunLoop addTimer:click forMode:NSModalPanelRunLoopMode];
     return [super presentUpdateResultAlert:alert];
@@ -163,13 +167,15 @@ static BOOL UpdateTerminationProbePassed;
 - (void)applicationWillTerminate:(NSNotification *)notification {
     TranslationPanel *panel = [self valueForKey:@"translationPanel"];
     NSTextView *output = [panel valueForKey:@"output"];
-    if (![output.string isEqualToString:self.expectedOutput]) {
-        std::cerr << "FAIL: termination preceded final output: " << output.string.UTF8String << '\n';
+    NSString *copiedOutput = [self.probePasteboard stringForType:NSPasteboardTypeString];
+    [self.probePasteboard releaseGlobally];
+    if (![output.string isEqualToString:self.expectedOutput] || ![copiedOutput isEqualToString:self.expectedOutput]) {
+        std::cerr << "FAIL: termination preceded final output or copying to the pasteboard\n";
         std::cerr.flush();
         std::exit(EXIT_FAILURE);
     }
     UpdateTerminationProbePassed = YES;
-    std::cout << "PASS: NSTerminateLater drained streamed and final translation output before termination\n";
+    std::cout << "PASS: NSTerminateLater displayed and copied the final translation before termination\n";
     std::cout.flush();
     [self.probeDefaults removePersistentDomainForName:self.defaultsSuite];
     [super applicationWillTerminate:notification];
@@ -1782,7 +1788,8 @@ static void CheckUpdateWithQueuedSelectionAndPractice(void) {
         [delegate handleSelectionTrialText:@"Active shortcut practice"];
         const auto practice = ActiveRequestId(delegate);
         __block BOOL restarted = NO;
-        Require(practice != 0 && [updater updater:nil shouldPostponeRelaunchForUpdate:nil
+        Require(practice != 0 && [onboarding.practiceText isEqualToString:@"Active shortcut practice"] &&
+            [updater updater:nil shouldPostponeRelaunchForUpdate:nil
             untilInvokingBlock:^{ restarted = YES; }],
             @"An update must wait for the running trial even with a separate selection queued");
         delegate.chooseRestart = ^NSModalResponse(NSAlert *) { return NSAlertFirstButtonReturn; };
@@ -1957,6 +1964,7 @@ static int RunUpdateTerminationProbe(void) {
     delegate.expectedOutput = @"A deterministic test result delivered in modal termination mode";
     delegate.probeDefaults = defaults;
     delegate.defaultsSuite = suite;
+    delegate.probePasteboard = NSPasteboard.pasteboardWithUniqueName;
     AttachTestUpdater(delegate, updater);
     [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
