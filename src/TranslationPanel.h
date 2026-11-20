@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import "SetupPresentation.h"
 #include "TranslationEngine.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -14,7 +15,7 @@ typedef NS_ENUM(NSInteger, BawanPanelPageKind) {
     BawanPanelPageTranslation, BawanPanelPageSettings, BawanPanelPageOnboarding
 };
 
-@interface TranslationPanel : NSObject
+@interface TranslationPanel : NSObject <BawanModelSetupDisplay>
 @property(nonatomic, copy, nullable) void (^onTranslate)(NSString *text, bawan::Direction direction);
 @property(nonatomic, copy, nullable) void (^onCancel)(void);
 @property(nonatomic, copy, nullable) void (^onClose)(void);
@@ -24,6 +25,7 @@ typedef NS_ENUM(NSInteger, BawanPanelPageKind) {
 @property(nonatomic, readonly) BawanPanelPageKind currentPage;
 
 - (void)showForSelection:(NSString *)text;
+- (void)setSelection:(NSString *)text;
 - (void)showForManualInput;
 - (void)showWithoutChangingInput;
 - (void)showSettings:(SettingsViewController *)settings;

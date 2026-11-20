@@ -71,7 +71,7 @@ Usage usage() {
 }
 
 struct Result {
-    bawan::EngineEvent event;
+    bawan::engine::Outcome outcome;
     std::optional<Clock::time_point> firstText;
     Clock::time_point completed;
     std::int64_t observedTextRSS = -1;
@@ -81,50 +81,68 @@ struct Result {
 class LatestEvent {
 public:
     void push(bawan::EngineEvent event) {
+        using namespace bawan::engine;
         const auto arrived = Clock::now();
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (event.requestId == 0) {
-                state_ = std::move(event);
-                stateTime_ = arrived;
-            } else {
-                if (!latest_ || latest_->requestId != event.requestId) {
-                    firstText_.reset();
-                    observedTextRSS_ = -1;
-                    observedTextFootprint_ = -1;
-                }
-                if (event.kind == bawan::EngineEvent::Kind::Text) {
+            std::visit(Visitor{
+                [&](Lifecycle &state) {
+                    state_ = std::move(state);
+                    stateTime_ = arrived;
+                },
+                [&](const Progress &progress) {
+                    startObserving(progress.requestId);
                     if (!firstText_) { firstText_ = arrived; }
                     const auto sample = usage();
                     observedTextRSS_ = std::max(observedTextRSS_, sample.currentRSS);
                     observedTextFootprint_ = std::max(observedTextFootprint_, sample.physicalFootprint);
-                }
-                latest_ = std::move(event);
-                latestTime_ = arrived;
-            }
+                },
+                [&](Finished &finished) {
+                    startObserving(finished.requestId);
+                    latest_ = std::move(finished);
+                    latestTime_ = arrived;
+                },
+            }, event);
         }
         changed_.notify_one();
     }
 
-    Result wait(std::uint64_t id,
-                bawan::EngineEvent::Kind expected = bawan::EngineEvent::Kind::Complete) {
+    Result wait(std::uint64_t id) {
         std::unique_lock<std::mutex> lock(mutex_);
-        const auto & event = id == 0 ? state_ : latest_;
         if (!changed_.wait_for(lock, 60s, [&] {
-            if (!event || event->requestId != id) { return false; }
-            using Kind = bawan::EngineEvent::Kind;
-            return event->kind == expected || event->kind == Kind::Error || event->kind == Kind::Cancelled;
+            return latest_ && latest_->requestId == id;
         })) { throw std::runtime_error("Inference timed out after 60 seconds"); }
-        if (id == 0) { return Result{*state_, std::nullopt, stateTime_}; }
-        return Result{*latest_, firstText_, latestTime_, observedTextRSS_, observedTextFootprint_};
+        return Result{latest_->outcome, firstText_, latestTime_, observedTextRSS_, observedTextFootprint_};
+    }
+
+    template <typename State>
+    Clock::time_point waitForState() {
+        using namespace bawan::engine;
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!changed_.wait_for(lock, 60s, [&] {
+            return state_ && (std::holds_alternative<State>(*state_) ||
+                std::holds_alternative<Failed>(*state_) || std::holds_alternative<LoadCancelled>(*state_));
+        })) { throw std::runtime_error("Model state did not arrive within 60 seconds"); }
+        if (const auto *failure = std::get_if<Failed>(&*state_)) throw std::runtime_error(failure->message);
+        if (std::holds_alternative<LoadCancelled>(*state_)) throw std::runtime_error("Model load was cancelled");
+        return stateTime_;
     }
 
 private:
+    void startObserving(std::uint64_t requestId) {
+        if (observedRequest_ == requestId) return;
+        observedRequest_ = requestId;
+        firstText_.reset();
+        observedTextRSS_ = -1;
+        observedTextFootprint_ = -1;
+    }
+
     std::mutex mutex_;
     std::condition_variable changed_;
-    std::optional<bawan::EngineEvent> state_;
+    std::optional<bawan::engine::Lifecycle> state_;
     Clock::time_point stateTime_;
-    std::optional<bawan::EngineEvent> latest_;
+    std::optional<bawan::engine::Finished> latest_;
+    std::optional<std::uint64_t> observedRequest_;
     std::optional<Clock::time_point> firstText_;
     Clock::time_point latestTime_;
     std::int64_t observedTextRSS_ = -1;
@@ -149,7 +167,7 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
     try {
-        using Kind = bawan::EngineEvent::Kind;
+        using namespace bawan::engine;
         std::cout << std::fixed << std::setprecision(3)
                   << "unavailable_metric_value=-1\n"
                   << "memory_note=RSS includes resident mapped pages; macOS physical footprint is separate; do not add them\n"
@@ -174,11 +192,8 @@ int main(int argc, char ** argv) {
 
         const auto loadStarted = Clock::now();
         engine.warmUp();
-        const auto loaded = events.wait(0, Kind::Ready);
-        if (loaded.event.kind != Kind::Ready) {
-            throw std::runtime_error("Model did not become ready: " + loaded.event.text);
-        }
-        std::cout << "model_load_ms=" << milliseconds(loadStarted, loaded.completed) << '\n';
+        const auto loaded = events.waitForState<Ready>();
+        std::cout << "model_load_ms=" << milliseconds(loadStarted, loaded) << '\n';
         memoryMetrics("after_load", usage());
 
         constexpr std::size_t totalRequests = 20;
@@ -204,8 +219,8 @@ int main(int argc, char ** argv) {
             const auto started = Clock::now();
             const auto id = engine.translate(corpus[iteration % corpus.size()], bawan::Direction::Automatic);
             const auto result = events.wait(id);
-            if (result.event.kind != bawan::EngineEvent::Kind::Complete ||
-                result.event.truncated || result.event.text.empty() || !result.firstText) {
+            const auto *complete = std::get_if<Complete>(&result.outcome);
+            if (!complete || complete->truncated || complete->text.empty() || !result.firstText) {
                 throw std::runtime_error("Request " + std::to_string(iteration + 1) + " did not complete normally");
             }
             const auto sample = usage();
@@ -239,17 +254,14 @@ int main(int argc, char ** argv) {
                   << "mean_first_token_ms_after_warmup=" << firstTokenTotal / (totalRequests - warmupRequests) << '\n'
                   << "mean_completion_ms_after_warmup=" << completionTotal / (totalRequests - warmupRequests) << '\n';
 
-        const auto unloaded = events.wait(0, Kind::Idle);
-        if (unloaded.event.kind != Kind::Idle) {
-            throw std::runtime_error("Model did not unload after idling: " + unloaded.event.text);
-        }
+        events.waitForState<Idle>();
         memoryMetrics("after_idle_unload", usage());
 
         const auto reloadStarted = Clock::now();
         const auto reloadId = engine.translate(corpus.front(), bawan::Direction::Automatic);
         const auto reloaded = events.wait(reloadId);
-        if (reloaded.event.kind != Kind::Complete || reloaded.event.truncated ||
-            reloaded.event.text.empty() || !reloaded.firstText) {
+        const auto *complete = std::get_if<Complete>(&reloaded.outcome);
+        if (!complete || complete->truncated || complete->text.empty() || !reloaded.firstText) {
             throw std::runtime_error("Translation after idle unload did not complete normally");
         }
         std::cout << "reload_first_token_ms=" << milliseconds(reloadStarted, *reloaded.firstText) << '\n'

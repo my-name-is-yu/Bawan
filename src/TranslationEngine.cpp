@@ -28,20 +28,8 @@ constexpr std::size_t kContextGranularity = 256;
 constexpr const char * kUnsupportedModel = "This PLaMo model is not supported.";
 constexpr const char * kUnexpectedError = "An unexpected translation error occurred.";
 
-const char * eventName(EngineEvent::Kind kind) noexcept {
-    switch (kind) {
-        case EngineEvent::Kind::Loading: return "Loading";
-        case EngineEvent::Kind::Ready: return "Ready";
-        case EngineEvent::Kind::Idle: return "Idle";
-        case EngineEvent::Kind::Text: return "Text";
-        case EngineEvent::Kind::Complete: return "Complete";
-        case EngineEvent::Kind::Cancelled: return "Cancelled";
-        case EngineEvent::Kind::Error: return "Error";
-    }
-    return "Unknown";
-}
-
-void logCallbackFailure(EngineEvent::Kind kind, std::uint64_t id, const char * message) noexcept {
+void logCallbackFailure(const EngineEvent &event, const char * message) noexcept {
+    const auto metadata = engine::describe(event);
     // Use a fixed buffer and C stdio so diagnostics cannot throw or reenter
     // the callback. Bound and escape details to prevent forged log entries.
     constexpr std::size_t limit = 256;
@@ -62,7 +50,8 @@ void logCallbackFailure(EngineEvent::Kind kind, std::uint64_t id, const char * m
     }
     detail[size] = '\0';
     std::fprintf(stderr, "[Bawan] TranslationEngine callback threw (event=%s, requestId=%llu): %s%s\n",
-                 eventName(kind), static_cast<unsigned long long>(id), detail, message[consumed] ? "..." : "");
+                 metadata.name, static_cast<unsigned long long>(metadata.requestId.value_or(0)),
+                 detail, message[consumed] ? "..." : "");
 }
 
 std::size_t contextSize(std::size_t promptTokens) {
@@ -122,7 +111,7 @@ public:
 
     void warmUp() { submit(WorkerInstructions::WarmUp{}); }
 
-    std::uint64_t translate(std::string text, Direction direction) {
+    engine::RequestId translate(std::string text, Direction direction) {
         return submit(Request{0, std::move(text), direction});
     }
 
@@ -143,7 +132,7 @@ public:
 
 private:
     struct Request {
-        std::uint64_t id;
+        engine::RequestId id;
         std::string text;
         Direction direction;
     };
@@ -166,7 +155,7 @@ private:
         using Next = std::variant<Wait, WarmUp, Translation, Release, Stop>;
         struct Work {
             Next next;
-            std::vector<std::uint64_t> dropped;
+            std::vector<engine::RequestId> dropped;
             std::uint64_t cancellation = 0;
         };
 
@@ -176,7 +165,7 @@ private:
         // Translation is latest-wins; it preserves a release, then unloads.
         // Release replaces warm-up, never translation. Warm-up only fills Wait.
         // Replacing a queued translation owes exactly one Cancelled callback.
-        std::uint64_t update(Command command) {
+        engine::RequestId update(Command command) {
             auto * request = std::get_if<Request>(&command);
             const auto id = request ? ++revision_ : 0;
             if (std::holds_alternative<Stop>(command)) {
@@ -231,18 +220,18 @@ private:
         }
 
         bool stopped() const { return stopped_.load(); }
-        bool cancelled(std::uint64_t id) const { return stopped() || revision_.load() != id; }
+        bool cancelled(engine::RequestId id) const { return stopped() || revision_.load() != id; }
         bool loadCancelled(std::uint64_t epoch) const {
             return stopped() || cancellation_.load() != epoch;
         }
 
     private:
         Next next_{Wait{}};
-        std::vector<std::uint64_t> dropped_;
+        std::vector<engine::RequestId> dropped_;
         // A replacement translation can reuse an in-flight load; only Cancel
         // and Stop advance its cancellation epoch.
         std::atomic<bool> stopped_{false};
-        std::atomic<std::uint64_t> revision_{0};
+        std::atomic<engine::RequestId> revision_{0};
         std::atomic<std::uint64_t> cancellation_{0};
     };
 
@@ -251,8 +240,8 @@ private:
         std::uint64_t cancellation;
     };
 
-    std::uint64_t submit(WorkerInstructions::Command command) {
-        std::uint64_t id;
+    engine::RequestId submit(WorkerInstructions::Command command) {
+        engine::RequestId id;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             id = instructions_.update(std::move(command));
@@ -261,13 +250,11 @@ private:
         return id;
     }
 
-    void emit(EngineEvent::Kind kind, std::uint64_t id = 0,
-              std::string text = {}, bool truncated = false,
-              Direction direction = Direction::Automatic) noexcept {
+    void emit(EngineEvent event) noexcept {
         if (instructions_.stopped()) { return; }
-        try { callback_(EngineEvent{kind, id, std::move(text), truncated, direction}); }
-        catch (const std::exception & error) { logCallbackFailure(kind, id, error.what()); }
-        catch (...) { logCallbackFailure(kind, id, "non-standard exception"); }
+        try { callback_(std::move(event)); }
+        catch (const std::exception & error) { logCallbackFailure(event, error.what()); }
+        catch (...) { logCallbackFailure(event, "non-standard exception"); }
     }
 
     void unload() {
@@ -275,23 +262,23 @@ private:
         if (backendInitialized_) {
             llama_backend_free();
             backendInitialized_ = false;
-            emit(EngineEvent::Kind::Idle);
+            emit(engine::Lifecycle{engine::Idle{}});
         }
     }
 
     bool load(std::uint64_t cancellation) {
         if (model_) { return true; }
         if (instructions_.loadCancelled(cancellation)) { return false; }
-        emit(EngineEvent::Kind::Loading, 0, "Loading the model…");
+        emit(engine::Lifecycle{engine::Loading{}});
         if (instructions_.loadCancelled(cancellation)) {
-            emit(EngineEvent::Kind::Cancelled);
+            emit(engine::Lifecycle{engine::LoadCancelled{}});
             return false;
         }
         llama_backend_init();
         backendInitialized_ = true;
         if (instructions_.loadCancelled(cancellation)) {
             unload();
-            emit(EngineEvent::Kind::Cancelled);
+            emit(engine::Lifecycle{engine::LoadCancelled{}});
             return false;
         }
         auto modelParameters = llama_model_default_params();
@@ -306,7 +293,7 @@ private:
         model_.reset(llama_model_load_from_file(modelPath_.c_str(), modelParameters));
         if (instructions_.loadCancelled(cancellation)) {
             unload();
-            emit(EngineEvent::Kind::Cancelled);
+            emit(engine::Lifecycle{engine::LoadCancelled{}});
             return false;
         }
         if (!model_) { throw std::runtime_error("Unable to load the model. Please check the model file."); }
@@ -317,7 +304,7 @@ private:
             throw std::runtime_error(kUnsupportedModel);
         }
         stopTag_ = stopTags.front();
-        emit(EngineEvent::Kind::Ready, 0, "Ready to translate");
+        emit(engine::Lifecycle{engine::Ready{}});
         return true;
     }
 
@@ -370,10 +357,10 @@ private:
         }
     }
 
-    EngineEvent translate(Request & request) {
+    engine::Outcome translate(Request & request) {
         if (!model_) { throw std::runtime_error("The model is not ready."); }
         const auto tokens = prompt(request);
-        if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+        if (instructions_.cancelled(request.id)) { return engine::Cancelled{}; }
 
         auto parameters = llama_context_default_params();
         const auto contextTokens = contextSize(tokens.size());
@@ -398,7 +385,7 @@ private:
         llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
         const auto * vocab = llama_model_get_vocab(model_.get());
         for (std::size_t position = 0; position < tokens.size(); position += kBatchSize) {
-            if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            if (instructions_.cancelled(request.id)) { return engine::Cancelled{}; }
             const auto count = std::min(kBatchSize, tokens.size() - position);
             decode(context.get(), batch.get(), tokens.data() + position, count, position, position + count == tokens.size());
         }
@@ -408,18 +395,18 @@ private:
         std::size_t validBytes = 0;
         auto lastEmission = std::chrono::steady_clock::time_point{};
         for (std::size_t generated = 0; generated < outputLimit; ++generated) {
-            if (instructions_.cancelled(request.id)) { return {EngineEvent::Kind::Cancelled, request.id, {}}; }
+            if (instructions_.cancelled(request.id)) { return engine::Cancelled{}; }
             const auto token = llama_sampler_sample(sampler.get(), context.get(), -1);
             if (llama_vocab_is_eog(vocab, token) || token == stopTag_ || token == bos_) {
                 if (validBytes != output.size()) { throw std::runtime_error("Unable to read the end of the translation."); }
-                return {EngineEvent::Kind::Complete, request.id, std::move(output), false, request.direction};
+                return engine::Complete{std::move(output), false, request.direction};
             }
             output += tokenPiece(vocab, token);
             validBytes = detail::utf8Prefix(output, nullptr, validBytes);
             const auto now = std::chrono::steady_clock::now();
             if (validBytes != emittedBytes && (emittedBytes == 0 ||
                 now - lastEmission >= std::chrono::milliseconds(33))) {
-                emit(EngineEvent::Kind::Text, request.id, output.substr(0, validBytes), false, request.direction);
+                emit(engine::Progress{request.id, output.substr(0, validBytes), request.direction});
                 emittedBytes = validBytes;
                 lastEmission = now;
             }
@@ -427,19 +414,19 @@ private:
                 decode(context.get(), batch.get(), &token, 1, tokens.size() + generated, true);
             }
         }
-        return {EngineEvent::Kind::Complete, request.id, output.substr(0, validBytes), true, request.direction};
+        return engine::Complete{output.substr(0, validBytes), true, request.direction};
     }
 
     void fail(FailureStage stage, const std::optional<Request> & request,
               std::uint64_t cancellation, const char * message) {
         if (stage == FailureStage::Load) {
             unload();
-            emit(instructions_.loadCancelled(cancellation) ? EngineEvent::Kind::Cancelled : EngineEvent::Kind::Error,
-                 0, message);
+            if (instructions_.loadCancelled(cancellation)) { emit(engine::Lifecycle{engine::LoadCancelled{}}); }
+            else { emit(engine::Lifecycle{engine::Failed{message}}); }
         }
         if (request) {
-            if (instructions_.cancelled(request->id)) { emit(EngineEvent::Kind::Cancelled, request->id); }
-            else { emit(EngineEvent::Kind::Error, request->id, message); }
+            if (instructions_.cancelled(request->id)) { emit(engine::Finished{request->id, engine::Cancelled{}}); }
+            else { emit(engine::Finished{request->id, engine::Error{message}}); }
         }
     }
 
@@ -463,7 +450,7 @@ private:
                 if (instructions_.stopped()) { break; }
                 work = instructions_.take();
             }
-            for (const auto id : work.dropped) { emit(EngineEvent::Kind::Cancelled, id); }
+            for (const auto id : work.dropped) { emit(engine::Finished{id, engine::Cancelled{}}); }
             if (std::holds_alternative<WorkerInstructions::Release>(work.next)) {
                 unload();
                 continue;
@@ -479,15 +466,14 @@ private:
             auto failureStage = FailureStage::Load;
             try {
                 if (request && instructions_.cancelled(request->id)) {
-                    emit(EngineEvent::Kind::Cancelled, request->id);
+                    emit(engine::Finished{request->id, engine::Cancelled{}});
                 } else if (load(cancellation)) {
                     if (request) {
                         failureStage = FailureStage::Request;
-                        auto result = translate(*request);
-                        emit(result.kind, result.requestId, std::move(result.text), result.truncated, result.direction);
+                        emit(engine::Finished{request->id, translate(*request)});
                     }
                 } else if (request) {
-                    emit(EngineEvent::Kind::Cancelled, request->id);
+                    emit(engine::Finished{request->id, engine::Cancelled{}});
                 }
             } catch (const std::exception & error) {
                 fail(failureStage, request, cancellation, error.what());
@@ -518,7 +504,7 @@ TranslationEngine::TranslationEngine(std::string modelPath, Callback callback,
     : impl_(std::make_unique<Impl>(std::move(modelPath), std::move(callback), idleTimeout)) {}
 TranslationEngine::~TranslationEngine() = default;
 void TranslationEngine::warmUp() { impl_->warmUp(); }
-std::uint64_t TranslationEngine::translate(std::string text, Direction direction) { return impl_->translate(std::move(text), direction); }
+engine::RequestId TranslationEngine::translate(std::string text, Direction direction) { return impl_->translate(std::move(text), direction); }
 void TranslationEngine::cancel() { impl_->cancel(); }
 void TranslationEngine::releaseMemory() { impl_->releaseMemory(); }
 void TranslationEngine::shutdown() { impl_->shutdown(); }

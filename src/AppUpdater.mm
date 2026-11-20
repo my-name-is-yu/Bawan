@@ -32,6 +32,14 @@
 #endif
 }
 
+- (BOOL)relaunchPostponed {
+#if BAWAN_ENABLE_UPDATES
+    return _pendingRelaunch != nil;
+#else
+    return NO;
+#endif
+}
+
 - (void)start {
 #if BAWAN_ENABLE_UPDATES
     if (_controller) return;
@@ -129,8 +137,10 @@
 }
 
 - (void)updater:(SPUUpdater *)updater didAbortWithError:(NSError *)error {
+    const BOOL postponed = self.relaunchPostponed;
     _pendingRelaunch = nil;
-    [self setInstallingUpdate:NO];
+    if (_installingUpdate) [self setInstallingUpdate:NO];
+    else if (postponed && self.onStateChanged) self.onStateChanged();
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object

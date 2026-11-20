@@ -4,7 +4,8 @@
 int main(void) {
     @autoreleasepool {
         NSApplication *app = NSApplication.sharedApplication;
-        __attribute__((objc_precise_lifetime)) AppDelegate *delegate = [[AppDelegate alloc] init];
+        __attribute__((objc_precise_lifetime)) AppDelegate *delegate = [[AppDelegate alloc]
+            initWithLaunchMode:bawan::LaunchModeFromEnvironment(NSProcessInfo.processInfo.environment)];
         app.delegate = delegate;
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
         [app run];
