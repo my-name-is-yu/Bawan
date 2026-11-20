@@ -261,7 +261,9 @@ static void CheckCancelFromObserverStopsPreparation() {
     Fixture *fixture = &f;
     f.store.onChange = ^(const ModelStoreSnapshot &snapshot) {
         fixture->observe(snapshot);
-        if (Is<ModelDownloading>(snapshot)) [fixture->store cancel];
+        if (!Is<ModelDownloading>(snapshot)) return;
+        [fixture->store cancel];
+        Require(Is<ModelDownloading>(snapshot), "Cancelling must preserve the snapshot delivered to the observer");
     };
     [f.store prepare];
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];

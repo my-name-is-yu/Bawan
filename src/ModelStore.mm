@@ -76,7 +76,7 @@ static const char ModelSHA256[] =
 - (void)publish:(const ModelStoreSnapshot &)snapshot generation:(uint64_t)generation {
     if (_generation.load() != generation) return;
     _snapshot = snapshot;
-    if (self.onChange) self.onChange(_snapshot);
+    if (self.onChange) self.onChange(snapshot);
 }
 
 - (uint64_t)restart {
