@@ -312,7 +312,9 @@ struct ShortcutRow {
     auto binding = [_preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
     BOOL ready = binding.enabled && [_monitor availabilityForAction:bawan::ShortcutAction::TranslateSelection] ==
         ShortcutAvailabilityAvailable;
+    BOOL interrupted = NO;
     if (binding != _trialBinding || !ready || [self showingModelStep]) {
+        interrupted = _trialPhase == TrialPhase::Translating;
         [self resetSelectionTrial];
     }
     _trialBinding = binding;
@@ -323,6 +325,7 @@ struct ShortcutRow {
     _monitor.selectionTrialView = _active && ready && ![self showingModelStep] ? _selectionSample : nil;
     [self updateFooter];
     [self.view layoutSubtreeIfNeeded];
+    if (interrupted && self.onSelectionTrialInterrupted) self.onSelectionTrialInterrupted();
 }
 
 - (void)setActive:(BOOL)active {
