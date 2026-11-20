@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "SelectionResult.h"
 
 #include <cstdint>
 
@@ -8,7 +9,6 @@ inline constexpr int64_t selectionCopyEventTag = 0x426177616e437079;
 
 NS_ASSUME_NONNULL_BEGIN
 
-// External effects are injectable so a read needs neither an event tap nor the system clipboard.
 @protocol SelectionReaderEnvironment <NSObject>
 - (pid_t)frontmostApplication;
 - (NSInteger)pasteboardChangeCount;
@@ -21,8 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Main-thread only. Each begin replaces the previous read, including queued copy events.
 @interface SelectionReader : NSObject
-@property(nonatomic, copy, nullable) void (^onText)(NSString *text);
-@property(nonatomic, copy, nullable) void (^onProblem)(NSString *message);
+@property(nonatomic, copy, nullable) void (^onResult)(const SelectionReadResult &result);
 - (instancetype)initWithEnvironment:(id<SelectionReaderEnvironment>)environment;
 // Passive copy begins before the first physical Cmd-C reaches the source app.
 - (void)beginCopyFromApplication:(pid_t)application passive:(BOOL)passive;

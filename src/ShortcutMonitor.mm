@@ -1,4 +1,5 @@
 #import "ShortcutMonitor.h"
+#import "ShortcutMonitor+Testing.h"
 #import "SelectionReader.h"
 #include "ShortcutMonitorState.h"
 #import <AppKit/AppKit.h>
@@ -65,6 +66,13 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
     if (!self) return nil;
     _preferences = preferences;
     _selectionReader = selectionReader;
+    __weak ShortcutMonitor *weakSelf = self;
+    _selectionReader.onResult = ^(const SelectionReadResult &result) {
+        ShortcutMonitor *self = weakSelf;
+        if (self.onSelection) {
+            std::visit([&](const auto &value) { self.onSelection(SelectionEvent{value}); }, result);
+        }
+    };
     _availability.fill(ShortcutAvailabilityOff);
     [self loadBindings];
     return self;
@@ -338,7 +346,6 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
             [self cancelPending];
             [self configureGestures];
         }
-        // Previously intercepted downs still own their repeats and release.
         if (active && type == kCGEventKeyUp) {
             __weak ShortcutMonitor *weakSelf = self;
             dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf refresh]; });
@@ -382,7 +389,7 @@ static CGEventRef observeActive(CGEventTapProxy, CGEventType type, CGEventRef ev
                     if (!self || !view || generation != self->_actionGeneration ||
                         [self activeSelectionTrialView] != view ||
                         !NSEqualRanges(view.selectedRange, selected) || ![view.string isEqualToString:source]) return;
-                    if (self.onSelectionTrial) self.onSelectionTrial(source);
+                    if (self.onSelection) self.onSelection(SelectionTrial{source});
                 });
             } else if (passive) {
                 [_selectionReader readSelection];

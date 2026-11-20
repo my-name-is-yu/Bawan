@@ -1,20 +1,20 @@
 #import "AppDelegate.h"
+#import "EngineHost.h"
 #import "ModelStore.h"
 #import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
-#import "SelectionReader.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
 #import "OnboardingViewController.h"
 #import <ServiceManagement/ServiceManagement.h>
 
-#include "TranslationEngine.h"
-#include "EngineEventMailbox.h"
-#include <memory>
+#include "TranslationSession.h"
+
 #include <optional>
 #include <utility>
 
 enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning };
+using Session = bawan::TranslationSession;
 
 struct CompletedPractice {
     NSString *source;
@@ -37,21 +37,21 @@ struct CompletedPractice {
     ModelStore *_modelStore;
     ShortcutMonitor *_shortcut;
     dispatch_source_t _memoryPressure;
-    std::unique_ptr<bawan::TranslationEngine> _engine;
-    uint64_t _activeRequestId;
-    uint64_t _engineGeneration;
-    NSString *_pendingText;
-    bawan::Direction _pendingDirection;
-    NSString *_pendingTrialText;
-    NSUInteger _selectionTrialAttempt;
+    EngineHost *_engineHost;
+    Session _translationSession;
     std::optional<CompletedPractice> _completedPractice;
-    BOOL _warmUpWhenAvailable;
-    BOOL _busy;
     BOOL _terminating;
     StatusOwner _statusOwner;
     BawanModelState _model;
     NSString *_memoryProbeDirectory;
 }
+- (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory;
+- (Session &)translationSession;
+- (void)applyTranslationEvent:(Session::Event)event;
+- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy;
+- (void)synchronizeTranslationModel;
+- (void)invalidateSelectionTrial;
+- (void)handleEngineLifecycle:(const bawan::engine::Lifecycle &)state;
 @end
 
 static NSString *const BawanOnboardingCompletedKey = @"firstLaunchShown";
@@ -60,9 +60,22 @@ static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown2
 @implementation AppDelegate
 
 - (instancetype)init {
+    return [self initWithDefaults:NSUserDefaults.standardUserDefaults
+            memoryProbeDirectory:NSProcessInfo.processInfo.environment[@"BAWAN_MEMORY_PROBE"]];
+}
+
+- (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory {
     self = [super init];
     if (self) {
-        _defaults = NSUserDefaults.standardUserDefaults;
+        _defaults = defaults;
+        _memoryProbeDirectory = [probeDirectory copy];
+        _translationSession = Session{_memoryProbeDirectory.length || [_defaults boolForKey:BawanOnboardingCompletedKey]
+            ? Session::TranslatorAccess::Open : Session::TranslatorAccess::AwaitingOnboarding};
+        __weak AppDelegate *weakSelf = self;
+        _engineHost = [[EngineHost alloc] initWithEventHandler:^(const bawan::EngineEvent &event) {
+            AppDelegate *owner = weakSelf;
+            if (owner && !owner->_terminating) [owner handleEngineEvent:event];
+        }];
     }
     return self;
 }
@@ -71,6 +84,15 @@ static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown2
 - (BOOL)modelFailed { return _model.failed(); }
 - (NSURL *)modelURL { return _model.url(); }
 - (NSString *)modelStatus { return _model.message(); }
+
+- (Session &)translationSession { return _translationSession; }
+
+- (BOOL)busy { return _translationSession.busy(); }
+
+- (Session::ModelAvailability)modelAvailability {
+    if (_model.hasVerifiedFile()) return Session::ModelAvailability::Available;
+    return _model.failed() ? Session::ModelAvailability::Failed : Session::ModelAvailability::Pending;
+}
 
 static NSString *StringFromUTF8(const std::string &text) {
     return [[NSString alloc] initWithBytes:text.data() length:text.size()
@@ -106,21 +128,16 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
-    SelectionReader *selectionReader = [SelectionReader new];
-    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences selectionReader:selectionReader];
-    selectionReader.onText = ^(NSString *text) {
+    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
+    _shortcut.onSelection = ^(const SelectionEvent &event) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner handleSelectionText:text];
-    };
-    selectionReader.onProblem = ^(NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        [owner handleShortcutProblem:message];
-    };
-    _shortcut.onSelectionTrial = ^(NSString *text) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner handleSelectionTrialText:text];
+        std::visit([&](const auto &value) {
+            using Value = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Value, SelectedText>) [owner handleSelectionText:value.text];
+            else if constexpr (std::is_same_v<Value, SelectionTrial>) [owner handleSelectionTrialText:value.text];
+            else [owner handleShortcutProblem:value.message];
+        }, event);
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
@@ -136,7 +153,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
-    _memoryProbeDirectory = NSProcessInfo.processInfo.environment[@"BAWAN_MEMORY_PROBE"];
     if (_memoryProbeDirectory.length) {
         [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(memoryProbeTick:)
                                       userInfo:nil repeats:YES];
@@ -191,33 +207,20 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)modelFileDidBecomeReady:(NSURL *)fileURL {
+    [_engineHost startWithModelURL:fileURL];
     _model.fileReady(fileURL);
-    if (_pendingTrialText && [_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt]) {
-        [self translateText:_pendingTrialText direction:bawan::Direction::Automatic trialAttempt:_selectionTrialAttempt];
-    } else {
-        if (_pendingTrialText) [self cancelTranslationKeepingPendingSelection:YES];
-        if (![self submitPendingTranslationIfReady] && !_pendingText && _warmUpWhenAvailable) [self warmUpEngine];
-    }
     [self updateStatus];
+    [self synchronizeTranslationModel];
 }
 
 - (void)modelFileDidFail:(NSString *)message {
-    [_onboardingViewController cancelSelectionTrial];
-    _selectionTrialAttempt = 0;
-    _pendingTrialText = nil;
+    [_engineHost stopAndDiscardEvents];
     _model.fileFailed(message, _modelStore.canResume);
-    _pendingText = nil;
-    _warmUpWhenAvailable = NO;
-    _busy = NO;
-    _activeRequestId = 0;
+    [self synchronizeTranslationModel];
     [self updateStatus];
 }
 
-- (BOOL)needsOnboarding { return !_memoryProbeDirectory.length && ![_defaults boolForKey:BawanOnboardingCompletedKey]; }
-
-- (void)markOnboardingComplete {
-    if ([self needsOnboarding]) [_defaults setBool:YES forKey:BawanOnboardingCompletedKey];
-}
+- (BOOL)needsOnboarding { return _translationSession.access() == Session::TranslatorAccess::AwaitingOnboarding; }
 
 - (void)startInitialSetup {
     if ([self needsOnboarding]) {
@@ -265,26 +268,23 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)showOnboarding {
     __weak AppDelegate *weakSelf = self;
     OnboardingViewController *onboarding = _onboardingViewController;
-    BOOL created = !onboarding;
+    const BOOL created = onboarding == nil;
     if (created) {
         onboarding = [[OnboardingViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
         onboarding.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
         onboarding.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
         onboarding.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
-        onboarding.onSelectionTrialInterrupted = ^{
-            AppDelegate *owner = weakSelf;
-            if (owner && owner->_selectionTrialAttempt) [owner cancelTranslationKeepingPendingSelection:YES];
-        };
         onboarding.onSelectionTrialDiscarded = ^{
             AppDelegate *owner = weakSelf;
             if (owner) owner->_completedPractice.reset();
         };
         _onboardingViewController = onboarding;
     }
+    onboarding.onSelectionTrialInterrupted = ^{ [weakSelf invalidateSelectionTrial]; };
     [self pushModelStateToPage:onboarding];
     [self discardUnavailablePractice];
+    [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOrCloseOnboarding]; }];
     if (created && _completedPractice) [onboarding restoreCompletedSelectionTrial];
-    [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOnboarding]; }];
 }
 
 // The shortcut step's button: leave for the translator even while the model is
@@ -292,27 +292,25 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)finishOnboardingFromShortcuts {
     if (!_model.canFinishSetup()) return;
     [self enterTranslatorFromOnboarding];
-    if (!_busy) [self warmUpEngine];
+    if (![self busy]) [self warmUpEngine];
 }
 
 - (void)enterTranslatorFromOnboarding {
     [_onboardingViewController refresh];
-    if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
-    [self markOnboardingComplete];
     [self discardUnavailablePractice];
-    if (auto practice = std::exchange(_completedPractice, std::nullopt)) {
-        // Accepting the successful practice result explicitly replaces the old selection.
-        _pendingText = nil;
-        _busy = NO;
+    const auto practice = std::exchange(_completedPractice, std::nullopt);
+    const BOOL wasOnboarding = [self needsOnboarding];
+    [self applyTranslationEvent:Session::OpenTranslator{
+        practice ? Session::PendingSelection::Discard : Session::PendingSelection::Resume}];
+    if (wasOnboarding) [_defaults setBool:YES forKey:BawanOnboardingCompletedKey];
+    if (practice) {
         [_translationPanel showForSelection:practice->source];
         [_translationPanel setOutput:practice->output direction:practice->direction];
     }
     [_translationPanel showForManualInput];
-    if (![self submitPendingTranslationIfReady]) [self updateStatus];
 }
 
-// Escape leaves onboarding: it finishes once the model is ready, otherwise it just closes.
-- (void)finishOnboarding {
+- (void)finishOrCloseOnboarding {
     if (!_model.canEnterTranslator()) {
         [_translationPanel close];
         return;
@@ -484,20 +482,25 @@ static NSString *StringFromUTF8(const std::string &text) {
         case StatusOwner::None:
         case StatusOwner::TranslationOutcome:
         case StatusOwner::ShortcutWarning:
-            [_translationPanel setAvailable:available busy:_busy];
+            [_translationPanel setAvailable:available busy:[self busy]];
             break;
     }
 }
 
 - (void)showStatus:(NSString *)message kind:(BawanStatusKind)kind owner:(StatusOwner)owner {
     _statusOwner = message.length ? owner : StatusOwner::None;
-    [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:_busy status:message kind:kind];
+    [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:[self busy] status:message kind:kind];
 }
 
 - (void)handleShortcutProblem:(NSString *)message {
     [self updateShortcutItem];
-    [_translationPanel showWithoutChangingInput];
-    [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
+    if ([self needsOnboarding]) {
+        [self showOnboarding];
+        [_onboardingViewController showSelectionCopyError:message];
+    } else {
+        [_translationPanel showWithoutChangingInput];
+        [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
+    }
     _statusItem.button.toolTip = message;
 }
 
@@ -522,12 +525,8 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
     if (needsPermission) [instructions addObject:@"Manage shortcut permissions in Settings."];
     [_translationPanel setShortcutInstructions:[instructions componentsJoinedByString:@" · "]];
-    const BOOL cancelTrial = _selectionTrialAttempt &&
-        ![_onboardingViewController isSelectionTrialCurrent:_selectionTrialAttempt];
-    const BOOL onboardingUpdatedByCancellation = cancelTrial && _translationPanel.currentPage == BawanPanelPageOnboarding;
-    if (cancelTrial) [self cancelTranslationKeepingPendingSelection:YES];
     [_settingsViewController refresh];
-    if (!onboardingUpdatedByCancellation) [_onboardingViewController refresh];
+    [_onboardingViewController refresh];
 }
 
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification { [self updateShortcutItem]; }
@@ -537,181 +536,137 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateShortcutItem];
 }
 
-- (void)ensureEngine {
-    NSURL *modelURL = _model.url();
-    if (_engine || !modelURL || _terminating) return;
-    const uint64_t generation = ++_engineGeneration;
-    __weak AppDelegate *weakSelf = self;
-    auto mailbox = std::make_shared<bawan::EngineEventMailbox>();
-    _engine = std::make_unique<bawan::TranslationEngine>(
-        std::string(modelURL.fileSystemRepresentation), [weakSelf, generation, mailbox](bawan::EngineEvent event) {
-            if (!mailbox->push(std::move(event))) return;
-            @autoreleasepool {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    AppDelegate *owner = weakSelf;
-                    const auto events = mailbox->drain();
-                    if (owner && !owner->_terminating && owner->_engineGeneration == generation) {
-                        for (const auto &queued : events) [owner handleEngineEvent:queued];
-                    }
-                });
-            }
-        });
-}
-
 - (void)warmUpEngine {
-    if (_terminating) return;
-    _warmUpWhenAvailable = ![self hasVerifiedModelFile];
-    [self ensureEngine];
-    if (_engine) _engine->warmUp();
+    [self applyTranslationEvent:Session::WarmUpRequested{}];
 }
 
-- (void)queueTranslation:(NSString *)text direction:(bawan::Direction)direction {
-    _pendingText = [text copy];
-    _pendingDirection = direction;
-    _activeRequestId = 0;
-    _busy = YES;
-    [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-    [self updateStatus];
-}
-
-- (BOOL)submitPendingTranslationIfReady {
-    if (!_pendingText || [self needsOnboarding] || ![self hasVerifiedModelFile]) return NO;
-    [self translateText:_pendingText direction:_pendingDirection];
-    return YES;
+- (void)submitText:(NSString *)text direction:(bawan::Direction)direction origin:(Session::Origin)origin {
+    if (const char *utf8 = text.UTF8String) {
+        std::string source(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+        [self applyTranslationEvent:Session::Submit{{std::move(source), direction}, std::move(origin)}];
+    }
 }
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
-    if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
-    [self translateText:text direction:direction trialAttempt:0];
+    [self submitText:text direction:direction origin:Session::Manual{}];
 }
 
-- (void)translateText:(NSString *)text direction:(bawan::Direction)direction trialAttempt:(NSUInteger)attempt {
+- (void)applyTranslationEvent:(Session::Event)event {
     if (_terminating) return;
-    _selectionTrialAttempt = attempt;
-    if (![self hasVerifiedModelFile]) {
-        if ([self modelFailed]) {
-            [_onboardingViewController finishSelectionTrial:attempt output:nil direction:direction];
-            _selectionTrialAttempt = 0;
-            [self updateStatus];
-            return;
+    const BOOL wasBusy = [self busy];
+    [self applyTranslationEffects:_translationSession.reduce(std::move(event), [self modelAvailability])
+                         wasBusy:wasBusy];
+}
+
+- (void)synchronizeTranslationModel {
+    if (_terminating) return;
+    const BOOL wasBusy = [self busy];
+    [self applyTranslationEffects:_translationSession.synchronizeModel([self modelAvailability])
+                         wasBusy:wasBusy];
+}
+
+- (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy {
+    while (!effects.empty()) {
+        Session::Effects next;
+        for (auto &effect : effects) {
+            std::visit(bawan::engine::Visitor{
+                [&](Session::SubmitRequest &request) {
+                    const auto id = [_engineHost translate:std::move(request.source.text)
+                                                direction:request.source.direction];
+                    next = _translationSession.resolveSubmission(id);
+                },
+                [&](Session::CancelEngine) {
+                    [_engineHost cancel];
+                    if (_model.engine() == BawanModelState::Engine::Loading) {
+                        _model.stopLoading();
+                        [self updateStatus];
+                    }
+                },
+                [&](Session::WarmUp) {
+                    [_engineHost warmUp];
+                },
+                [&](Session::ClearOutput) {
+                    [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
+                },
+                [&](const Session::Output &output) {
+                    [_translationPanel setOutput:StringFromUTF8(output.text) direction:output.direction];
+                },
+                [&](Session::Status outcome) {
+                    switch (outcome) {
+                        case Session::Status::Clear:
+                            [self showStatus:@"" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
+                            break;
+                        case Session::Status::Cancelled:
+                            [self showStatus:@"Translation cancelled" kind:BawanStatusInformation
+                                       owner:StatusOwner::TranslationOutcome];
+                            break;
+                        case Session::Status::Truncated:
+                            [self showStatus:@"Output limit reached. The translation is incomplete. Select less text and try again."
+                                        kind:BawanStatusWarning owner:StatusOwner::TranslationOutcome];
+                            break;
+                    }
+                },
+                [&](const Session::TranslationError &error) {
+                    [self showStatus:StringFromUTF8(error.message) kind:BawanStatusError
+                               owner:StatusOwner::TranslationOutcome];
+                },
+                [&](const Session::TrialFinished &trial) {
+                    NSString *output = trial.output ? [[NSString alloc] initWithBytes:trial.output->text.data()
+                        length:trial.output->text.size() encoding:NSUTF8StringEncoding] : nil;
+                    OnboardingViewController *onboarding = _onboardingViewController;
+                    if ([onboarding finishSelectionTrialWithOutput:output]) {
+                        _completedPractice = CompletedPractice{
+                            [onboarding.selectionTrialText copy], output, trial.output->direction,
+                            [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]};
+                    }
+                },
+                [&](Session::TrialDiscarded) {
+                    [_onboardingViewController cancelSelectionTrial];
+                },
+            }, effect);
         }
-        if (attempt) {
-            _pendingTrialText = [text copy];
-            _activeRequestId = 0;
-            _busy = YES;
-            [self updateStatus];
-        } else {
-            [self queueTranslation:text direction:direction];
-        }
-        return;
+        effects = std::move(next);
     }
-    if (attempt) {
-        _pendingTrialText = nil;
-    } else {
-        [self markOnboardingComplete];
-        _pendingText = nil;
-    }
-    _warmUpWhenAvailable = NO;
-    [self ensureEngine];
-    const char *utf8 = text.UTF8String;
-    if (!utf8) return;
-    _activeRequestId = _engine->translate(std::string(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]), direction);
-    _busy = YES;
-    if (!attempt) {
-        [_translationPanel setOutput:@"" direction:bawan::Direction::Automatic];
-        [self showStatus:@"" kind:BawanStatusInformation owner:StatusOwner::None];
-    }
+    if (wasBusy != [self busy]) [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:[self busy]];
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
-    using Kind = bawan::EngineEvent::Kind;
-    if (_memoryProbeDirectory.length) {
-        if (event.kind == Kind::Complete) [self memoryProbeWrite:@"complete" name:@"engine"];
-        else if (event.kind == Kind::Idle) [self memoryProbeWrite:@"idle" name:@"engine"];
-        else if (event.kind == Kind::Error || event.kind == Kind::Cancelled)
-            [self memoryProbeWrite:@"error" name:@"engine"];
+    using namespace bawan::engine;
+    const auto metadata = describe(event);
+    if (_memoryProbeDirectory.length && metadata.probeValue) {
+        [self memoryProbeWrite:@(metadata.probeValue) name:@"engine"];
     }
-    if (event.requestId == 0) {
-        if (event.kind == Kind::Idle) return;
-        if (event.kind == Kind::Loading) _model.engineLoading();
-        else if (event.kind == Kind::Ready || event.kind == Kind::Cancelled) _model.engineIdle();
-        else if (event.kind == Kind::Error) _model.engineFailed(StringFromUTF8(event.text));
-        [self updateStatus];
+    if (const auto *state = std::get_if<bawan::engine::Lifecycle>(&event)) {
+        [self handleEngineLifecycle:*state];
         return;
     }
-    if (event.requestId != _activeRequestId) return;
-    if (_selectionTrialAttempt) {
-        const NSUInteger attempt = _selectionTrialAttempt;
-        if (![_onboardingViewController isSelectionTrialCurrent:attempt]) {
-            [self cancelTranslationKeepingPendingSelection:YES];
-            return;
-        }
-        if (event.kind == Kind::Complete || event.kind == Kind::Cancelled || event.kind == Kind::Error) {
-            _busy = _pendingText != nil;
-            _activeRequestId = 0;
-            _selectionTrialAttempt = 0;
-            NSString *output = event.kind == Kind::Complete && !event.truncated ?
-                [[NSString alloc] initWithBytes:event.text.data() length:event.text.size()
-                    encoding:NSUTF8StringEncoding] : nil;
-            if ([_onboardingViewController finishSelectionTrial:attempt output:output direction:event.direction]) {
-                _completedPractice = CompletedPractice{
-                    [_onboardingViewController.selectionTrialText copy], output, event.direction,
-                    [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]};
-            }
-            [self updateStatus];
-        }
-        return;
-    }
-    switch (event.kind) {
-        case Kind::Text:
-            [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            break;
-        case Kind::Complete:
-            _busy = NO;
-            _activeRequestId = 0;
-            [_translationPanel setOutput:StringFromUTF8(event.text) direction:event.direction];
-            [self showStatus:event.truncated ?
-                @"Output limit reached. The translation is incomplete. Select less text and try again." : @""
-                        kind:event.truncated ? BawanStatusWarning : BawanStatusInformation
-                       owner:StatusOwner::TranslationOutcome];
-            break;
-        case Kind::Cancelled:
-            _busy = NO;
-            _activeRequestId = 0;
-            [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
-            break;
-        case Kind::Error:
-            _busy = NO;
-            _activeRequestId = 0;
-            [self showStatus:StringFromUTF8(event.text) kind:BawanStatusError owner:StatusOwner::TranslationOutcome];
-            break;
-        default: break;
-    }
+    [self applyTranslationEvent:event];
 }
 
-- (void)cancelTranslationKeepingPendingSelection:(BOOL)keepSelection {
-    const BOOL cancellingTrial = _selectionTrialAttempt != 0;
-    [_onboardingViewController cancelSelectionTrial];
-    _selectionTrialAttempt = 0;
-    _pendingTrialText = nil;
-    if (!keepSelection) _pendingText = nil;
-    _warmUpWhenAvailable = NO;
-    if (_engine) _engine->cancel();
-    _model.stopLoading();
-    const BOOL showCancellation = _busy && !cancellingTrial && !_pendingText;
-    _activeRequestId = 0;
-    _busy = _pendingText != nil;
-    [self updateStatus];
-    if (showCancellation) [self showStatus:@"Translation cancelled" kind:BawanStatusInformation owner:StatusOwner::TranslationOutcome];
+- (void)handleEngineLifecycle:(const bawan::engine::Lifecycle &)state {
+    using namespace bawan::engine;
+    std::visit(Visitor{
+        [self](Loading) { _model.engineLoading(); [self updateStatus]; },
+        [self](Ready) { _model.engineIdle(); [self updateStatus]; },
+        [](Idle) {},
+        [self](LoadCancelled) { _model.engineIdle(); [self updateStatus]; },
+        [self](const Failed &failure) { _model.engineFailed(StringFromUTF8(failure.message)); [self updateStatus]; },
+    }, state);
 }
 
-- (void)cancelTranslation { [self cancelTranslationKeepingPendingSelection:NO]; }
+- (void)invalidateSelectionTrial {
+    [self applyTranslationEvent:Session::TrialInvalidated{}];
+}
+
+- (void)cancelTranslation {
+    [self applyTranslationEvent:Session::Cancel{}];
+}
 
 - (void)openTranslation:(id)sender {
     if ([self needsOnboarding]) {
         if (_model.canEnterTranslator()) {
-            [self finishOnboarding];
-            if (!_busy) [self warmUpEngine];
+            [self enterTranslatorFromOnboarding];
+            if (![self busy]) [self warmUpEngine];
         } else {
             [self showOnboarding];
         }
@@ -722,23 +677,24 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)handleSelectionTrialText:(NSString *)text {
-    if (![_onboardingViewController isSelectionTrialText:text]) return;
-    NSUInteger attempt = [_onboardingViewController beginSelectionTrial];
-    if (attempt) [self translateText:text direction:bawan::Direction::Automatic trialAttempt:attempt];
+    if ([_onboardingViewController beginSelectionTrialForText:text]) {
+        [self submitText:text direction:bawan::Direction::Automatic origin:Session::Trial{}];
+    }
 }
 
 - (void)handleSelectionText:(NSString *)text {
-    if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
+    [_onboardingViewController clearSelectionCopyError];
     [_onboardingViewController discardSelectionTrialResult];
     _completedPractice.reset();
-    [_translationPanel showForSelection:text];
     const BOOL needsOnboarding = [self needsOnboarding];
     if (needsOnboarding || _model.setupNotStarted()) {
-        if (needsOnboarding && ![self modelFailed]) [self queueTranslation:text direction:bawan::Direction::Automatic];
+        [_translationPanel setSelection:text];
+        if (needsOnboarding) [self submitText:text direction:bawan::Direction::Automatic origin:Session::Selection{}];
         [self showOnboarding];
         return;
     }
-    [self translateText:text direction:bawan::Direction::Automatic];
+    [_translationPanel showForSelection:text];
+    [self submitText:text direction:bawan::Direction::Automatic origin:Session::Selection{}];
 }
 
 - (void)toggleShortcut:(NSMenuItem *)sender {
@@ -776,8 +732,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)retryModel:(id)sender {
     [self cancelTranslation];
-    ++_engineGeneration;
-    _engine.reset();
+    [_engineHost stopAndDiscardEvents];
     _model.beginPreparing();
     [self updateStatus];
     [_modelStore revalidate];
@@ -798,7 +753,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)openSettings:(id)sender {
-    if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     __weak AppDelegate *weakSelf = self;
     SettingsViewController *settings = _settingsViewController;
     if (!settings) {
@@ -837,7 +791,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
 
 - (void)releaseEngineMemory {
-    if (_engine) _engine->releaseMemory();
+    [_engineHost releaseMemory];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
@@ -849,10 +803,7 @@ static NSString *StringFromUTF8(const std::string &text) {
         dispatch_source_cancel(_memoryPressure);
         _memoryPressure = nil;
     }
-    if (_engine) {
-        _engine->shutdown();
-        _engine.reset();
-    }
+    [_engineHost stopAndDiscardEvents];
     [NSStatusBar.systemStatusBar removeStatusItem:_statusItem];
 }
 @end
