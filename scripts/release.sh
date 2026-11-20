@@ -18,7 +18,8 @@ security find-identity -v -p codesigning |
     awk -v wanted="$BAWAN_SIGNING_IDENTITY" 'index($0, "\"" wanted "\"") { found=1 } END { exit !found }' ||
     fail 'The specified Developer ID Application identity and private key are not available in the Keychain.'
 
-feed_url=${BAWAN_UPDATE_FEED_URL:-https://github.com/my-name-is-yu/Bawan/releases/latest/download/appcast.xml}
+default_feed_url=https://github.com/my-name-is-yu/Bawan/releases/latest/download/appcast.xml
+feed_url=${BAWAN_UPDATE_FEED_URL:-$default_feed_url}
 case "$feed_url" in
     https://*) ;;
     *) fail 'BAWAN_UPDATE_FEED_URL must use HTTPS.' ;;
@@ -56,6 +57,20 @@ build_number=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Content
 case "$version:$build_number" in
     *[!0-9.:]*) fail 'Release version and build number must contain only digits and periods.' ;;
 esac
+download_url_prefix=${BAWAN_UPDATE_DOWNLOAD_URL_PREFIX:-}
+if [ -z "$download_url_prefix" ]; then
+    if [ "$feed_url" = "$default_feed_url" ]; then
+        download_url_prefix="https://github.com/my-name-is-yu/Bawan/releases/download/v$version/"
+    else
+        feed_path=${feed_url%%[?#]*}
+        download_url_prefix="${feed_path%/*}/"
+    fi
+fi
+case "$download_url_prefix" in
+    https://?*/) ;;
+    *) fail 'BAWAN_UPDATE_DOWNLOAD_URL_PREFIX must be an HTTPS directory URL ending with a slash.' ;;
+esac
+
 output_root="$repo_dir/build/release-artifacts"
 output_dir="$output_root/$version-$build_number"
 [ ! -e "$output_dir" ] || fail "Release artifacts already exist: $output_dir"
@@ -85,7 +100,7 @@ rm -- "$submission_zip"
 archive_name="Bawan-$version-macOS-arm64.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$staging_dir/$archive_name"
 "$tools_dir/generate_appcast" --account "$key_account" --maximum-deltas 0 \
-    --download-url-prefix "https://github.com/my-name-is-yu/Bawan/releases/download/v$version/" \
+    --download-url-prefix "$download_url_prefix" \
     -o "$staging_dir/appcast.xml" "$staging_dir"
 xmllint --noout "$staging_dir/appcast.xml"
 [ "$(xmllint --xpath "boolean(//*[local-name()='enclosure'][@*[local-name()='edSignature']])" "$staging_dir/appcast.xml")" = true ] ||
