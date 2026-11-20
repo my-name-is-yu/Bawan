@@ -83,8 +83,6 @@ struct ShortcutRow {
     BawanChromeHeader header = BawanAddHeader(root, @"onboarding-header", @"onboarding-mascot");
     _mascot = header.mascot;
 
-    // The shared footer keeps Continue available while downloading. Its trailing
-    // slot shows the license on the model step and Pause/Resume on the shortcut step.
     BawanChromeFooter footer = BawanAddFooter(root, @"onboarding-footer");
     _primary = BawanAddFooterPrimary(footer.footer, @"onboarding-primary", @"",
         self, @selector(performPrimaryAction));
@@ -95,14 +93,13 @@ struct ShortcutRow {
     _modelLicense.imageHugsTitle = YES;
     _modelControl = BawanAddFooterSecondary(footer.footer, @"onboarding-model-control", @"",
         self, @selector(performModelAction:));
-    _modelControl.hidden = YES;
     _footerNote = BawanAddFooterHint(footer.footer, @"onboarding-footer-note", @"", _primary, _modelLicense);
 
     NSScrollView *scroll = [[NSScrollView alloc] init];
     scroll.identifier = @"onboarding-scroll";
     _scroll = scroll;
     scroll.borderType = NSNoBorder;
-    BawanConfigurePaperScrollView(scroll);
+    BawanConfigurePaperScrollView(scroll, BawanPaperScrollPolicy::SystemStableGutter);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:scroll];
     BawanSetupDocument *document = [[BawanSetupDocument alloc] init];
@@ -258,8 +255,10 @@ struct ShortcutRow {
 
     _modelStep.hidden = !modelStep;
     _shortcutStep.hidden = modelStep;
-    _modelLicense.hidden = !modelStep;
-    _modelControl.hidden = phase != BawanModelSetupDownloading && phase != BawanModelSetupPaused;
+    NSButton *trailingAction = nil;
+    if (modelStep) trailingAction = _modelLicense;
+    else if (phase == BawanModelSetupDownloading || phase == BawanModelSetupPaused) trailingAction = _modelControl;
+    for (NSButton *button in @[_modelLicense, _modelControl]) button.hidden = button != trailingAction;
     _modelControl.title = presentation.actionTitle;
 
     _title.stringValue = failed ? @"Let’s Finish Setting Up" : @"Prepare Your Translator";

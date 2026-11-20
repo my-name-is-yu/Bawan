@@ -69,12 +69,13 @@ NSImage *BawanMascotImage(void) {
 }
 @end
 
-void BawanConfigurePaperScrollView(NSScrollView *scroll) {
+void BawanConfigurePaperScrollView(NSScrollView *scroll, BawanPaperScrollPolicy policy) {
     scroll.hasVerticalScroller = YES;
     scroll.verticalScroller = [[BawanPaperScroller alloc] initWithFrame:NSMakeRect(0, 0, 16, 100)];
     scroll.hasHorizontalScroller = NO;
-    scroll.autohidesScrollers = YES;
-    scroll.scrollerStyle = NSScrollerStyleOverlay;
+    const bool followsSystem = policy == BawanPaperScrollPolicy::SystemStableGutter;
+    scroll.autohidesScrollers = !followsSystem;
+    scroll.scrollerStyle = followsSystem ? NSScroller.preferredScrollerStyle : NSScrollerStyleOverlay;
     scroll.drawsBackground = YES;
     scroll.backgroundColor = BawanColor(BawanBackground);
     scroll.contentView = [[BawanPaperClipView alloc] initWithFrame:scroll.contentView.frame];

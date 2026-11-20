@@ -373,7 +373,7 @@ The focused native integration check is registered as `onboarding_selection_tria
 
 ```sh
 ./build-check/app_delegate_smoke --selection-trial
-# Or: ctest --test-dir build-check -R '^(onboarding|onboarding_selection_trial|shortcut_monitor)$' --output-on-failure
+# Or: ctest --test-dir build-check -R '^(onboarding|onboarding_when_scrolling|onboarding_selection_trial|shortcut_monitor)$' --output-on-failure
 ```
 
 It creates real engine requests, then controls terminal callbacks to verify request

@@ -186,9 +186,13 @@ if(BAWAN_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
         add_executable(onboarding_smoke tests/onboarding_smoke.mm)
         target_link_libraries(onboarding_smoke PRIVATE bawan_ui_test)
-        add_test(NAME onboarding COMMAND onboarding_smoke)
+        add_test(NAME onboarding COMMAND onboarding_smoke -AppleShowScrollBars Always)
         set_tests_properties(onboarding PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 45)
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/onboarding-when-scrolling")
+        add_test(NAME onboarding_when_scrolling COMMAND onboarding_smoke -AppleShowScrollBars WhenScrolling)
+        set_tests_properties(onboarding_when_scrolling PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/onboarding-when-scrolling" TIMEOUT 45)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
             src/AppDelegate.mm src/ModelStore.mm)
         target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
