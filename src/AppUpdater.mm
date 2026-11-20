@@ -7,8 +7,10 @@
     SPUStandardUpdaterController *_controller;
     void (^_pendingRelaunch)(void);
     BOOL _observing;
+    BOOL _installingUpdate;
 }
 - (void)enqueueRelaunchAfterTranslationUIUpdates;
+- (void)setInstallingUpdate:(BOOL)installingUpdate;
 @end
 #endif
 
@@ -17,6 +19,14 @@
 - (BOOL)available {
 #if BAWAN_ENABLE_UPDATES
     return _controller != nil;
+#else
+    return NO;
+#endif
+}
+
+- (BOOL)installingUpdate {
+#if BAWAN_ENABLE_UPDATES
+    return _installingUpdate;
 #else
     return NO;
 #endif
@@ -38,7 +48,7 @@
 
 - (BOOL)canCheckForUpdates {
 #if BAWAN_ENABLE_UPDATES
-    return !_translationBusy && _controller.updater.canCheckForUpdates;
+    return !_translationBusy && !_installingUpdate && _controller.updater.canCheckForUpdates;
 #else
     return NO;
 #endif
@@ -75,6 +85,14 @@
 }
 
 #if BAWAN_ENABLE_UPDATES
+- (void)setInstallingUpdate:(BOOL)installingUpdate {
+    if (_installingUpdate == installingUpdate) return;
+    _installingUpdate = installingUpdate;
+    if (self.onStateChanged) self.onStateChanged();
+}
+#endif
+
+#if BAWAN_ENABLE_UPDATES
 - (void)enqueueRelaunchAfterTranslationUIUpdates {
     __weak AppUpdater *weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -82,26 +100,37 @@
         if (!owner || owner->_translationBusy || !owner->_pendingRelaunch) return;
         void (^relaunch)(void) = owner->_pendingRelaunch;
         owner->_pendingRelaunch = nil;
+        [owner setInstallingUpdate:YES];
         relaunch();
     });
 }
 
 - (BOOL)updater:(SPUUpdater *)updater mayPerformUpdateCheck:(SPUUpdateCheck)check error:(NSError **)error {
-    if (!_translationBusy) return YES;
+    if (!_translationBusy && !_installingUpdate) return YES;
+    NSString *message = _installingUpdate ?
+        @"An update is already installing." : @"Finish or cancel the translation before checking for updates.";
     if (error) *error = [NSError errorWithDomain:@"local.bawan.Updates" code:1 userInfo:@{
-        NSLocalizedDescriptionKey: @"Finish or cancel the translation before checking for updates."}];
+        NSLocalizedDescriptionKey: message}];
     return NO;
+}
+
+- (void)updater:(SPUUpdater *)updater willInstallUpdate:(SUAppcastItem *)item {
+    [self setInstallingUpdate:YES];
 }
 
 - (BOOL)updater:(SPUUpdater *)updater shouldPostponeRelaunchForUpdate:(SUAppcastItem *)item
     untilInvokingBlock:(void (^)(void))installHandler {
-    if (!_translationBusy) return NO;
-    _pendingRelaunch = [installHandler copy];
-    return YES;
+    if (_translationBusy) {
+        _pendingRelaunch = [installHandler copy];
+        return YES;
+    }
+    [self setInstallingUpdate:YES];
+    return NO;
 }
 
 - (void)updater:(SPUUpdater *)updater didAbortWithError:(NSError *)error {
     _pendingRelaunch = nil;
+    [self setInstallingUpdate:NO];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object

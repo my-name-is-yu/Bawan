@@ -10,6 +10,7 @@
 
 @interface AppUpdater (SmokeTest)
 - (BOOL)updater:(nullable id)updater mayPerformUpdateCheck:(SPUUpdateCheck)check error:(NSError **)error;
+- (void)updater:(nullable id)updater willInstallUpdate:(nullable id)item;
 - (BOOL)updater:(nullable id)updater shouldPostponeRelaunchForUpdate:(nullable id)item
     untilInvokingBlock:(void (^)(void))installHandler;
 - (void)updater:(nullable id)updater didAbortWithError:(NSError *)error;
@@ -32,8 +33,11 @@
 - (void)buildMenus;
 - (void)setTranslationBusy:(BOOL)busy;
 - (void)updateStatus;
+- (void)queueTranslation:(NSString *)text direction:(bawan::Direction)direction;
+- (BOOL)submitPendingTranslationIfReady;
 - (void)updateShortcutItem;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
+- (void)translateText:(NSString *)text direction:(bawan::Direction)direction trialAttempt:(NSUInteger)attempt;
 - (void)warmUpEngine;
 - (void)ensureEngine;
 - (void)cancelTranslation;
@@ -77,6 +81,25 @@
     [[self valueForKey:@"panelShortcutItem"] setTag:static_cast<NSInteger>(bawan::ShortcutAction::OpenPanel)];
 }
 @end
+
+#if BAWAN_ENABLE_UPDATES
+@interface UpdateAdmissionSmokeDelegate : SmokeAppDelegate
+@end
+
+@implementation UpdateAdmissionSmokeDelegate
+- (void)showOnboarding {}
+@end
+
+@interface UpdateAdmissionSmokeController : OnboardingViewController
+@end
+
+@implementation UpdateAdmissionSmokeController
+- (BOOL)isSelectionTrialText:(NSString *)text { return YES; }
+- (NSUInteger)beginSelectionTrial { return 1; }
+- (void)refresh {}
+- (void)cancelSelectionTrial {}
+@end
+#endif
 
 @interface SetupSmokeDelegate : SmokeAppDelegate
 @property(nonatomic) BOOL allowLicense;
@@ -1464,6 +1487,7 @@ static void CheckUpdateRestartSafety(AppDelegate *host) {
     __block NSUInteger restarts = 0;
     Require(![updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
         @"An idle application must leave normal relaunch handling to Sparkle");
+    [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
 
     uint64_t request = 100;
     for (auto kind : {bawan::EngineEvent::Kind::Complete, bawan::EngineEvent::Kind::Cancelled,
@@ -1488,6 +1512,7 @@ static void CheckUpdateRestartSafety(AppDelegate *host) {
         DrainMainQueue();
         Require(restarts == before + 1,
             @"Repeated terminal events must not invoke the update relaunch more than once");
+        [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
     }
 
     [delegate retryModel:nil];
@@ -1500,6 +1525,7 @@ static void CheckUpdateRestartSafety(AppDelegate *host) {
         @"Cancelling a queued translation must release the delayed relaunch");
     Require([delegate valueForKey:@"pendingText"] == nil,
         @"Cancelling before model setup finishes must also discard the queued text");
+    [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
 
     [delegate setTranslationBusy:YES];
     Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
@@ -1512,6 +1538,7 @@ static void CheckUpdateRestartSafety(AppDelegate *host) {
     [delegate setTranslationBusy:NO];
     WaitFor(^BOOL { return restarts == beforeCancel + 2; },
         @"Finishing the replacement translation must release the same postponed relaunch");
+    [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
 
     [delegate setTranslationBusy:YES];
     Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++restarts; }],
@@ -1522,6 +1549,109 @@ static void CheckUpdateRestartSafety(AppDelegate *host) {
     Require(restarts == beforeCancel + 2,
         @"An aborted update must discard its delayed relaunch callback");
     [delegate setValue:nil forKey:@"updater"];
+}
+
+static void CheckUpdateInstallAdmission(void) {
+    NSString *suite = [@"local.bawan.UpdateAdmissionSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults setBool:NO forKey:@"firstLaunchShown"];
+    [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
+    AppDelegate *delegate = [[UpdateAdmissionSmokeDelegate alloc] init];
+    [delegate setValue:defaults forKey:@"defaults"];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate buildMenus];
+    AppUpdater *updater = [[AppUpdater alloc] init];
+    [delegate setValue:updater forKey:@"updater"];
+    __block NSUInteger stateChanges = 0;
+    updater.onStateChanged = ^{ ++stateChanges; };
+    __weak AppDelegate *weakDelegate = delegate;
+    panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
+        [weakDelegate translateText:text direction:direction];
+    };
+
+    @try {
+        const NSUInteger beforeIdleGrant = stateChanges;
+        Require(![updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{}],
+            @"An idle update install must continue without postponement");
+        panel.onTranslate(@"Manual input during installation", bawan::Direction::Automatic);
+        Require([delegate valueForKey:@"pendingText"] == nil && !Flag(delegate, @"busy"),
+            @"An idle install grant must reject a manual translation before queuing it");
+        Require(stateChanges == beforeIdleGrant + 1,
+            @"Granting install permission must notify observers of the pending update");
+        NSError *checkError = nil;
+        Require(![updater updater:nil mayPerformUpdateCheck:SPUUpdateCheckUpdates error:&checkError] &&
+            checkError.localizedDescription.length > 0,
+            @"Update checks must be rejected while an update is installing");
+
+        [delegate handleSelectionText:@"Selection during installation"];
+        Require([delegate valueForKey:@"pendingText"] == nil && !Flag(delegate, @"busy"),
+            @"An install-pending update must reject selection translations before accepting them");
+        [delegate setValue:[[UpdateAdmissionSmokeController alloc] init] forKey:@"onboardingViewController"];
+        [delegate handleSelectionTrialText:@"Practice sentence"];
+        Require([delegate valueForKey:@"pendingTrialText"] == nil &&
+            [[delegate valueForKey:@"selectionTrialAttempt"] unsignedIntegerValue] == 0 && !Flag(delegate, @"busy"),
+            @"An install-pending update must reject selection-trial translations before accepting them");
+        [delegate translateText:@"Trial wrapper during installation"
+            direction:bawan::Direction::Automatic trialAttempt:2];
+        Require([delegate valueForKey:@"pendingTrialText"] == nil &&
+            [[delegate valueForKey:@"selectionTrialAttempt"] unsignedIntegerValue] == 0 && !Flag(delegate, @"busy"),
+            @"The trial translation wrapper must reject requests while an update is installing");
+        [delegate queueTranslation:@"Queued during installation" direction:bawan::Direction::Automatic];
+        Require([delegate valueForKey:@"pendingText"] == nil && !Flag(delegate, @"busy"),
+            @"An install-pending update must reject queued translations");
+        [delegate setValue:@"Existing queued translation" forKey:@"pendingText"];
+        Require(![delegate submitPendingTranslationIfReady] &&
+            [[delegate valueForKey:@"pendingText"] isEqualToString:@"Existing queued translation"] &&
+            [[delegate valueForKey:@"activeRequestId"] unsignedLongLongValue] == 0,
+            @"Install-pending state must not submit or discard existing queued work");
+        [delegate setValue:nil forKey:@"pendingText"];
+
+        [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
+        Require(stateChanges == beforeIdleGrant + 2,
+            @"Aborting an update must notify observers when install-pending state clears");
+        panel.onTranslate(@"Accepted after abort", bawan::Direction::Automatic);
+        Require([[delegate valueForKey:@"pendingText"] isEqualToString:@"Accepted after abort"] && Flag(delegate, @"busy"),
+            @"A real manual translation request must be accepted again after an update abort");
+        [delegate cancelTranslation];
+        Require([delegate valueForKey:@"pendingText"] == nil && !Flag(delegate, @"busy"),
+            @"The post-abort translation fixture must be cancelled cleanly");
+
+        SEL willInstall = @selector(updater:willInstallUpdate:);
+        if ([updater respondsToSelector:willInstall]) {
+            const NSUInteger beforeWillInstall = stateChanges;
+            [updater updater:nil willInstallUpdate:nil];
+            Require(stateChanges == beforeWillInstall + 1,
+                @"willInstallUpdate must notify observers when install-pending state changes");
+            panel.onTranslate(@"Manual input after willInstall", bawan::Direction::Automatic);
+            Require([delegate valueForKey:@"pendingText"] == nil && !Flag(delegate, @"busy"),
+                @"Sparkle willInstallUpdate must close translation admission when postpone is bypassed");
+            [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
+            Require(stateChanges == beforeWillInstall + 2,
+                @"Aborting after willInstallUpdate must notify observers when install-pending state clears");
+        }
+
+        panel.onTranslate(@"Translation already queued", bawan::Direction::Automatic);
+        Require([[delegate valueForKey:@"pendingText"] isEqualToString:@"Translation already queued"] && Flag(delegate, @"busy"),
+            @"The deferred-install fixture must begin with real queued translation work");
+        __block NSUInteger resumed = 0;
+        Require([updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{
+            ++resumed;
+            panel.onTranslate(@"New input during deferred continuation", bawan::Direction::Automatic);
+        }], @"An active queued translation must defer install continuation");
+        Require([[delegate valueForKey:@"pendingText"] isEqualToString:@"Translation already queued"] && Flag(delegate, @"busy"),
+            @"Postponing installation must preserve the existing queued translation");
+        [delegate cancelTranslation];
+        WaitFor(^BOOL { return resumed == 1; }, @"The deferred install continuation did not resume after cancellation");
+        Require([delegate valueForKey:@"pendingText"] == nil && !Flag(delegate, @"busy"),
+            @"The deferred continuation must close admission before invoking Sparkle's install handler");
+        [updater updater:nil didAbortWithError:[NSError errorWithDomain:@"test" code:1 userInfo:nil]];
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:
+            [NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
 }
 #endif
 
@@ -1610,6 +1740,7 @@ int main(int argc, const char *argv[]) {
                 CheckPendingSelection(delegate, panel);
                 CheckMemoryProbe();
 #if BAWAN_ENABLE_UPDATES
+                CheckUpdateInstallAdmission();
                 CheckUpdateRestartSafety(delegate);
 #endif
                 CheckEditedRequests(delegate, panel);

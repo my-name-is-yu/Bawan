@@ -48,6 +48,7 @@ enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning 
 }
 - (void)refreshUpdateControls;
 - (void)setTranslationBusy:(BOOL)busy;
+- (BOOL)canAcceptTranslation;
 @end
 
 static NSString *const BawanOnboardingCompletedKey = @"firstLaunchShown";
@@ -470,6 +471,10 @@ static NSString *StringFromUTF8(const std::string &text) {
     _updater.translationBusy = busy;
 }
 
+- (BOOL)canAcceptTranslation {
+    return !_terminating && !_updater.installingUpdate;
+}
+
 - (void)updateStatus {
     [self refreshSetupPages];
     _modelItem.title = _model.message();
@@ -575,6 +580,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)queueTranslation:(NSString *)text direction:(bawan::Direction)direction {
+    if (![self canAcceptTranslation]) return;
     _pendingText = [text copy];
     _pendingDirection = direction;
     _activeRequestId = 0;
@@ -584,18 +590,20 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (BOOL)submitPendingTranslationIfReady {
+    if (![self canAcceptTranslation]) return NO;
     if (!_pendingText || [self needsOnboarding] || ![self hasVerifiedModelFile]) return NO;
     [self translateText:_pendingText direction:_pendingDirection];
     return YES;
 }
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction {
+    if (![self canAcceptTranslation]) return;
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [self translateText:text direction:direction trialAttempt:0];
 }
 
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction trialAttempt:(NSUInteger)attempt {
-    if (_terminating) return;
+    if (![self canAcceptTranslation]) return;
     _selectionTrialAttempt = attempt;
     if (![self hasVerifiedModelFile]) {
         if ([self modelFailed]) {
@@ -727,12 +735,14 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)handleSelectionTrialText:(NSString *)text {
+    if (![self canAcceptTranslation]) return;
     if (![_onboardingViewController isSelectionTrialText:text]) return;
     NSUInteger attempt = [_onboardingViewController beginSelectionTrial];
     if (attempt) [self translateText:text direction:bawan::Direction::Automatic trialAttempt:attempt];
 }
 
 - (void)handleSelectionText:(NSString *)text {
+    if (![self canAcceptTranslation]) return;
     if (_selectionTrialAttempt) [self cancelTranslationKeepingPendingSelection:YES];
     [_onboardingViewController discardSelectionTrialResult];
     [_translationPanel showForSelection:text];
