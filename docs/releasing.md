@@ -2,7 +2,9 @@
 
 Public releases use the same bundle identifier (`local.bawan.Bawan`) and Developer ID team across versions. This gives macOS a stable identity for the app's shortcut permissions. Ad-hoc builds identify one binary and can lose permission continuity after rebuilding.
 
-The published v1.0.0 is ad-hoc signed and has no updater. Its users must manually install the first signed, updater-enabled release. That transition may require granting Input Monitoring and Accessibility again. Subsequent signed updates should preserve the grants; verify this with two real signed releases before promising it to users.
+The published v1.0.0 and v1.1.0 downloads are ad-hoc signed; v1.1.0 is also not notarized. Users of either version must manually install the first signed, updater-enabled release. Moving from ad-hoc signing may require granting Input Monitoring and Accessibility again. Subsequent updates should preserve those grants only when signed by the same Developer ID team with the same bundle identifier; verify this with two real signed releases before promising it to users.
+
+See the [v2.0.0-rc.1 release-candidate handoff](v2-release-candidate.md) for its version plan, owner-run signing steps, migration guidance, and acceptance gates.
 
 ## Prepare the certificates and keys once
 
