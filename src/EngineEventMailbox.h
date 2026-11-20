@@ -1,22 +1,19 @@
 #pragma once
 
-#include "TranslationEngine.h"
+#include "EngineEvent.h"
 #include <mutex>
 #include <utility>
 #include <vector>
 
 namespace bawan {
-// Worker-to-UI handoff. Text contains a full snapshot, not a delta, so only
-// the newest consecutive snapshot for a request needs to wait for the UI.
-// Lifecycle/terminal events remain ordered and are never coalesced.
 class EngineEventMailbox final {
 public:
     // True means the caller must schedule one drain on the UI queue.
     bool push(EngineEvent event) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!events_.empty() && event.kind == EngineEvent::Kind::Text &&
-            events_.back().kind == EngineEvent::Kind::Text &&
-            events_.back().requestId == event.requestId) {
+        const auto *progress = std::get_if<engine::Progress>(&event);
+        const auto *previous = events_.empty() ? nullptr : std::get_if<engine::Progress>(&events_.back());
+        if (progress && previous && previous->requestId == progress->requestId) {
             events_.back() = std::move(event);
         } else {
             events_.push_back(std::move(event));

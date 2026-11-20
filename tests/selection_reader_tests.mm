@@ -101,8 +101,13 @@ struct Fixture {
     Fixture() {
         NSMutableArray<NSString *> *receivedTexts = texts;
         NSMutableArray<NSString *> *receivedProblems = problems;
-        reader.onText = ^(NSString *text) { [receivedTexts addObject:text]; };
-        reader.onProblem = ^(NSString *message) { [receivedProblems addObject:message]; };
+        reader.onResult = ^(const SelectionReadResult &result) {
+            std::visit([&](const auto &value) {
+                using Value = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<Value, SelectedText>) [receivedTexts addObject:value.text];
+                else [receivedProblems addObject:value.message];
+            }, result);
+        };
     }
     void begin(BOOL passive = YES) {
         [reader beginCopyFromApplication:environment.application passive:passive];
@@ -124,7 +129,6 @@ static void testPassiveCopy() {
     Fixture f;
     f.begin();
     f.copy(@"  first physical copy\n");
-    // The second physical Cmd-C need not update the clipboard again.
     [f.reader readSelection];
     [f.environment runUntil:0.059];
     require(f.quiet() && f.environment.reads == 0, "passive copy waits for the foreground application");
@@ -139,7 +143,6 @@ static void testActiveCopy() {
     f.begin(NO);
     [f.environment runUntil:0.1];
     require(f.quiet() && f.environment.sends == 0, "active copy waits for the gesture's release notification");
-    // A change before release must not be mistaken for the synthesized copy.
     f.copy(@"unrelated earlier clipboard content");
     [f.reader readSelection];
     [f.reader readSelection];
@@ -335,8 +338,13 @@ static void testReentrantReads() {
         FakeSelectionEnvironment *environment = f.environment;
         __weak SelectionReader *weakReader = reader;
         NSMutableArray<NSString *> *texts = f.texts;
-        reader.onText = ^(NSString *text) {
-            [texts addObject:text];
+        NSMutableArray<NSString *> *problems = f.problems;
+        reader.onResult = ^(const SelectionReadResult &result) {
+            std::visit([&](const auto &value) {
+                using Value = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<Value, SelectedText>) [texts addObject:value.text];
+                else [problems addObject:value.message];
+            }, result);
             if (texts.count == 1) {
                 SelectionReader *reader = weakReader;
                 [reader beginCopyFromApplication:environment.application passive:YES];
@@ -352,12 +360,22 @@ static void testReentrantReads() {
         require(texts.count == 2 && [texts[0] isEqualToString:@"first selection"] &&
                 [texts[1] isEqualToString:@"next selection"] && f.problems.count == 0,
                 "completion clears its own session before the client starts another read");
-        reader.onText = nil;
+        reader.onResult = nil;
     }
 }
 
 int main() {
     @autoreleasepool {
+        static_assert(!std::is_constructible_v<SelectionReadResult, SelectionTrial>);
+        NSMutableString *source = [NSMutableString stringWithString:@"Original"];
+        SelectedText selected{source};
+        SelectionTrial trial{source};
+        SelectionProblem problem{source};
+        [source setString:@"Changed"];
+        require([selected.text isEqualToString:@"Original"] && [trial.text isEqualToString:@"Original"] &&
+                [problem.message isEqualToString:@"Original"], "selection values copy their string payloads");
+        require(SelectedText{@""}.text.length == 0 && SelectionTrial{@""}.text.length == 0 &&
+                SelectionProblem{@""}.message.length == 0, "selection values preserve empty strings");
         testPassiveCopy();
         testActiveCopy();
         testFailuresAndRecovery();

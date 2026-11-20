@@ -41,12 +41,8 @@
     [self write:action ? action() : @"error" name:@"reply"];
 }
 
-- (void)recordEngineEvent:(bawan::EngineEvent::Kind)kind {
-    using Kind = bawan::EngineEvent::Kind;
-    if (kind == Kind::Complete) [self write:@"complete" name:@"engine"];
-    else if (kind == Kind::Idle) [self write:@"idle" name:@"engine"];
-    else if (kind == Kind::Error || kind == Kind::Cancelled)
-        [self write:@"error" name:@"engine"];
+- (void)recordEngineEvent:(const bawan::EngineEvent &)event {
+    if (const auto *value = bawan::engine::describe(event).probeValue) [self write:@(value) name:@"engine"];
 }
 
 @end
