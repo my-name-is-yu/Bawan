@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "EngineHost.h"
+#import "MemoryProbe.h"
 #import "ModelStore.h"
 #import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
@@ -43,9 +44,10 @@ struct CompletedPractice {
     BOOL _terminating;
     StatusOwner _statusOwner;
     BawanModelState _model;
-    NSString *_memoryProbeDirectory;
+    MemoryProbe *_memoryProbe;
+    bawan::LaunchMode _launchMode;
 }
-- (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory;
+- (instancetype)initWithDefaults:(NSUserDefaults *)defaults launchMode:(bawan::LaunchMode)mode;
 - (Session &)translationSession;
 - (void)applyTranslationEvent:(Session::Event)event;
 - (void)applyTranslationEffects:(Session::Effects)effects wasBusy:(BOOL)wasBusy;
@@ -60,16 +62,20 @@ static NSString *const BawanModelLicenseAcceptedKey = @"modelLicenseNoticeShown2
 @implementation AppDelegate
 
 - (instancetype)init {
-    return [self initWithDefaults:NSUserDefaults.standardUserDefaults
-            memoryProbeDirectory:NSProcessInfo.processInfo.environment[@"BAWAN_MEMORY_PROBE"]];
+    return [self initWithLaunchMode:bawan::InteractiveLaunch{}];
 }
 
-- (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory {
+- (instancetype)initWithLaunchMode:(bawan::LaunchMode)mode {
+    return [self initWithDefaults:NSUserDefaults.standardUserDefaults launchMode:std::move(mode)];
+}
+
+- (instancetype)initWithDefaults:(NSUserDefaults *)defaults launchMode:(bawan::LaunchMode)mode {
     self = [super init];
     if (self) {
         _defaults = defaults;
-        _memoryProbeDirectory = [probeDirectory copy];
-        _translationSession = Session{_memoryProbeDirectory.length || [_defaults boolForKey:BawanOnboardingCompletedKey]
+        _launchMode = std::move(mode);
+        _translationSession = Session{std::holds_alternative<bawan::MemoryProbeLaunch>(_launchMode) ||
+            [_defaults boolForKey:BawanOnboardingCompletedKey]
             ? Session::TranslatorAccess::Open : Session::TranslatorAccess::AwaitingOnboarding};
         __weak AppDelegate *weakSelf = self;
         _engineHost = [[EngineHost alloc] initWithEventHandler:^(const bawan::EngineEvent &event) {
@@ -153,40 +159,34 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut start];
     [self updateShortcutItem];
     [self updateStatus];
-    if (_memoryProbeDirectory.length) {
-        [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(memoryProbeTick:)
-                                      userInfo:nil repeats:YES];
+    if (const auto *probe = std::get_if<bawan::MemoryProbeLaunch>(&_launchMode)) {
+        _memoryProbe = [[MemoryProbe alloc] initWithDirectory:probe->directory commands:@{
+            @"ping": ^NSString *{ return @"ok"; },
+            @"translation": ^NSString *{
+                AppDelegate *owner = weakSelf;
+                if (owner) [owner->_translationPanel showForManualInput];
+                return @"ok";
+            },
+            @"close": ^NSString *{
+                AppDelegate *owner = weakSelf;
+                if (owner) [owner->_translationPanel close];
+                return @"ok";
+            },
+            @"settings": ^NSString *{ [weakSelf openSettings:nil]; return @"ok"; },
+            @"setup": ^NSString *{ [weakSelf showOnboarding]; return @"ok"; },
+            @"prepare": ^NSString *{ [weakSelf prepareModel]; return @"ok"; },
+            @"translate": ^NSString *{
+                [weakSelf translateText:@"Hello. How are you?" direction:bawan::Direction::EnglishToJapanese];
+                return @"ok";
+            },
+            @"model": ^NSString *{
+                return [weakSelf hasVerifiedModelFile] ? @"ready" : ([weakSelf modelFailed] ? @"error" : @"waiting");
+            }
+        }];
+        [_memoryProbe start];
     } else {
         [self startInitialSetup];
     }
-}
-
-- (void)memoryProbeWrite:(NSString *)value name:(NSString *)name {
-    [value writeToFile:[_memoryProbeDirectory stringByAppendingPathComponent:name]
-           atomically:YES encoding:NSUTF8StringEncoding error:nil];
-}
-
-- (void)memoryProbeTick:(NSTimer *)timer {
-    NSString *path = [_memoryProbeDirectory stringByAppendingPathComponent:@"command"];
-    NSString *command = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
-    if (!command) return;
-    [NSFileManager.defaultManager removeItemAtPath:path error:nil];
-    if ([command isEqualToString:@"translation"]) [_translationPanel showForManualInput];
-    else if ([command isEqualToString:@"settings"]) [self openSettings:nil];
-    else if ([command isEqualToString:@"setup"]) [self showOnboarding];
-    else if ([command isEqualToString:@"close"]) [_translationPanel close];
-    else if ([command isEqualToString:@"prepare"]) [self prepareModel];
-    else if ([command isEqualToString:@"model"]) {
-        [self memoryProbeWrite:[self hasVerifiedModelFile] ? @"ready" :
-            ([self modelFailed] ? @"error" : @"waiting") name:@"reply"];
-        return;
-    } else if ([command isEqualToString:@"translate"]) {
-        [self translateText:@"Hello. How are you?" direction:bawan::Direction::EnglishToJapanese];
-    } else if (![command isEqualToString:@"ping"]) {
-        [self memoryProbeWrite:@"error" name:@"reply"];
-        return;
-    }
-    [self memoryProbeWrite:@"ok" name:@"reply"];
 }
 
 - (void)modelDownloadStateDidChange:(ModelStoreState)state {
@@ -631,11 +631,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event {
-    using namespace bawan::engine;
-    const auto metadata = describe(event);
-    if (_memoryProbeDirectory.length && metadata.probeValue) {
-        [self memoryProbeWrite:@(metadata.probeValue) name:@"engine"];
-    }
+    [_memoryProbe recordEngineEvent:event];
     if (const auto *state = std::get_if<bawan::engine::Lifecycle>(&event)) {
         [self handleEngineLifecycle:*state];
         return;
@@ -796,6 +792,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
     _terminating = YES;
+    _memoryProbe = nil;
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [_shortcut stop];
     [_modelStore cancel];

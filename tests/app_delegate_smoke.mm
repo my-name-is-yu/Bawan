@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "EngineHost.h"
+#import "MemoryProbe.h"
 #import "TranslationPanel.h"
 #import "ModelStore.h"
 #import "OnboardingViewController.h"
@@ -24,7 +25,7 @@
 using namespace bawan::engine;
 
 @interface AppDelegate (SmokeTest)
-- (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory;
+- (instancetype)initWithDefaults:(NSUserDefaults *)defaults launchMode:(bawan::LaunchMode)mode;
 - (void)buildMenus;
 - (void)connectTranslationPanel:(TranslationPanel *)panel;
 - (void)updateStatus;
@@ -54,7 +55,6 @@ using namespace bawan::engine;
 - (void)refreshSettings;
 - (void)requestModelLicenseAcceptance:(void (^)(BOOL accepted))completion;
 - (void)shortcutPreferencesDidChange:(NSNotification *)notification;
-- (void)memoryProbeTick:(NSTimer *)timer;
 @end
 
 @interface SmokeAppDelegate : AppDelegate
@@ -646,8 +646,8 @@ static void CheckFirstRunSelection(void) {
         const BOOL existingUser = change == Change::ExistingUserDeclined;
         if (existingUser) [defaults setBool:YES forKey:@"firstLaunchShown"];
         SmokeAppDelegate *delegate = existingUser ?
-            [[SetupSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil] :
-            [[SelectionSetupSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+            [[SetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}] :
+            [[SelectionSetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
@@ -845,8 +845,8 @@ static void CheckSelectionTrial(void) {
         monitor.selectionAvailable = YES;
         SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
         SelectionSetupSmokeDelegate *delegate = checkRefreshes ?
-            [[TrialRefreshSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil] :
-            [[SelectionSetupSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+            [[TrialRefreshSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}] :
+            [[SelectionSetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
         TrialRefreshSmokeController *refreshOnboarding = nil;
         TrialRefreshSmokeSettings *refreshSettings = nil;
         if (checkRefreshes) {
@@ -1200,7 +1200,7 @@ static void CheckFirstRunIntegration(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
     SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
@@ -1392,7 +1392,7 @@ static void CheckFirstRunIntegration(void) {
             [window.contentView.identifier isEqualToString:@"bawan-panel"],
             @"Open Translator must leave ready guidance and prepare the actual translation surface");
 
-        existingUser = [[SetupSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+        existingUser = [[SetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
         existingPanel = [[TranslationPanel alloc] init];
         SetupSmokeStore *existingStore = [[SetupSmokeStore alloc] init];
         [existingUser setValue:preferences forKey:@"shortcutPreferences"];
@@ -1497,7 +1497,7 @@ static void CheckModelLicenseSheet(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
     SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-    SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+    SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
@@ -1546,7 +1546,7 @@ static void CheckDownloadActions(void) {
     ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
     SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
     SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
-    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
@@ -1640,29 +1640,52 @@ static void CheckDownloadActions(void) {
     }
 }
 
+static NSString *ProbeCommand(NSString *directory, NSString *command) {
+    NSString *reply = [directory stringByAppendingPathComponent:@"reply"];
+    [NSFileManager.defaultManager removeItemAtPath:reply error:nil];
+    [command writeToFile:[directory stringByAppendingPathComponent:@"command"]
+        atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    WaitFor([&] { return [NSFileManager.defaultManager fileExistsAtPath:reply]; },
+        @"Probe command must reply before timeout");
+    Require(![NSFileManager.defaultManager fileExistsAtPath:[directory stringByAppendingPathComponent:@"command"]],
+        @"Commands must be consumed once");
+    return [NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil];
+}
+
 static void CheckMemoryProbe(void) {
-    SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] init];
-    [delegate buildMenus];
+    Require(std::holds_alternative<bawan::InteractiveLaunch>(bawan::LaunchModeFromEnvironment(@{})),
+        @"Missing probe environment must select interactive launch");
+    Require(std::holds_alternative<bawan::InteractiveLaunch>(
+        bawan::LaunchModeFromEnvironment(@{@"BAWAN_MEMORY_PROBE": @""})),
+        @"Empty probe environment must select interactive launch");
     NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    auto mode = bawan::LaunchModeFromEnvironment(@{@"BAWAN_MEMORY_PROBE": directory});
+    Require(std::holds_alternative<bawan::MemoryProbeLaunch>(mode) &&
+        [std::get<bawan::MemoryProbeLaunch>(mode).directory isEqualToString:directory],
+        @"Nonempty probe environment must preserve the probe directory");
     Require([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:NO
         attributes:nil error:nil], @"Probe fixture directory must be created");
-    [delegate setValue:directory forKey:@"memoryProbeDirectory"];
-    NSString *command = [directory stringByAppendingPathComponent:@"command"];
+    __block NSUInteger calls = 0;
+    MemoryProbe *probe = [[MemoryProbe alloc] initWithDirectory:directory commands:@{
+        @"ping": ^NSString *{ ++calls; return @"ok"; },
+        @"model": ^NSString *{ return @"waiting"; },
+        @"ready": ^NSString *{ return @"ready"; },
+        @"failed": ^NSString *{ return @"error"; }
+    }];
+    [probe start];
     NSString *reply = [directory stringByAppendingPathComponent:@"reply"];
     NSString *engine = [directory stringByAppendingPathComponent:@"engine"];
     @try {
-        [delegate memoryProbeTick:nil];
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
         Require(![NSFileManager.defaultManager fileExistsAtPath:reply], @"No command must produce no reply");
-        for (NSString *value in @[@"ping", @"", @"unknown", @"model"]) {
-            [value writeToFile:command atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            [delegate memoryProbeTick:nil];
+        for (NSString *value in @[@"ping", @"", @"unknown", @"model", @"ready", @"failed"]) {
             NSString *expected = [value isEqualToString:@"ping"] ? @"ok" :
-                ([value isEqualToString:@"model"] ? @"waiting" : @"error");
-            Require([[NSString stringWithContentsOfFile:reply encoding:NSUTF8StringEncoding error:nil]
-                isEqualToString:expected], @"Probe commands must acknowledge success, waiting, and errors");
-            Require(![NSFileManager.defaultManager fileExistsAtPath:command], @"Commands must be consumed once");
+                ([value isEqualToString:@"model"] ? @"waiting" : ([value isEqualToString:@"ready"] ? @"ready" : @"error"));
+            Require([ProbeCommand(directory, value) isEqualToString:expected],
+                @"Probe commands must acknowledge success, waiting, readiness, and errors");
         }
-        SetAvailableModel(delegate);
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+        Require(calls == 1, @"Consumed commands must not dispatch again");
         const std::pair<bawan::EngineEvent, NSString *> events[] = {
             {Finished{99, Complete{"", false, bawan::Direction::EnglishToJapanese}}, @"complete"},
             {Lifecycle{Idle{}}, @"idle"},
@@ -1671,13 +1694,78 @@ static void CheckMemoryProbe(void) {
             {Lifecycle{LoadCancelled{}}, @"error"},
         };
         for (const auto &[event, expected] : events) {
-            [delegate injectEngineEvent:event];
+            [probe recordEngineEvent:event];
             Require([[NSString stringWithContentsOfFile:engine encoding:NSUTF8StringEncoding error:nil]
                 isEqualToString:expected], @"Probe must expose completion, actual unload, and engine errors");
         }
+        [NSFileManager.defaultManager removeItemAtPath:engine error:nil];
+        [probe recordEngineEvent:Lifecycle{Loading{}}];
+        [probe recordEngineEvent:Lifecycle{Ready{}}];
+        [probe recordEngineEvent:Progress{99, "ongoing", bawan::Direction::EnglishToJapanese}];
+        Require(![NSFileManager.defaultManager fileExistsAtPath:engine], @"Nonterminal events must not write engine state");
+        __weak MemoryProbe *weakProbe;
+        @autoreleasepool {
+            MemoryProbe *scheduled = [[MemoryProbe alloc] initWithDirectory:directory commands:@{}];
+            weakProbe = scheduled;
+            [scheduled start];
+        }
+        Require(!weakProbe, @"The scheduled timer must not retain its probe");
     } @finally {
+        probe = nil;
         [NSFileManager.defaultManager removeItemAtPath:directory error:nil];
     }
+}
+
+static void CheckMemoryProbeIntegration(void) {
+    NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    Require([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:NO
+        attributes:nil error:nil], @"Integration probe directory must be created");
+    for (BOOL probing : {YES, NO}) {
+        NSString *suite = [@"local.bawan.ProbeIntegration." stringByAppendingString:NSUUID.UUID.UUIDString];
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+        [defaults removePersistentDomainForName:suite];
+        bawan::LaunchMode mode = probing ? bawan::LaunchMode{bawan::MemoryProbeLaunch{directory}} :
+            bawan::LaunchMode{bawan::InteractiveLaunch{}};
+        SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] initWithDefaults:defaults launchMode:mode];
+        Require(Flag(delegate, @"needsOnboarding") == !probing,
+            @"Onboarding must depend on launch mode before the probe exists");
+        @try {
+            [delegate applicationDidFinishLaunching:
+                [NSNotification notificationWithName:NSApplicationDidFinishLaunchingNotification object:NSApp]];
+            TranslationPanel *panel = [delegate valueForKey:@"translationPanel"];
+            if (probing) {
+                Require(!panel.window.visible && ![delegate valueForKey:@"onboardingViewController"] &&
+                    [delegate valueForKey:@"memoryProbe"] && !Flag(delegate, @"needsOnboarding") &&
+                    !Flag(delegate, @"hasVerifiedModelFile") && delegate.licenseViews == 0,
+                    @"Probe launch must skip setup and onboarding");
+                Require([ProbeCommand(directory, @"ping") isEqualToString:@"ok"], @"Wired ping must acknowledge success");
+                Require([ProbeCommand(directory, @"unknown") isEqualToString:@"error"], @"Wired unknown command must fail");
+                Require([ProbeCommand(directory, @"model") isEqualToString:@"waiting"], @"Probe launch must not prepare the model");
+                Require([ProbeCommand(directory, @"translation") isEqualToString:@"ok"] &&
+                    panel.window.visible && panel.currentPage == BawanPanelPageTranslation,
+                    @"Wired translation command must show the real panel");
+                Require([ProbeCommand(directory, @"close") isEqualToString:@"ok"] && !panel.window.visible,
+                    @"Wired close command must hide the real panel");
+                [delegate injectEngineEvent:Lifecycle{Idle{}}];
+                Require([[NSString stringWithContentsOfFile:[directory stringByAppendingPathComponent:@"engine"]
+                    encoding:NSUTF8StringEncoding error:nil] isEqualToString:@"idle"],
+                    @"Delegate engine events must reach the probe file");
+                Require([ProbeCommand(directory, @"setup") isEqualToString:@"ok"] &&
+                    panel.currentPage == BawanPanelPageOnboarding, @"Wired setup must show onboarding explicitly");
+            } else {
+                Require(panel.window.visible && panel.currentPage == BawanPanelPageOnboarding &&
+                    [delegate valueForKey:@"onboardingViewController"] && Flag(delegate, @"needsOnboarding") &&
+                    ![delegate valueForKey:@"memoryProbe"], @"Interactive launch must run initial onboarding");
+            }
+            Require(![defaults boolForKey:@"firstLaunchShown"], @"Probe and interactive startup must not complete onboarding");
+        } @finally {
+            [[delegate valueForKey:@"translationPanel"] close];
+            [delegate applicationWillTerminate:
+                [NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+            [defaults removePersistentDomainForName:suite];
+        }
+    }
+    [NSFileManager.defaultManager removeItemAtPath:directory error:nil];
 }
 
 int main(int argc, const char *argv[]) {
@@ -1713,7 +1801,7 @@ int main(int argc, const char *argv[]) {
         [defaults removePersistentDomainForName:suite];
         [defaults setBool:YES forKey:@"firstLaunchShown"];
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
-        SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
+        SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
@@ -1724,6 +1812,7 @@ int main(int argc, const char *argv[]) {
                 CheckEngineHostReset();
                 CheckPendingSelection(delegate, panel);
                 CheckMemoryProbe();
+                CheckMemoryProbeIntegration();
                 CheckEditedRequests(delegate, panel);
                 CheckColdRequestAndRetry(delegate);
                 CheckWarmUpFailure(delegate);

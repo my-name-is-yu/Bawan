@@ -166,7 +166,7 @@ if(BAWAN_BUILD_APP)
     set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
         "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
     add_executable(Bawan MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/ModelStore.mm src/EngineHost.mm src/TranslationSession.cpp
+        src/main.mm src/AppDelegate.mm src/MemoryProbe.mm src/ModelStore.mm src/EngineHost.mm src/TranslationSession.cpp
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES})
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
@@ -269,7 +269,7 @@ if(BAWAN_BUILD_TESTS)
         set_tests_properties(onboarding_when_scrolling PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/onboarding-when-scrolling" TIMEOUT 45)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
-            src/AppDelegate.mm src/ModelStore.mm src/EngineHost.mm src/TranslationSession.cpp)
+            src/AppDelegate.mm src/MemoryProbe.mm src/ModelStore.mm src/EngineHost.mm src/TranslationSession.cpp)
         target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
         bawan_use_tool_metal_libraries(app_delegate_smoke)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)
