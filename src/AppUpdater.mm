@@ -128,7 +128,7 @@
 
 - (BOOL)updater:(SPUUpdater *)updater shouldPostponeRelaunchForUpdate:(SUAppcastItem *)item
     untilInvokingBlock:(void (^)(void))installHandler {
-    if (_translationBusy) {
+    if (_translationActive) {
         _pendingRelaunch = [installHandler copy];
         return YES;
     }

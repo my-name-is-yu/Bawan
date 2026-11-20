@@ -1762,7 +1762,8 @@ static void CheckUpdateTerminationBehavior(void) {
         panel.onTranslate(@"Waiting for model verification", direction);
         Require([delegate busy] && ActiveRequestId(delegate) == 0,
             @"A request without a verified model must remain queued");
-        [updater updater:nil willInstallUpdate:nil];
+        Require(![updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{}],
+            @"Waiting for a model without a running translation must not postpone installation");
         Require([delegate applicationShouldTerminate:NSApp] == NSTerminateNow,
             @"An update must be able to close the app while a translation only awaits setup");
         SetAvailableModel(delegate);
@@ -1788,6 +1789,10 @@ static void CheckUpdateTerminationBehavior(void) {
         Require(postponed != 0 &&
             [updater updater:nil shouldPostponeRelaunchForUpdate:nil untilInvokingBlock:^{ ++installs; }],
             @"Sparkle must defer the restart while a translation is running");
+        panel.onTranslate(@"Replacement attempted during postponement", direction);
+        [delegate handleSelectionText:@"Selection attempted during postponement"];
+        Require(ActiveRequestId(delegate) == postponed,
+            @"Sparkle postponement must reject requests that could replace the active translation");
         [delegate injectEngineEvent:Progress{postponed, "Partial result", direction}];
         [delegate injectEngineEvent:Finished{queued, Complete{"Stale result", false, direction}}];
         DrainUpdateEvents();
@@ -1828,6 +1833,20 @@ static void CheckUpdateTerminationBehavior(void) {
         AbortUpdate(updater);
         [delegate.terminationReplies removeAllObjects];
 
+        panel.onTranslate(@"Translation finishing before AppKit receives termination", direction);
+        const auto beforeTerminate = ActiveRequestId(delegate);
+        [updater updater:nil willInstallUpdate:nil];
+        [delegate injectEngineEvent:Finished{beforeTerminate, Complete{"Final result before AppKit", false, direction}}];
+        Require(beforeTerminate != 0 && [delegate applicationShouldTerminate:NSApp] == NSTerminateLater,
+            @"An update must still hold termination if the final result arrived first");
+        WaitFor(^BOOL { return delegate.terminationReplies.count == 1; },
+            @"Choosing to restart must release termination for the early result");
+        Require([delegate.copiedOutput isEqualToString:@"Final result before AppKit"] &&
+            [delegate.terminationReplies.firstObject boolValue],
+            @"The result must be copied even if it arrived while Sparkle prepared to terminate");
+        AbortUpdate(updater);
+        [delegate.terminationReplies removeAllObjects];
+
         panel.onTranslate(@"Translation before an aborted install", direction);
         const auto aborted = ActiveRequestId(delegate);
         [updater updater:nil willInstallUpdate:nil];
@@ -1842,7 +1861,7 @@ static void CheckUpdateTerminationBehavior(void) {
             @"Aborting an update while choosing whether to copy must answer AppKit");
         Require(![delegate.terminationReplies.firstObject boolValue] &&
             [output.string isEqualToString:@"Result safe after abort"] &&
-            [delegate.copiedOutput isEqualToString:@"Direct install result"],
+            [delegate.copiedOutput isEqualToString:@"Final result before AppKit"],
             @"An aborted update must preserve the displayed output and invalidate the restart choice");
         delegate.chooseRestart = nil;
         [delegate.terminationReplies removeAllObjects];

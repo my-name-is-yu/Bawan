@@ -65,6 +65,7 @@ struct CompletedPractice {
 - (void)handleEngineLifecycle:(const bawan::engine::Lifecycle &)state;
 - (void)refreshUpdateControls;
 - (void)updaterStateDidChange;
+- (BOOL)canAcceptTranslation;
 - (void)offerUpdateResult:(NSString *)result;
 - (void)cancelDeferredTermination;
 - (void)enqueueTerminationReply:(BOOL)shouldTerminate;
@@ -484,7 +485,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (BOOL)canAcceptTranslation {
-    return !_terminating && !_updater.installingUpdate && !_updateResultAlert;
+    return !_terminating && !_updater.installingUpdate && !_updater.relaunchPostponed;
 }
 
 - (void)updateStatus {
@@ -665,7 +666,9 @@ static NSString *StringFromUTF8(const std::string &text) {
         effects = std::move(next);
     }
     if (wasBusy != [self busy]) [_translationPanel setAvailable:[self hasVerifiedModelFile] busy:[self busy]];
-    if (wasRunning && !_translationSession.activeRequestId()) [self offerUpdateResult:result];
+    const BOOL running = _translationSession.activeRequestId().has_value();
+    _updater.translationActive = running;
+    if (wasRunning && !running) [self offerUpdateResult:result];
     if (_updater && !_updateResultAlert && _updater.translationBusy != [self busy]) {
         _updater.translationBusy = [self busy];
     }
@@ -829,7 +832,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
-    if (!_terminationReplyPending && (!_updater.installingUpdate || !_translationSession.activeRequestId())) {
+    if (!_terminationReplyPending &&
+        (!_updater.installingUpdate || (!_translationSession.activeRequestId() && !_updateResultAlert))) {
         return NSTerminateNow;
     }
     if (!_terminationReplyPending) {
@@ -853,7 +857,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)offerUpdateResult:(NSString *)result {
     if (_updateResultAlert || _terminationReplyCancelled ||
-        (!_terminationReplyPending && !_updater.relaunchPostponed)) return;
+        (!_updater.installingUpdate && !_updater.relaunchPostponed)) return;
     NSWindow *window = _translationPanel.window;
     [window.contentView layoutSubtreeIfNeeded];
     [window displayIfNeeded];

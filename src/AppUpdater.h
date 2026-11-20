@@ -9,6 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) BOOL relaunchPostponed;
 @property(nonatomic) BOOL automaticallyChecksForUpdates;
 @property(nonatomic) BOOL translationBusy;
+@property(nonatomic) BOOL translationActive;
 @property(nonatomic, copy, nullable) void (^onStateChanged)(void);
 - (void)start;
 - (void)checkForUpdates:(nullable id)sender;
