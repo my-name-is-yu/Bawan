@@ -167,7 +167,7 @@ if(BAWAN_BUILD_APP)
     set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
         "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
     add_executable(Bawan MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm ${BAWAN_MODEL_SOURCES}
+        src/main.mm src/AppDelegate.mm src/MemoryProbe.mm ${BAWAN_MODEL_SOURCES} src/EngineHost.mm src/TranslationSession.cpp
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES})
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
@@ -203,6 +203,10 @@ if(BAWAN_BUILD_TESTS)
     target_include_directories(engine_event_mailbox_tests PRIVATE src)
     target_link_libraries(engine_event_mailbox_tests PRIVATE Threads::Threads)
     add_test(NAME engine_event_mailbox COMMAND engine_event_mailbox_tests)
+    add_executable(translation_session_tests tests/translation_session_tests.cpp src/TranslationSession.cpp)
+    target_include_directories(translation_session_tests PRIVATE src)
+    target_compile_options(translation_session_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME translation_session COMMAND translation_session_tests)
     add_executable(shortcut_tests tests/shortcut_tests.cpp)
     target_link_libraries(shortcut_tests PRIVATE bawan_gesture)
     add_test(NAME shortcuts COMMAND shortcut_tests)
@@ -258,11 +262,15 @@ if(BAWAN_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 30)
         add_executable(onboarding_smoke tests/onboarding_smoke.mm)
         target_link_libraries(onboarding_smoke PRIVATE bawan_ui_test)
-        add_test(NAME onboarding COMMAND onboarding_smoke)
+        add_test(NAME onboarding COMMAND onboarding_smoke -AppleShowScrollBars Always)
         set_tests_properties(onboarding PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" TIMEOUT 45)
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/onboarding-when-scrolling")
+        add_test(NAME onboarding_when_scrolling COMMAND onboarding_smoke -AppleShowScrollBars WhenScrolling)
+        set_tests_properties(onboarding_when_scrolling PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/onboarding-when-scrolling" TIMEOUT 45)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
-            src/AppDelegate.mm ${BAWAN_MODEL_SOURCES})
+            src/AppDelegate.mm src/MemoryProbe.mm ${BAWAN_MODEL_SOURCES} src/EngineHost.mm src/TranslationSession.cpp)
         target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
         bawan_use_tool_metal_libraries(app_delegate_smoke)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)

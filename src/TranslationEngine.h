@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EngineEvent.h"
+
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -7,19 +9,6 @@
 #include <string>
 
 namespace bawan {
-
-enum class Direction { Automatic, EnglishToJapanese, JapaneseToEnglish };
-
-struct EngineEvent {
-    enum class Kind { Loading, Ready, Idle, Text, Complete, Cancelled, Error };
-    Kind kind;
-    std::uint64_t requestId = 0;
-    // Text events contain the complete, valid UTF-8 translation so far.
-    std::string text;
-    bool truncated = false;
-    // Text and Complete carry the concrete direction used for this output.
-    Direction direction = Direction::Automatic;
-};
 
 // Own one instance for the application. Callbacks run on the inference worker;
 // dispatch UI work to the main thread. Destroy/shutdown from the owning thread.
@@ -41,7 +30,7 @@ public:
 
     // Optional prewarming is idempotent and never interrupts a translation.
     void warmUp();
-    std::uint64_t translate(std::string text, Direction direction = Direction::Automatic);
+    engine::RequestId translate(std::string text, Direction direction = Direction::Automatic);
     void cancel();
     // Unload the model now, or as soon as the active translation finishes.
     void releaseMemory();

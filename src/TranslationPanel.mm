@@ -17,6 +17,7 @@
 @property(nonatomic, copy) void (^onCopyKey)(void);
 @property(nonatomic, copy) void (^onEscape)(void);
 @property(nonatomic, weak) NSView *editingContent;
+- (void)discardEditingUndoHistory;
 @end
 
 @implementation BawanPanel
@@ -25,6 +26,7 @@
 - (NSUndoManager *)undoManager {
     return self.contentView == self.editingContent ? [super undoManager] : nil;
 }
+- (void)discardEditingUndoHistory { [[super undoManager] removeAllActions]; }
 - (void)cancelOperation:(id)sender { if (self.onEscape) self.onEscape(); }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     NSEventModifierFlags modifiers = event.modifierFlags &
@@ -122,7 +124,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     // autoresize adds the initial document width and silently clips long lines.
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     scroll.borderType = NSNoBorder;
-    BawanConfigurePaperScrollView(scroll);
+    BawanConfigurePaperScrollView(scroll, BawanPaperScrollPolicy::OverlayAutohide);
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
     BawanTextView *text = [[BawanTextView alloc] initWithFrame:NSMakeRect(0, 0, 280, 140)];
     text.identifier = identifier;
@@ -311,11 +313,15 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (void)showForSelection:(NSString *)text {
     [self showTranslation];
+    [self setSelection:text];
+    [self showWithoutChangingInput];
+}
+
+- (void)setSelection:(NSString *)text {
     _inputDirection = bawan::Direction::Automatic;
     _source.string = text;
-    [_source.undoManager removeAllActions];
+    [_panel discardEditingUndoHistory];
     [self setOutput:@"" direction:bawan::Direction::Automatic];
-    [self showWithoutChangingInput];
 }
 
 - (void)showWithoutChangingInput {

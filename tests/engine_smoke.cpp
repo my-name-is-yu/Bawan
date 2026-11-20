@@ -1,4 +1,5 @@
 #include "TranslationEngine.h"
+#include "EngineEventChecks.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -14,6 +15,10 @@ using namespace std::chrono_literals;
 
 namespace {
 
+using namespace bawan::engine;
+using bawan::test::lifecycle;
+using bawan::test::outcome;
+
 class Events {
 public:
     void push(bawan::EngineEvent event) {
@@ -26,18 +31,16 @@ public:
 
     bawan::EngineEvent wait(std::uint64_t id, bool text = false) {
         std::unique_lock<std::mutex> lock(mutex_);
-        const auto terminal = [id, text](const bawan::EngineEvent & event) {
-            if (event.requestId != id) { return false; }
-            using Kind = bawan::EngineEvent::Kind;
-            return event.kind == Kind::Error || event.kind == Kind::Cancelled ||
-                event.kind == Kind::Complete || (id == 0 && event.kind == Kind::Ready) ||
-                (text && event.kind == Kind::Text);
+        const auto matches = [id, text](const bawan::EngineEvent &event) {
+            if (const auto *finished = std::get_if<Finished>(&event)) return finished->requestId == id;
+            const auto *progress = std::get_if<Progress>(&event);
+            return text && progress && progress->requestId == id;
         };
         if (!changed_.wait_for(lock, 300s, [&] {
-            for (const auto & event : events_) { if (terminal(event)) { return true; } }
+            for (const auto &event : events_) { if (matches(event)) { return true; } }
             return false;
         })) { throw std::runtime_error("Timed out waiting for inference"); }
-        for (const auto & event : events_) { if (terminal(event)) { return event; } }
+        for (const auto &event : events_) { if (matches(event)) { return event; } }
         throw std::runtime_error("Missing inference event");
     }
 
@@ -46,21 +49,23 @@ public:
         return events_.size();
     }
 
-    void waitKind(bawan::EngineEvent::Kind kind, std::size_t after) {
+    template <typename State>
+    void waitForState(std::size_t after) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (!changed_.wait_for(lock, 300s, [&] {
             for (std::size_t i = after; i < events_.size(); ++i) {
-                if (events_[i].kind == kind) return true;
+                if (lifecycle<State>(events_[i])) return true;
             }
             return false;
         })) { throw std::runtime_error("Timed out waiting for an engine lifecycle event"); }
     }
 
-    std::size_t count(bawan::EngineEvent::Kind kind, std::size_t after) {
+    template <typename State>
+    std::size_t count(std::size_t after) {
         std::lock_guard<std::mutex> lock(mutex_);
         std::size_t count = 0;
         for (std::size_t i = after; i < events_.size(); ++i) {
-            if (events_[i].kind == kind) ++count;
+            if (lifecycle<State>(events_[i])) ++count;
         }
         return count;
     }
@@ -68,10 +73,10 @@ public:
     void requireNoIdleBeforeCompletion(std::uint64_t id, std::size_t after) {
         std::lock_guard<std::mutex> lock(mutex_);
         for (std::size_t i = after; i < events_.size(); ++i) {
-            if (events_[i].kind == bawan::EngineEvent::Kind::Idle) {
+            if (lifecycle<Idle>(events_[i])) {
                 throw std::runtime_error("The model was unloaded during an active translation");
             }
-            if (events_[i].requestId == id && events_[i].kind == bawan::EngineEvent::Kind::Complete) return;
+            if (outcome<Complete>(events_[i]) && std::get<Finished>(events_[i]).requestId == id) return;
         }
         throw std::runtime_error("Missing completed translation");
     }
@@ -79,8 +84,9 @@ public:
     void requireNoOutput(std::uint64_t id) {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto & event : events_) {
-            if (event.requestId == id && (event.kind == bawan::EngineEvent::Kind::Text ||
-                                         event.kind == bawan::EngineEvent::Kind::Complete)) {
+            const auto *progress = std::get_if<Progress>(&event);
+            if ((progress && progress->requestId == id) ||
+                (outcome<Complete>(event) && std::get<Finished>(event).requestId == id)) {
                 throw std::runtime_error("A cancelled model load produced translation output");
             }
         }
@@ -103,14 +109,17 @@ private:
 std::string completed(Events & events, std::uint64_t id,
                       bawan::Direction expectedDirection = bawan::Direction::Automatic) {
     const auto event = events.wait(id);
-    if (event.kind != bawan::EngineEvent::Kind::Complete || event.truncated || event.text.empty()) {
-        throw std::runtime_error("Translation did not complete: " + event.text);
+    const auto *complete = outcome<Complete>(event);
+    if (!complete || complete->truncated || complete->text.empty()) {
+        const auto *error = outcome<Error>(event);
+        throw std::runtime_error("Translation did not complete: " +
+            (error ? error->message : complete ? complete->text : "cancelled"));
     }
-    if (event.direction == bawan::Direction::Automatic ||
-        (expectedDirection != bawan::Direction::Automatic && event.direction != expectedDirection)) {
+    if (complete->direction == bawan::Direction::Automatic ||
+        (expectedDirection != bawan::Direction::Automatic && complete->direction != expectedDirection)) {
         throw std::runtime_error("Translation output lost its resolved direction");
     }
-    return event.text;
+    return complete->text;
 }
 
 bool hasNonASCII(const std::string & text) {
@@ -126,7 +135,6 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
     try {
-        using Kind = bawan::EngineEvent::Kind;
         constexpr auto idleTimeout = 500ms;
         Events events;
         bawan::TranslationEngine engine(argv[1], [&](bawan::EngineEvent event) { events.push(std::move(event)); }, idleTimeout);
@@ -203,7 +211,7 @@ int main(int argc, char ** argv) {
         if (completed(events, warmId) != first) {
             throw std::runtime_error("Warm-up interrupted a translation or changed its independent context");
         }
-        if (events.count(Kind::Loading, warmBurst) != 0) {
+        if (events.count<Loading>(warmBurst) != 0) {
             throw std::runtime_error("Warm-up reloaded an already resident model");
         }
 
@@ -213,10 +221,10 @@ int main(int argc, char ** argv) {
         };
         for (const auto &input : invalidInputs) {
             const auto invalid = events.wait(engine.translate(input, bawan::Direction::Automatic));
-            if (invalid.kind != bawan::EngineEvent::Kind::Error) {
+            if (!outcome<Error>(invalid)) {
                 throw std::runtime_error("Invalid or incomplete UTF-8 was not rejected");
             }
-            events.requireNoOutput(invalid.requestId);
+            events.requireNoOutput(std::get<Finished>(invalid).requestId);
         }
         if (completed(events, engine.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Translation did not recover after invalid UTF-8");
@@ -224,17 +232,17 @@ int main(int argc, char ** argv) {
         std::string overlong;
         for (int i = 0; i < 5000; ++i) { overlong += "hello "; }
         const auto tooLong = events.wait(engine.translate(overlong, bawan::Direction::Automatic));
-        if (tooLong.kind != bawan::EngineEvent::Kind::Error) { throw std::runtime_error("Overlong prompt was not rejected"); }
-        events.requireNoOutput(tooLong.requestId);
+        if (!outcome<Error>(tooLong)) { throw std::runtime_error("Overlong prompt was not rejected"); }
+        events.requireNoOutput(std::get<Finished>(tooLong).requestId);
         std::string largePaste;
         largePaste.reserve(2 * 1024 * 1024);
         while (largePaste.size() < 2 * 1024 * 1024) largePaste += "hello ";
         const auto rejectedPaste = events.wait(engine.translate(largePaste, bawan::Direction::EnglishToJapanese));
-        if (rejectedPaste.kind != bawan::EngineEvent::Kind::Error ||
-            rejectedPaste.text.find("4,096 tokens") == std::string::npos) {
+        const auto *pasteError = outcome<Error>(rejectedPaste);
+        if (!pasteError || pasteError->message.find("4,096 tokens") == std::string::npos) {
             throw std::runtime_error("Large pasted input was not rejected by the prompt budget");
         }
-        events.requireNoOutput(rejectedPaste.requestId);
+        events.requireNoOutput(std::get<Finished>(rejectedPaste).requestId);
         if (completed(events, engine.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Translation did not recover after an overlong prompt");
         }
@@ -246,12 +254,12 @@ int main(int argc, char ** argv) {
         for (int i = 0; i < 2300; ++i) { slidingWindowText += "hello "; }
         const auto cancelledId = engine.translate(slidingWindowText, bawan::Direction::EnglishToJapanese);
         const auto beforeCancel = events.wait(cancelledId, true);
-        if (beforeCancel.kind != bawan::EngineEvent::Kind::Text ||
-            beforeCancel.direction != bawan::Direction::EnglishToJapanese) {
+        const auto *beforeCancelProgress = std::get_if<Progress>(&beforeCancel);
+        if (!beforeCancelProgress || beforeCancelProgress->direction != bawan::Direction::EnglishToJapanese) {
             throw std::runtime_error("Prompt spanning the sliding window did not stream");
         }
         engine.cancel();
-        if (events.wait(cancelledId).kind != bawan::EngineEvent::Kind::Cancelled) {
+        if (!outcome<Cancelled>(events.wait(cancelledId))) {
             throw std::runtime_error("Explicit cancellation did not stop the long translation");
         }
         if (completed(events, engine.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
@@ -265,24 +273,24 @@ int main(int argc, char ** argv) {
         const auto finalBurst = events.mark();
         const auto oldId = engine.translate(longText, bawan::Direction::EnglishToJapanese);
         const auto streaming = events.wait(oldId, true);
-        if (streaming.kind != bawan::EngineEvent::Kind::Text ||
-            streaming.direction != bawan::Direction::EnglishToJapanese) {
+        const auto *streamingProgress = std::get_if<Progress>(&streaming);
+        if (!streamingProgress || streamingProgress->direction != bawan::Direction::EnglishToJapanese) {
             throw std::runtime_error("Long translation did not stream before completing");
         }
         const auto newId = engine.translate(japanese, bawan::Direction::JapaneseToEnglish);
         if (completed(events, newId) != first) { throw std::runtime_error("Latest request inherited cancelled translation state"); }
-        if (events.wait(oldId).kind != bawan::EngineEvent::Kind::Cancelled) {
+        if (!outcome<Cancelled>(events.wait(oldId))) {
             throw std::runtime_error("Superseded request was not cancelled");
         }
         events.requireNoIdleBeforeCompletion(newId, finalBurst);
-        events.waitKind(Kind::Idle, finalBurst);
+        events.waitForState<Idle>(finalBurst);
 
         const auto afterIdle = events.mark();
         const auto reloadedId = engine.translate(japanese, bawan::Direction::JapaneseToEnglish);
         if (completed(events, reloadedId) != first) {
             throw std::runtime_error("Translation changed after idle unloading and reloading");
         }
-        if (events.count(Kind::Loading, afterIdle) != 1) {
+        if (events.count<Loading>(afterIdle) != 1) {
             throw std::runtime_error("The model was not reloaded once after idle unloading");
         }
         events.requireNoIdleBeforeCompletion(reloadedId, afterIdle);
@@ -293,7 +301,7 @@ int main(int argc, char ** argv) {
         bawan::TranslationEngine *interruptedEngine = nullptr;
         bool cancelNextLoad = true;
         bawan::TranslationEngine interrupted(argv[1], [&](bawan::EngineEvent event) {
-            if (event.kind == Kind::Loading && cancelNextLoad) {
+            if (lifecycle<Loading>(event) && cancelNextLoad) {
                 cancelNextLoad = false;
                 interruptedEngine->cancel();
             }
@@ -301,7 +309,7 @@ int main(int argc, char ** argv) {
         }, idleTimeout);
         interruptedEngine = &interrupted;
         const auto interruptedId = interrupted.translate(japanese, bawan::Direction::JapaneseToEnglish);
-        if (interruptedEvents.wait(interruptedId).kind != Kind::Cancelled) {
+        if (!outcome<Cancelled>(interruptedEvents.wait(interruptedId))) {
             throw std::runtime_error("Cancellation during cold model loading was not honored");
         }
         interruptedEvents.requireNoOutput(interruptedId);
@@ -319,14 +327,14 @@ int main(int argc, char ** argv) {
         const auto pressuredId = pressured.translate(
             "The application keeps one model in memory and waits for the next translation request. "
             "It releases that model when the system needs memory back.", bawan::Direction::EnglishToJapanese);
-        if (pressureEvents.wait(pressuredId, true).kind != Kind::Text) {
+        if (!std::holds_alternative<Progress>(pressureEvents.wait(pressuredId, true))) {
             throw std::runtime_error("Translation before memory release did not stream");
         }
         auto releasedAt = std::chrono::steady_clock::now();
         pressured.releaseMemory();
         completed(pressureEvents, pressuredId, bawan::Direction::EnglishToJapanese);
         pressureEvents.requireNoIdleBeforeCompletion(pressuredId, pressureStart);
-        pressureEvents.waitKind(Kind::Idle, pressureStart);
+        pressureEvents.waitForState<Idle>(pressureStart);
         if (std::chrono::steady_clock::now() - releasedAt > 30s) {
             throw std::runtime_error("Memory release waited for the idle timeout");
         }
@@ -336,13 +344,13 @@ int main(int argc, char ** argv) {
         if (completed(pressureEvents, pressured.translate(japanese, bawan::Direction::JapaneseToEnglish)) != first) {
             throw std::runtime_error("Translation changed after releasing memory");
         }
-        if (pressureEvents.count(Kind::Loading, afterRelease) != 1) {
+        if (pressureEvents.count<Loading>(afterRelease) != 1) {
             throw std::runtime_error("The model was not reloaded once after releasing memory");
         }
         const auto warmRelease = pressureEvents.mark();
         releasedAt = std::chrono::steady_clock::now();
         pressured.releaseMemory();
-        pressureEvents.waitKind(Kind::Idle, warmRelease);
+        pressureEvents.waitForState<Idle>(warmRelease);
         if (std::chrono::steady_clock::now() - releasedAt > 5s) {
             throw std::runtime_error("An idle resident model was not released promptly");
         }
