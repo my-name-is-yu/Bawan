@@ -2,7 +2,6 @@
 #import "ModelStore.h"
 #import "ModelSetupState.h"
 #import "ShortcutMonitor.h"
-#import "SelectionReader.h"
 #import "TranslationPanel.h"
 #import "SettingsViewController.h"
 #import "OnboardingViewController.h"
@@ -102,21 +101,16 @@ static NSString *StringFromUTF8(const std::string &text) {
         if (owner && !owner->_terminating) [owner modelFileDidFail:message];
     };
 
-    SelectionReader *selectionReader = [SelectionReader new];
-    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences selectionReader:selectionReader];
-    selectionReader.onText = ^(NSString *text) {
+    _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
+    _shortcut.onSelection = ^(const SelectionEvent &event) {
         AppDelegate *owner = weakSelf;
         if (!owner || owner->_terminating) return;
-        [owner handleSelectionText:text];
-    };
-    selectionReader.onProblem = ^(NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (!owner || owner->_terminating) return;
-        [owner handleShortcutProblem:message];
-    };
-    _shortcut.onSelectionTrial = ^(NSString *text) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner handleSelectionTrialText:text];
+        std::visit([&](const auto &value) {
+            using Value = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<Value, SelectedText>) [owner handleSelectionText:value.text];
+            else if constexpr (std::is_same_v<Value, SelectionTrial>) [owner handleSelectionTrialText:value.text];
+            else [owner handleShortcutProblem:value.message];
+        }, event);
     };
     _shortcut.onOpenPanel = ^{
         AppDelegate *owner = weakSelf;
