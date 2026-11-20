@@ -63,18 +63,21 @@ The download is ad-hoc signed and not notarized, so macOS Gatekeeper may block l
 ### Build Prerequisites
 
 - Apple Silicon Mac (macOS 14+)
-- Xcode (for its Metal compiler) and CMake
+- Xcode with the Metal Toolchain and CMake
 
 ### Build from Source
 
 ```sh
-xcode-select --install
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcrun -sdk macosx metal --version
 cmake --version
 ./scripts/build.sh
 open build/Bawan.app
 ```
 
-The first build downloads `llama.cpp` (`b12307`) and verifies its SHA256 checksum. All downloads, intermediate files, and the built app stay inside `build/`. Subsequent runs perform incremental builds. End users do not need CMake or developer tools to run the built app. The build precompiles the Metal kernels with Xcode's Metal compiler, so the app keeps less memory after unloading the model. With only Command Line Tools, configure with `-DBAWAN_PRECOMPILED_METAL=OFF`; kernels then compile at first translation and the idle memory budget no longer holds.
+If the compiler check reports a missing Metal Toolchain, run `xcodebuild -downloadComponent MetalToolchain` with Xcode selected.
+
+The first build downloads `llama.cpp` (`b12307`) and verifies its SHA256 checksum. All downloads, intermediate files, and the built app stay inside `build/`. Subsequent runs perform incremental builds. End users do not need CMake or developer tools to run the built app. The build precompiles the Metal kernels with Xcode's Metal compiler, so the app keeps less memory after unloading the model. With only Command Line Tools, run `./scripts/build.sh -DBAWAN_PRECOMPILED_METAL=OFF`. The kernels then compile at first translation, and the idle memory budget no longer holds.
 
 ### Install to Applications
 
