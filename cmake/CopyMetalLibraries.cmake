@@ -1,5 +1,0 @@
-file(GLOB metal_libraries "${SOURCE_DIR}/*.metallib")
-if(NOT metal_libraries)
-    message(FATAL_ERROR "No precompiled Metal libraries in ${SOURCE_DIR}")
-endif()
-file(COPY ${metal_libraries} DESTINATION "${DESTINATION}")

@@ -67,12 +67,27 @@
 }
 @end
 
+@interface BawanPanelEntry : NSObject
+@property(nonatomic, readonly) NSViewController<BawanPanelPage> *page;
+@property(nonatomic, readonly) BawanPanelPageKind kind;
+@property(nonatomic, readonly, copy) NSString *title;
+@end
+
+@implementation BawanPanelEntry
++ (instancetype)entryWithPage:(NSViewController<BawanPanelPage> *)page kind:(BawanPanelPageKind)kind title:(NSString *)title {
+    BawanPanelEntry *entry = [[self alloc] init];
+    entry->_page = page;
+    entry->_kind = kind;
+    entry->_title = [title copy];
+    return entry;
+}
+@end
+
 @interface TranslationPanel () <NSWindowDelegate, NSTextViewDelegate> {
     BawanPanel *_panel;
     NSView *_translationContent;
     BawanMascotView *_mascot;
-    NSViewController<BawanPanelPage> *_page;
-    NSViewController<BawanPanelPage> *_coveredPage;
+    NSMutableArray<BawanPanelEntry *> *_pages;
     BawanPanelPageKind _currentPage;
     __weak NSResponder *_translationResponder;
     BawanTextView *_source;
@@ -152,6 +167,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 - (instancetype)init {
     self = [super init];
     if (!self) return nil;
+    _pages = [NSMutableArray array];
     _panel = [[BawanPanel alloc] initWithContentRect:NSMakeRect(0, 0, 720, 500)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable |
                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskNonactivatingPanel |
@@ -181,7 +197,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     _panel.onEscape = ^{
         TranslationPanel *owner = weakSelf;
         if (!owner) return;
-        if ([owner isShowingPage]) { if (owner->_page.onBack) owner->_page.onBack(); }
+        if ([owner isShowingPage]) { if ([owner page].onBack) [owner page].onBack(); }
         else [owner close];
     };
 
@@ -315,25 +331,46 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 - (NSWindow *)window { return _panel; }
 - (BawanPanelPageKind)currentPage { return _currentPage; }
 
+- (NSViewController<BawanPanelPage> *)page { return _pages.lastObject.page; }
+
 - (void)showSettings:(SettingsViewController *)settings {
+    NSViewController<BawanPanelPage> *previous = [self isShowingPage] ? [self page] : nil;
+    if (previous != settings) [_pages addObject:[BawanPanelEntry entryWithPage:settings kind:BawanPanelPageSettings title:@"Bawan Settings"]];
     __weak TranslationPanel *weakSelf = self;
-    [self showPage:settings kind:BawanPanelPageSettings title:@"Bawan Settings" onBack:^{ [weakSelf showTranslation]; }];
+    settings.onBack = ^{ [weakSelf popPage]; };
+    [self presentTopPageLeaving:previous];
 }
 
 - (void)showOnboarding:(OnboardingViewController *)onboarding onBack:(void (^)(void))onBack {
-    [self showPage:onboarding kind:BawanPanelPageOnboarding title:@"Bawan Setup" onBack:onBack];
+    NSViewController<BawanPanelPage> *previous = [self isShowingPage] ? [self page] : nil;
+    onboarding.onBack = onBack;
+    [_pages setArray:@[[BawanPanelEntry entryWithPage:onboarding kind:BawanPanelPageOnboarding title:@"Bawan Setup"]]];
+    [self presentTopPageLeaving:previous];
 }
 
-- (void)showPage:(NSViewController<BawanPanelPage> *)page kind:(BawanPanelPageKind)kind
-           title:(NSString *)title onBack:(void (^)(void))onBack {
-    page.onBack = onBack;
-    BOOL showingPage = [self isShowingPage];
-    BOOL entering = !showingPage || _page != page;
+- (void)popPage {
+    if (_pages.count < 2) {
+        [self showTranslation];
+        return;
+    }
+    NSViewController<BawanPanelPage> *previous = [self page];
+    [_pages removeLastObject];
+    [self presentTopPageLeaving:previous];
+}
+
+- (void)leavePage:(NSViewController<BawanPanelPage> *)page {
+    if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
+    [page setActive:NO];
+    if ([page respondsToSelector:@selector(willLeavePanelPage)]) [page willLeavePanelPage];
+}
+
+- (void)presentTopPageLeaving:(NSViewController<BawanPanelPage> *)previous {
+    BawanPanelEntry *top = _pages.lastObject;
+    NSViewController<BawanPanelPage> *page = top.page;
+    BOOL entering = previous != page;
     if (entering) {
-        if (showingPage) {
-            if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
-            [_page setActive:NO];
-            if ([_page respondsToSelector:@selector(willLeavePanelPage)]) [_page willLeavePanelPage];
+        if (previous) {
+            [self leavePage:previous];
         } else {
             _translationResponder = _panel.firstResponder;
             [_mascot resetHoverAnimation];
@@ -341,14 +378,12 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
             [_copy resetPressFeedback];
         }
         [_panel makeFirstResponder:nil];
-        _coveredPage = showingPage && kind == BawanPanelPageSettings ? _page : nil;
-        _page = page;
-        _currentPage = kind;
+        _currentPage = top.kind;
         NSView *view = page.view;
         view.frame = _panel.contentView.bounds;
         view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         _panel.contentView = view;
-        _panel.title = title;
+        _panel.title = top.title;
     }
     if (!_panel.visible) [self positionNearPointer];
     [page refresh];
@@ -360,11 +395,8 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (void)showTranslation {
     if (![self isShowingPage]) return;
-    if (_panel.attachedSheet) [_panel endSheet:_panel.attachedSheet returnCode:NSModalResponseCancel];
-    [_page setActive:NO];
-    if ([_page respondsToSelector:@selector(willLeavePanelPage)]) [_page willLeavePanelPage];
-    _page = nil;
-    _coveredPage = nil;
+    [self leavePage:[self page]];
+    [_pages removeAllObjects];
     [_panel makeFirstResponder:nil];
     _translationContent.frame = _panel.contentView.bounds;
     _panel.contentView = _translationContent;
@@ -476,7 +508,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (void)performPrimaryAction:(id)sender {
     if ([self isShowingPage]) {
-        [_page performPrimaryAction];
+        [[self page] performPrimaryAction];
         return;
     }
     if (_busy) { if (self.onCancel) self.onCancel(); }
@@ -519,10 +551,10 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
     if (self.onClose) self.onClose();
 }
 - (void)windowDidBecomeKey:(NSNotification *)notification {
-    if ([self isShowingPage]) [_page setActive:YES];
+    if ([self isShowingPage]) [[self page] setActive:YES];
 }
 - (void)windowDidResignKey:(NSNotification *)notification {
-    if ([self isShowingPage]) [_page setActive:NO];
+    if ([self isShowingPage]) [[self page] setActive:NO];
 }
 - (void)close { [_panel close]; }
 @end

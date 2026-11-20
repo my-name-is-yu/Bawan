@@ -568,6 +568,5 @@ struct SettingsShortcutRow {
         [NSEvent removeMonitor:_eventMonitor];
         _monitor.suspended = NO;
     }
-    _monitor.configurationActive = NO;
 }
 @end
