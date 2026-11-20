@@ -59,6 +59,7 @@ struct ShortcutRow {
     NSString *_trialOutput;
     bawan::Direction _trialDirection;
     NSTextField *_error;
+    BOOL _selectionCopyErrorShown;
     NSButton *_primary;
     NSButton *_modelLicense;
     NSButton *_modelControl;
@@ -366,6 +367,7 @@ struct ShortcutRow {
         !_selectionSample.window.isKeyWindow || _selectionSample.window.firstResponder != _selectionSample ||
         !NSEqualRanges(_selectionSample.selectedRange, NSMakeRange(0, _selectionSample.string.length)) ||
         ![text isEqualToString:_selectionSample.string]) return NO;
+    [self clearSelectionCopyError];
     _trialPhase = TrialPhase::Translating;
     _trialStatus.stringValue = @"Translating… The model may need to finish preparing first.";
     _trialStatus.textColor = BawanColor(BawanSecondaryText);
@@ -415,7 +417,8 @@ struct ShortcutRow {
     BawanSetupPresentPage(self.view, _scroll);
 }
 
-- (void)showShortcutError:(NSString *)message {
+- (void)showShortcutError:(NSString *)message selectionCopy:(BOOL)selectionCopy {
+    _selectionCopyErrorShown = selectionCopy;
     _error.stringValue = message;
     _error.hidden = NO;
     [self.view layoutSubtreeIfNeeded];
@@ -428,6 +431,20 @@ struct ShortcutRow {
     }
 }
 
+- (void)clearShortcutError {
+    _selectionCopyErrorShown = NO;
+    _error.hidden = YES;
+    _error.stringValue = @"";
+}
+
+- (void)showSelectionCopyError:(NSString *)message {
+    [self showShortcutError:message selectionCopy:YES];
+}
+
+- (void)clearSelectionCopyError {
+    if (_selectionCopyErrorShown) [self clearShortcutError];
+}
+
 - (void)setUpShortcut:(NSButton *)sender {
     auto action = static_cast<bawan::ShortcutAction>(sender.tag);
     auto binding = [_preferences bindingForAction:action];
@@ -435,12 +452,11 @@ struct ShortcutRow {
     if (!binding.enabled) {
         binding.enabled = true;
         if (![_preferences setBinding:binding forAction:action error:&error]) {
-            [self showShortcutError:error ?: @"Unable to enable this shortcut."];
+            [self showShortcutError:error ?: @"Unable to enable this shortcut." selectionCopy:NO];
             return;
         }
     }
-    _error.hidden = YES;
-    _error.stringValue = @"";
+    [self clearShortcutError];
     [_monitor requestPermissionForAction:action];
     [self refresh];
 }

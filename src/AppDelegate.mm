@@ -471,7 +471,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self updateShortcutItem];
     if ([self needsOnboarding]) {
         [self showOnboarding];
-        [_onboardingViewController showShortcutError:message];
+        [_onboardingViewController showSelectionCopyError:message];
     } else {
         [_translationPanel showWithoutChangingInput];
         [self showStatus:message kind:BawanStatusWarning owner:StatusOwner::ShortcutWarning];
@@ -654,6 +654,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)handleSelectionText:(NSString *)text {
+    [_onboardingViewController clearSelectionCopyError];
     [_onboardingViewController discardSelectionTrialResult];
     const BOOL needsOnboarding = [self needsOnboarding];
     if (needsOnboarding || _model.setupNotStarted()) {

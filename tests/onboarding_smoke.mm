@@ -311,10 +311,13 @@ static void RunSmoke(void) {
         [onboarding refresh];
         Require([selectionStatus.stringValue isEqualToString:@"Off"],
             @"A disabled selection shortcut must read Off without asking for permission");
+        [onboarding showSelectionCopyError:@"The selected text could not be copied."];
         [selectionSetup performClick:nil];
         Require(monitor.permissionRequests == 2 && IsShown(shortcutError) && shortcutError.stringValue.length &&
             ![preferences bindingForAction:bawan::ShortcutAction::TranslateSelection].enabled && primary.enabled,
             @"A shortcut conflict must stay local, keep the old preference and never block continuing");
+        [onboarding clearSelectionCopyError];
+        Require(IsShown(shortcutError), @"A successful selection must preserve a shortcut configuration conflict");
         Require([preferences restoreAction:bawan::ShortcutAction::OpenPanel error:&error],
             @"The window shortcut must be restorable after the conflict");
         [onboarding refresh];
@@ -366,12 +369,13 @@ static void RunSmoke(void) {
         Require(!onboarding.selectionTrialComplete &&
             [primary.title hasPrefix:@"Set Up Later"],
             @"Selecting the sample alone must not complete the trial");
-        Require(![onboarding beginSelectionTrialForText:@"A different sentence"],
-            @"A different selected sentence cannot count as this practice sentence");
+        [onboarding showSelectionCopyError:@"The selected text could not be copied."];
+        Require(![onboarding beginSelectionTrialForText:@"A different sentence"] && IsShown(shortcutError),
+            @"A different selected sentence cannot start practice or clear the copy warning");
         BOOL started = [onboarding beginSelectionTrialForText:sample.string];
         Require(started && ![onboarding beginSelectionTrialForText:sample.string] && IsShown(trialStatus) &&
-            [primary.title hasPrefix:@"Set Up Later"],
-            @"The real shortcut may start one trial at a time and must wait for translation");
+            [primary.title hasPrefix:@"Set Up Later"] && !IsShown(shortcutError),
+            @"Starting practice must clear the old copy warning and wait for translation");
         onboarding.refreshes = 0;
         Require([onboarding canFinishSelectionTrial] && [onboarding canFinishSelectionTrial] &&
             onboarding.refreshes == 0,

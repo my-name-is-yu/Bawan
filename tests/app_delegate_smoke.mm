@@ -698,8 +698,14 @@ static void CheckFirstRunSelection(void) {
                 @"First-run selection must queue before guidance without preparing a model before consent");
             NSString *expectedSource = @"The first selected sentence";
             if (change == Change::NewSelection) {
+                [delegate handleShortcutProblem:@"The selected text could not be copied."];
+                NSTextField *copyError = (NSTextField *)FindView(window.contentView, @"onboarding-error");
+                Require(copyError && !copyError.hiddenOrHasHiddenAncestor,
+                    @"A copy failure must show a warning while onboarding");
                 expectedSource = @"The latest selected sentence";
                 [delegate handleSelectionText:expectedSource];
+                Require(copyError.hiddenOrHasHiddenAncestor,
+                    @"A successful selection must clear the previous copy warning");
             } else if (change == Change::Close) {
                 [window cancelOperation:nil];
                 Require(!window.visible && ![delegate busy],
