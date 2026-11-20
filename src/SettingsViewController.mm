@@ -476,9 +476,8 @@ struct SettingsShortcutRow {
     // Key-up may go to another app after focus loss; never restart a global
     // listener while one of the recorder's swallowed keys remains down.
     if (!_releaseTimer) {
-        __weak SettingsViewController *weakSelf = self;
         _releaseTimer = [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(__unused NSTimer *timer) {
-            [weakSelf finishRecordingIfReleased];
+            [self finishRecordingIfReleased];
         }];
         [NSRunLoop.mainRunLoop addTimer:_releaseTimer forMode:NSRunLoopCommonModes];
     }
@@ -569,6 +568,5 @@ struct SettingsShortcutRow {
         [NSEvent removeMonitor:_eventMonitor];
         _monitor.suspended = NO;
     }
-    _monitor.configurationActive = NO;
 }
 @end

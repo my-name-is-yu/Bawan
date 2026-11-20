@@ -16,14 +16,21 @@
 enum class StatusOwner { None, ModelStatus, TranslationOutcome, ShortcutWarning };
 using Session = bawan::TranslationSession;
 
+struct CompletedPractice {
+    NSString *source;
+    NSString *output;
+    bawan::Direction direction;
+    bawan::ShortcutBinding binding;
+};
+
 @interface AppDelegate () <NSMenuDelegate> {
     NSStatusItem *_statusItem;
     NSMenuItem *_modelItem;
     NSMenuItem *_shortcutItem;
     NSMenuItem *_panelShortcutItem;
     NSMenuItem *_retryItem;
-    SettingsViewController *_settingsViewController;
-    OnboardingViewController *_onboardingViewController;
+    __weak SettingsViewController *_settingsViewController;
+    __weak OnboardingViewController *_onboardingViewController;
     NSUserDefaults *_defaults;
     ShortcutPreferences *_shortcutPreferences;
     TranslationPanel *_translationPanel;
@@ -32,6 +39,7 @@ using Session = bawan::TranslationSession;
     dispatch_source_t _memoryPressure;
     EngineHost *_engineHost;
     Session _translationSession;
+    std::optional<CompletedPractice> _completedPractice;
     BOOL _terminating;
     StatusOwner _statusOwner;
     BawanModelState _model;
@@ -94,14 +102,8 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     _shortcutPreferences = [[ShortcutPreferences alloc] init];
     [self buildMenus];
-    _translationPanel = [[TranslationPanel alloc] init];
+    [self connectTranslationPanel:[[TranslationPanel alloc] init]];
     __weak AppDelegate *weakSelf = self;
-    _translationPanel.onTranslate = ^(NSString *text, bawan::Direction direction) {
-        [weakSelf translateText:text direction:direction];
-    };
-    _translationPanel.onCancel = ^{ [weakSelf cancelTranslation]; };
-    _translationPanel.onClose = ^{ [weakSelf cancelTranslation]; };
-    _translationPanel.onSettings = ^{ [weakSelf openSettings:nil]; };
 
     _memoryPressure = dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
         DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL, dispatch_get_main_queue());
@@ -254,18 +256,35 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_modelStore prepare];
 }
 
+- (void)discardUnavailablePractice {
+    if (!_completedPractice) return;
+    constexpr auto action = bawan::ShortcutAction::TranslateSelection;
+    if (!_model.canFinishSetup() || _completedPractice->binding != [_shortcutPreferences bindingForAction:action] ||
+        [_shortcut availabilityForAction:action] != ShortcutAvailabilityAvailable) {
+        _completedPractice.reset();
+    }
+}
+
 - (void)showOnboarding {
     __weak AppDelegate *weakSelf = self;
-    if (!_onboardingViewController) {
-        _onboardingViewController = [[OnboardingViewController alloc]
-            initWithPreferences:_shortcutPreferences monitor:_shortcut];
-        _onboardingViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
-        _onboardingViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
-        _onboardingViewController.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
+    OnboardingViewController *onboarding = _onboardingViewController;
+    const BOOL created = onboarding == nil;
+    if (created) {
+        onboarding = [[OnboardingViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
+        onboarding.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
+        onboarding.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        onboarding.onFinish = ^{ [weakSelf finishOnboardingFromShortcuts]; };
+        onboarding.onSelectionTrialDiscarded = ^{
+            AppDelegate *owner = weakSelf;
+            if (owner) owner->_completedPractice.reset();
+        };
+        _onboardingViewController = onboarding;
     }
-    _onboardingViewController.onSelectionTrialInterrupted = ^{ [weakSelf invalidateSelectionTrial]; };
-    [self pushModelStateToPage:_onboardingViewController];
-    [_translationPanel showOnboarding:_onboardingViewController onBack:^{ [weakSelf finishOrCloseOnboarding]; }];
+    onboarding.onSelectionTrialInterrupted = ^{ [weakSelf invalidateSelectionTrial]; };
+    [self pushModelStateToPage:onboarding];
+    [self discardUnavailablePractice];
+    [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOrCloseOnboarding]; }];
+    if (created && _completedPractice) [onboarding restoreCompletedSelectionTrial];
 }
 
 // The shortcut step's button: leave for the translator even while the model is
@@ -278,17 +297,15 @@ static NSString *StringFromUTF8(const std::string &text) {
 
 - (void)enterTranslatorFromOnboarding {
     [_onboardingViewController refresh];
+    [self discardUnavailablePractice];
+    const auto practice = std::exchange(_completedPractice, std::nullopt);
     const BOOL wasOnboarding = [self needsOnboarding];
-    const BOOL useTrial = _onboardingViewController.selectionTrialComplete;
     [self applyTranslationEvent:Session::OpenTranslator{
-        useTrial ? Session::PendingSelection::Discard : Session::PendingSelection::Resume}];
+        practice ? Session::PendingSelection::Discard : Session::PendingSelection::Resume}];
     if (wasOnboarding) [_defaults setBool:YES forKey:BawanOnboardingCompletedKey];
-    if (useTrial) {
-        NSString *text = _onboardingViewController.selectionTrialText;
-        NSString *output = _onboardingViewController.selectionTrialOutput;
-        const auto direction = _onboardingViewController.selectionTrialDirection;
-        [_translationPanel showForSelection:text];
-        [_translationPanel setOutput:output direction:direction];
+    if (practice) {
+        [_translationPanel showForSelection:practice->source];
+        [_translationPanel setOutput:practice->output direction:practice->direction];
     }
     [_translationPanel showForManualInput];
 }
@@ -301,17 +318,25 @@ static NSString *StringFromUTF8(const std::string &text) {
     [self enterTranslatorFromOnboarding];
 }
 
+- (void)connectTranslationPanel:(TranslationPanel *)panel {
+    _translationPanel = panel;
+    __weak AppDelegate *weakSelf = self;
+    panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
+        [weakSelf translateText:text direction:direction];
+    };
+    panel.onCancel = ^{ [weakSelf cancelTranslation]; };
+    panel.onClose = ^{ [weakSelf cancelTranslation]; };
+    panel.onSettings = ^{ [weakSelf openSettings:nil]; };
+}
+
 - (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
     [page setModelPhase:_model.phase() message:_model.message() progress:_model.progress()];
 }
 
 // Hidden pages are brought up to date when they are shown.
 - (void)refreshSetupPages {
-    switch (_translationPanel.currentPage) {
-        case BawanPanelPageOnboarding: [self pushModelStateToPage:_onboardingViewController]; break;
-        case BawanPanelPageSettings: [self pushModelStateToPage:_settingsViewController]; break;
-        case BawanPanelPageTranslation: break;
-    }
+    [self pushModelStateToPage:_onboardingViewController];
+    [self pushModelStateToPage:_settingsViewController];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -588,8 +613,12 @@ static NSString *StringFromUTF8(const std::string &text) {
                 [&](const Session::TrialFinished &trial) {
                     NSString *output = trial.output ? [[NSString alloc] initWithBytes:trial.output->text.data()
                         length:trial.output->text.size() encoding:NSUTF8StringEncoding] : nil;
-                    [_onboardingViewController finishSelectionTrialWithOutput:output
-                        direction:trial.output ? trial.output->direction : bawan::Direction::Automatic];
+                    OnboardingViewController *onboarding = _onboardingViewController;
+                    if ([onboarding finishSelectionTrialWithOutput:output]) {
+                        _completedPractice = CompletedPractice{
+                            [onboarding.selectionTrialText copy], output, trial.output->direction,
+                            [_shortcutPreferences bindingForAction:bawan::ShortcutAction::TranslateSelection]};
+                    }
                 },
                 [&](Session::TrialDiscarded) {
                     [_onboardingViewController cancelSelectionTrial];
@@ -656,6 +685,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)handleSelectionText:(NSString *)text {
     [_onboardingViewController clearSelectionCopyError];
     [_onboardingViewController discardSelectionTrialResult];
+    _completedPractice.reset();
     const BOOL needsOnboarding = [self needsOnboarding];
     if (needsOnboarding || _model.setupNotStarted()) {
         [_translationPanel setSelection:text];
@@ -723,20 +753,18 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)openSettings:(id)sender {
-    if (!_settingsViewController) {
-        _settingsViewController = [[SettingsViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
-        __weak AppDelegate *weakSelf = self;
-        _settingsViewController.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
-        _settingsViewController.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
-        _settingsViewController.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
-        _settingsViewController.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
+    __weak AppDelegate *weakSelf = self;
+    SettingsViewController *settings = _settingsViewController;
+    if (!settings) {
+        settings = [[SettingsViewController alloc] initWithPreferences:_shortcutPreferences monitor:_shortcut];
+        settings.onLoginSettings = ^{ [weakSelf openLoginSettings:nil]; };
+        settings.onLoginChanged = ^(BOOL enabled) { [weakSelf setLoginEnabled:enabled]; };
+        settings.onModelLicense = ^{ [weakSelf showModelLicense:weakSelf]; };
+        settings.onModelSetup = ^{ [weakSelf performModelAction:nil]; };
+        _settingsViewController = settings;
     }
     [self refreshSettings];
-    [_translationPanel showSettings:_settingsViewController];
-    if ([self needsOnboarding]) {
-        __weak AppDelegate *weakSelf = self;
-        _settingsViewController.onBack = ^{ [weakSelf showOnboarding]; };
-    }
+    [_translationPanel showSettings:settings];
 }
 
 - (void)refreshSettings {

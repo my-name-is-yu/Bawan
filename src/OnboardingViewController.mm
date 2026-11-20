@@ -56,8 +56,6 @@ struct ShortcutRow {
     bawan::ShortcutBinding _trialBinding;
     BOOL _selectionReady;
     TrialPhase _trialPhase;
-    NSString *_trialOutput;
-    bawan::Direction _trialDirection;
     NSTextField *_error;
     BOOL _selectionCopyErrorShown;
     NSButton *_primary;
@@ -348,13 +346,12 @@ struct ShortcutRow {
 }
 
 - (NSString *)selectionTrialText { return _selectionSample.string; }
-- (NSString *)selectionTrialOutput { return _trialOutput; }
-- (bawan::Direction)selectionTrialDirection { return _trialDirection; }
 - (BOOL)selectionTrialComplete { return _trialPhase == TrialPhase::Complete && _selectionReady; }
 
 - (void)resetSelectionTrial {
+    const BOOL discarded = _trialPhase == TrialPhase::Complete;
     _trialPhase = TrialPhase::Ready;
-    _trialOutput = nil;
+    if (discarded && self.onSelectionTrialDiscarded) self.onSelectionTrialDiscarded();
     _trialStatus.stringValue = @"";
     _trialStatus.hidden = YES;
 }
@@ -382,22 +379,29 @@ struct ShortcutRow {
         [_monitor availabilityForAction:bawan::ShortcutAction::TranslateSelection] == ShortcutAvailabilityAvailable;
 }
 
-- (BOOL)finishSelectionTrialWithOutput:(NSString *)output direction:(bawan::Direction)direction {
+- (BOOL)finishSelectionTrialWithOutput:(NSString *)output {
     if (![self canFinishSelectionTrial]) {
         [self cancelSelectionTrial];
         return NO;
     }
     BOOL complete = [output stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
+    [self showSelectionTrialComplete:complete];
+    return complete;
+}
+
+- (void)restoreCompletedSelectionTrial {
+    [self refresh];
+    if (_selectionReady && ![self showingModelStep]) [self showSelectionTrialComplete:YES];
+}
+
+- (void)showSelectionTrialComplete:(BOOL)complete {
     _trialPhase = complete ? TrialPhase::Complete : TrialPhase::Ready;
-    _trialOutput = complete ? [output copy] : nil;
-    _trialDirection = direction;
     _trialStatus.stringValue = complete ? @"Shortcut tried successfully. Your translation is ready." :
         @"The translation didn’t finish. Select the sentence and try the shortcut again.";
     _trialStatus.textColor = BawanColor(complete ? BawanSuccess : BawanWarning);
     _trialStatus.hidden = NO;
     [self updateFooter];
     [self.view layoutSubtreeIfNeeded];
-    return complete;
 }
 
 - (void)cancelSelectionTrial {

@@ -1,6 +1,6 @@
 {
-  "cold_idle": {"footprint_mib": 27, "rss_mib": 111},
-  "windows_closed": {"footprint_mib": 43, "rss_mib": 137},
-  "warm_translation": {"footprint_mib": 684, "rss_mib": 1324},
-  "idle_unloaded": {"footprint_mib": 81, "rss_mib": 241}
+  "cold_idle": {"footprint_mib": 26, "rss_mib": 103},
+  "windows_closed": {"footprint_mib": 36, "rss_mib": 125},
+  "warm_translation": {"footprint_mib": 642, "rss_mib": 1236},
+  "idle_unloaded": {"footprint_mib": 39, "rss_mib": 197}
 }

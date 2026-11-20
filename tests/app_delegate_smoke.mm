@@ -26,6 +26,7 @@ using namespace bawan::engine;
 @interface AppDelegate (SmokeTest)
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults memoryProbeDirectory:(NSString *)probeDirectory;
 - (void)buildMenus;
+- (void)connectTranslationPanel:(TranslationPanel *)panel;
 - (void)updateStatus;
 - (void)updateShortcutItem;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
@@ -651,11 +652,8 @@ static void CheckFirstRunSelection(void) {
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
         [delegate setValue:store forKey:@"modelStore"];
-        [delegate setValue:panel forKey:@"translationPanel"];
+        [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
-        __weak AppDelegate *weakDelegate = delegate;
-        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
         @try {
             [delegate startInitialSetup];
             NSWindow *window = panel.window;
@@ -828,11 +826,13 @@ static void CheckSelectionTrial(void) {
                       Truncated, Empty, Error, Cancelled, Binding, Permission, PermissionBeforeRefresh, Revisit,
                       Queued, QueuedInvalidated, Skip, SkipQueuedWithSelection, SkipActiveWithSelection,
                       CallbackNone, CallbackPanelBinding,
-                      CallbackSelectionBinding, CallbackPermission };
+                      CallbackSelectionBinding, CallbackPermission, Reopen, StaleReopen, OpenTranslatorAfterClose };
     for (Case scenario : {Case::Success, Case::LaterExternalSelection, Case::FocusChange, Case::ColdLoadFailure,
             Case::Truncated, Case::Empty, Case::Error, Case::Cancelled,
             Case::Binding, Case::Permission, Case::PermissionBeforeRefresh, Case::Revisit, Case::Queued, Case::QueuedInvalidated, Case::Skip,
-            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding, Case::CallbackSelectionBinding, Case::CallbackPermission}) {
+            Case::SkipQueuedWithSelection, Case::SkipActiveWithSelection, Case::CallbackNone, Case::CallbackPanelBinding,
+            Case::CallbackSelectionBinding, Case::CallbackPermission, Case::Reopen, Case::StaleReopen,
+            Case::OpenTranslatorAfterClose}) {
         const BOOL skipWithSelection = scenario == Case::SkipQueuedWithSelection ||
             scenario == Case::SkipActiveWithSelection;
         const BOOL checkRefreshes = scenario == Case::CallbackPanelBinding || scenario == Case::CallbackSelectionBinding ||
@@ -861,11 +861,9 @@ static void CheckSelectionTrial(void) {
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
         [delegate setValue:store forKey:@"modelStore"];
-        [delegate setValue:panel forKey:@"translationPanel"];
+        [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         __weak AppDelegate *weakDelegate = delegate;
-        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
         if (checkRefreshes) {
             refreshOnboarding.onFinish = ^{ [weakDelegate finishOnboardingFromShortcuts]; };
             monitor.onAvailabilityChanged = ^{ [weakDelegate updateShortcutItem]; };
@@ -885,7 +883,8 @@ static void CheckSelectionTrial(void) {
                 callbacks = std::make_unique<ScopedEngineCallbackSuppression>(delegate);
             }
             NSWindow *window = panel.window;
-            OnboardingViewController *onboarding = [delegate valueForKey:@"onboardingViewController"];
+            OnboardingViewController *onboarding;
+            @autoreleasepool { onboarding = [delegate valueForKey:@"onboardingViewController"]; }
             NSTextView *sample = (NSTextView *)FindView(window.contentView, @"onboarding-trial-sample");
             NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
             NSTextField *trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
@@ -995,8 +994,7 @@ static void CheckSelectionTrial(void) {
                             @"Unchanged selection state must preserve the queued practice sentence");
                     } else {
                         Require(trialStatus.hidden &&
-                            ![onboarding finishSelectionTrialWithOutput:@"Late state callback output"
-                                direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
+                            ![onboarding finishSelectionTrialWithOutput:@"Late state callback output"] && !onboarding.selectionTrialComplete,
                             @"Cancelling an invalid trial must clear its queue and reject the old result");
                         const BOOL hiddenTrial = scenario != Case::CallbackSelectionBinding;
                         Require(sample.hiddenOrHasHiddenAncestor == hiddenTrial &&
@@ -1086,7 +1084,8 @@ static void CheckSelectionTrial(void) {
             }
             const BOOL success = scenario == Case::Success || scenario == Case::Queued ||
                 scenario == Case::LaterExternalSelection || scenario == Case::FocusChange ||
-                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding;
+                scenario == Case::CallbackNone || scenario == Case::CallbackPanelBinding || scenario == Case::Reopen ||
+                scenario == Case::StaleReopen || scenario == Case::OpenTranslatorAfterClose;
             const BOOL terminalFailure = scenario == Case::Truncated || scenario == Case::Empty ||
                 scenario == Case::Error || scenario == Case::Cancelled;
             std::string result = scenario == Case::Empty ? " \n" : "小さな一歩が、新しい世界を開く。";
@@ -1097,7 +1096,7 @@ static void CheckSelectionTrial(void) {
             [delegate injectEngineEvent:terminal];
             if (scenario == Case::PermissionBeforeRefresh) {
                 Require(ActiveRequestId(delegate) == 0 && ![delegate busy] &&
-                    !onboarding.selectionTrialComplete && !onboarding.selectionTrialOutput,
+                    !onboarding.selectionTrialComplete,
                     @"A stale trial terminal must release the request without showing output");
             }
             if (!success) {
@@ -1116,6 +1115,34 @@ static void CheckSelectionTrial(void) {
                 !trialStatus.hidden && [window.contentView.identifier isEqualToString:@"bawan-onboarding"] &&
                 ![defaults boolForKey:@"firstLaunchShown"] && ![delegate busy],
                 @"Only the exact successful request may complete the trial; Finish remains an explicit user action");
+            if (scenario == Case::Reopen) {
+                OnboardingViewController *closed = onboarding;
+                [window close];
+                [delegate setValue:nil forKey:@"onboardingViewController"];
+                [delegate showOnboarding];
+                onboarding = [delegate valueForKey:@"onboardingViewController"];
+                Require(onboarding != closed, @"Reopening released onboarding must build a new page");
+                primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+                trialStatus = (NSTextField *)FindView(window.contentView, @"onboarding-trial-status");
+                Require(onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Start Translating"] &&
+                    !trialStatus.hidden, @"A completed practice must stay complete after closing and reopening onboarding");
+            }
+            if (scenario == Case::StaleReopen) {
+                [window close];
+                [delegate setValue:nil forKey:@"onboardingViewController"];
+                auto binding = [preferences bindingForAction:bawan::ShortcutAction::TranslateSelection];
+                binding.keyCode = 2;
+                binding.modifiers = bawan::Option;
+                NSString *error = nil;
+                Require([preferences setBinding:binding forAction:bawan::ShortcutAction::TranslateSelection error:&error],
+                    @"The stale practice fixture must change the selection shortcut");
+                [delegate showOnboarding];
+                onboarding = [delegate valueForKey:@"onboardingViewController"];
+                primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+                Require(!onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
+                    @"A practice made with an older shortcut must not come back after reopening onboarding");
+                continue;
+            }
             if (scenario == Case::FocusChange) [onboarding setActive:YES];
             if (scenario == Case::LaterExternalSelection) {
                 // Clipboard selections remain ordinary requests even when the text matches the sample.
@@ -1134,13 +1161,24 @@ static void CheckSelectionTrial(void) {
             [delegate handleSelectionTrialText:sample.string];
             Require(ActiveRequestId(delegate) == 0,
                 @"Repeated completion and sample triggers must not replay a successful trial");
-            [primary performClick:nil];
+            if (scenario == Case::OpenTranslatorAfterClose) {
+                @autoreleasepool {
+                    [window close];
+                    onboarding = nil;
+                    [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+                }
+                Require([delegate valueForKey:@"onboardingViewController"] == nil,
+                    @"Closing onboarding after a trial must release its page");
+                [delegate openTranslation:nil];
+            } else {
+                [primary performClick:nil];
+            }
             NSButton *swap = (NSButton *)FindView(window.contentView, @"swap");
             Require([defaults boolForKey:@"firstLaunchShown"] &&
                 [window.contentView.identifier isEqualToString:@"bawan-panel"] &&
                 [source.string isEqualToString:sample.string] &&
                 [output.string isEqualToString:@"小さな一歩が、新しい世界を開く。"] && swap.enabled,
-                @"Start Translating must hand the exact practice source and completed result to the real translator");
+                @"Opening the translator must hand it the exact practice source and completed result");
             __block bawan::Direction reversed = bawan::Direction::Automatic;
             panel.onTranslate = ^(NSString *, bawan::Direction direction) { reversed = direction; };
             [swap performClick:nil];
@@ -1167,11 +1205,8 @@ static void CheckFirstRunIntegration(void) {
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
     [delegate setValue:store forKey:@"modelStore"];
-    [delegate setValue:panel forKey:@"translationPanel"];
+    [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
-    __weak SetupSmokeDelegate *weakDelegate = delegate;
-    panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-    panel.onClose = ^{ [weakDelegate cancelTranslation]; };
     __block NSUInteger translations = 0;
     panel.onTranslate = ^(NSString *, bawan::Direction) { ++translations; };
     SetupSmokeDelegate *existingUser = nil;
@@ -1324,6 +1359,15 @@ static void CheckFirstRunIntegration(void) {
         Require([source.string isEqualToString:@"Original source"], @"Onboarding and Settings must preserve source Undo");
         [source.undoManager redo];
         Require([source.string isEqualToString:edited], @"Onboarding and Settings must preserve source Redo");
+        [delegate openSettings:nil];
+        [window close];
+        [delegate openSettings:nil];
+        Require(panel.currentPage == BawanPanelPageSettings && window.visible &&
+            [window.contentView.identifier isEqualToString:@"bawan-settings"],
+            @"Settings must reopen after the panel was closed on it");
+        [window cancelOperation:nil];
+        Require(panel.currentPage == BawanPanelPageTranslation && [source.string isEqualToString:edited],
+            @"Leaving reopened Settings must restore the translator");
 
         [delegate showOnboarding];
         [window cancelOperation:nil];
@@ -1366,6 +1410,82 @@ static void CheckFirstRunIntegration(void) {
         [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
         [existingPanel close];
         if (existingUser) [existingUser applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
+static void CheckPageRelease(void) {
+    NSString *suite = [@"local.bawan.PageReleaseSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    [defaults removePersistentDomainForName:suite];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+    SetupSmokeStore *store = [[SetupSmokeStore alloc] init];
+    SetupSmokeDelegate *delegate = [[SetupSmokeDelegate alloc] init];
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    [delegate setValue:defaults forKey:@"defaults"];
+    [delegate setValue:preferences forKey:@"shortcutPreferences"];
+    [delegate setValue:monitor forKey:@"shortcut"];
+    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectTranslationPanel:panel];
+    [delegate buildMenus];
+    SetAvailableModel(delegate);
+    [defaults setBool:YES forKey:@"firstLaunchShown"];
+    NSWindow *window = panel.window;
+    @try {
+        __weak NSViewController *settings = nil;
+        @autoreleasepool {
+            [delegate openSettings:nil];
+            settings = [panel valueForKey:@"page"];
+            [window orderOut:nil];
+        }
+        Require(settings != nil, @"A hidden panel must keep its selected Settings page");
+        @autoreleasepool { [delegate openSettings:nil]; }
+        @autoreleasepool {
+            Require([panel valueForKey:@"page"] == settings, @"Reopening a hidden panel must show the same Settings");
+        }
+        @autoreleasepool {
+            [window cancelOperation:nil];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        Require(settings == nil, @"Leaving Settings must release it");
+        @autoreleasepool {
+            [delegate openSettings:nil];
+            settings = [panel valueForKey:@"page"];
+            [window close];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        Require(settings == nil, @"Closing the panel on Settings must release it");
+
+        [defaults setBool:NO forKey:@"firstLaunchShown"];
+        __weak NSViewController *onboarding = nil;
+        @autoreleasepool {
+            [delegate showOnboarding];
+            onboarding = [panel valueForKey:@"page"];
+            [delegate openSettings:nil];
+            settings = [panel valueForKey:@"page"];
+        }
+        Require(onboarding != nil && panel.currentPage == BawanPanelPageSettings,
+            @"Settings opened from onboarding must keep the onboarding it returns to");
+        @autoreleasepool {
+            [window cancelOperation:nil];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        @autoreleasepool {
+            Require(panel.currentPage == BawanPanelPageOnboarding && [panel valueForKey:@"page"] == onboarding,
+                @"Leaving Settings must return to the same onboarding");
+        }
+        Require(monitor.configurationActive == window.keyWindow,
+            @"Releasing Settings must not disarm the onboarding page that replaced it");
+        Require(settings == nil, @"Leaving Settings for onboarding must release Settings");
+        @autoreleasepool {
+            [window close];
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        }
+        Require(onboarding == nil, @"Closing the panel on onboarding must release it");
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
         [defaults removePersistentDomainForName:suite];
     }
 }
@@ -1595,13 +1715,7 @@ int main(int argc, const char *argv[]) {
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
         SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults memoryProbeDirectory:nil];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
-        [delegate setValue:panel forKey:@"translationPanel"];
-        __weak AppDelegate *weakDelegate = delegate;
-        panel.onTranslate = ^(NSString *text, bawan::Direction direction) {
-            [weakDelegate translateText:text direction:direction];
-        };
-        panel.onCancel = ^{ [weakDelegate cancelTranslation]; };
-        panel.onClose = ^{ [weakDelegate cancelTranslation]; };
+        [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         [delegate updateStatus];
         int result = EXIT_SUCCESS;
@@ -1619,6 +1733,7 @@ int main(int argc, const char *argv[]) {
                 CheckSelectionTrial();
                 CheckFirstRunIntegration();
                 CheckModelLicenseSheet();
+                CheckPageRelease();
                 CheckDownloadActions();
                 std::cout << "PASS: pending selection cancellation, source edits, stale output isolation, cold load errors, warmup errors, retry isolation, verification stamps, model revalidation, first-run selection translation, first-run navigation, the license sheet and contextual download actions\n";
             } catch (const std::exception &error) {

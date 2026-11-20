@@ -411,15 +411,13 @@ static void RunSmoke(void) {
             @"One explicit state refresh followed by a trial check must render once and preserve the pending trial");
         CheckBounds(window);
         Capture(window, @"trial-translating");
-        Require(![onboarding finishSelectionTrialWithOutput:@"  " direction:bawan::Direction::EnglishToJapanese] &&
+        Require(![onboarding finishSelectionTrialWithOutput:@"  "] &&
             !onboarding.selectionTrialComplete && [primary.title hasPrefix:@"Set Up Later"],
             @"An empty or failed translation must leave the trial retryable");
         started = [onboarding beginSelectionTrialForText:sample.string];
-        Require(started && [onboarding finishSelectionTrialWithOutput:@"小さな一歩が新しい世界を開く。"
-            direction:bawan::Direction::EnglishToJapanese] && IsShown(trialStatus) &&
+        Require(started && [onboarding finishSelectionTrialWithOutput:@"小さな一歩が新しい世界を開く。"] && IsShown(trialStatus) &&
             [trialStatus.stringValue containsString:@"successfully"] &&
             [primary.title hasPrefix:@"Start Translating"] && onboarding.selectionTrialComplete &&
-            [onboarding.selectionTrialOutput isEqualToString:@"小さな一歩が新しい世界を開く。"] &&
             ![onboarding beginSelectionTrialForText:sample.string],
             @"Only the practice request's successful result may complete the trial, once");
         CheckBounds(window);
@@ -460,8 +458,7 @@ static void RunSmoke(void) {
             @"Losing focus must keep the pending trial while disarming its shortcut");
         [panel showForManualInput];
         [panel showOnboarding:onboarding onBack:^{ ++backs; }];
-        Require(![onboarding finishSelectionTrialWithOutput:@"Late page output"
-            direction:bawan::Direction::EnglishToJapanese] && !onboarding.selectionTrialComplete,
+        Require(![onboarding finishSelectionTrialWithOutput:@"Late page output"] && !onboarding.selectionTrialComplete,
             @"Leaving a pending trial must reject its late completion when the page is revisited");
         [window makeFirstResponder:sample];
         sample.selectedRange = NSMakeRange(0, sample.string.length);
@@ -472,8 +469,7 @@ static void RunSmoke(void) {
         Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
             @"Changing press count during inference must be valid");
         Require(![onboarding canFinishSelectionTrial] &&
-            ![onboarding finishSelectionTrialWithOutput:@"Old binding output"
-                direction:bawan::Direction::EnglishToJapanese] && onboarding.refreshes == 0,
+            ![onboarding finishSelectionTrialWithOutput:@"Old binding output"] && onboarding.refreshes == 0,
             @"The live binding must reject stale completion before the page renders again");
         [onboarding refresh];
         Require(![onboarding canFinishSelectionTrial] && onboarding.refreshes == 1 &&
@@ -486,13 +482,11 @@ static void RunSmoke(void) {
         onboarding.refreshes = 0;
         monitor.selectionAvailability = ShortcutAvailabilityNeedsAccessibility;
         Require(![onboarding canFinishSelectionTrial] &&
-            ![onboarding finishSelectionTrialWithOutput:@"Revoked permission output"
-                direction:bawan::Direction::EnglishToJapanese] && onboarding.refreshes == 0,
+            ![onboarding finishSelectionTrialWithOutput:@"Revoked permission output"] && onboarding.refreshes == 0,
             @"Live permission loss must reject completion before a page refresh without rendering from the query");
         [onboarding refresh];
         Require(!IsShown(trial) && monitor.selectionTrialView == nil && onboarding.refreshes == 1 &&
-            ![onboarding finishSelectionTrialWithOutput:@"Revoked permission output"
-                direction:bawan::Direction::EnglishToJapanese] && [primary.title hasPrefix:@"Set Up Later"],
+            ![onboarding finishSelectionTrialWithOutput:@"Revoked permission output"] && [primary.title hasPrefix:@"Set Up Later"],
             @"Revoking permission must hide practice and reject its pending result");
         for (ShortcutAvailability availability : {ShortcutAvailabilityOff, ShortcutAvailabilityNeedsInputMonitoring,
                 ShortcutAvailabilityNeedsAccessibility, ShortcutAvailabilityFailed}) {
@@ -512,8 +506,7 @@ static void RunSmoke(void) {
         Require([preferences setBinding:selection forAction:bawan::ShortcutAction::TranslateSelection error:&error],
             @"The shortcut may be disabled while monitoring permission remains granted");
         Require(![onboarding canFinishSelectionTrial] &&
-            ![onboarding finishSelectionTrialWithOutput:@"Disabled shortcut output"
-                direction:bawan::Direction::EnglishToJapanese] && onboarding.refreshes == 0,
+            ![onboarding finishSelectionTrialWithOutput:@"Disabled shortcut output"] && onboarding.refreshes == 0,
             @"A disabled live binding must reject completion before the next page refresh");
         [onboarding refresh];
         Require(!IsShown(trial) && onboarding.refreshes == 1,
