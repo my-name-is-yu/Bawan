@@ -116,23 +116,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     dispatch_source_set_event_handler(_memoryPressure, ^{ [weakSelf releaseEngineMemory]; });
     dispatch_resume(_memoryPressure);
 
-    _modelStore = [[ModelStore alloc] init];
-    _modelStore.onStateChange = ^(ModelStoreState state) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelDownloadStateDidChange:state];
-    };
-    _modelStore.onProgress = ^(double progress, NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelFileDidProgress:progress message:message];
-    };
-    _modelStore.onReady = ^(NSURL *fileURL) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelFileDidBecomeReady:fileURL];
-    };
-    _modelStore.onError = ^(NSString *message) {
-        AppDelegate *owner = weakSelf;
-        if (owner && !owner->_terminating) [owner modelFileDidFail:message];
-    };
+    [self connectModelStore:[[ModelStore alloc] init]];
 
     _shortcut = [[ShortcutMonitor alloc] initWithPreferences:_shortcutPreferences];
     _shortcut.onSelection = ^(const SelectionEvent &event) {
@@ -189,34 +173,18 @@ static NSString *StringFromUTF8(const std::string &text) {
     }
 }
 
-- (void)modelDownloadStateDidChange:(ModelStoreState)state {
-    switch (state) {
-        case ModelStoreDownloading: _model.fileDownloading(); break;
-        case ModelStorePaused: _model.filePaused(); break;
-        case ModelStoreVerifying: _model.fileVerifying(); break;
-        case ModelStoreIdle:
-        case ModelStoreReady:
-        case ModelStoreFailed: return;
+- (void)modelStoreDidChange:(const ModelStoreSnapshot &)snapshot {
+    _model.fileChanged(snapshot);
+    if (const auto *ready = std::get_if<ModelReady>(&snapshot)) {
+        [_engineHost startWithModelURL:ready->url];
+        [self updateStatus];
+        [self synchronizeTranslationModel];
+        return;
     }
-    [self updateStatus];
-}
-
-- (void)modelFileDidProgress:(double)progress message:(NSString *)message {
-    _model.fileProgress(progress, message);
-    [self updateStatus];
-}
-
-- (void)modelFileDidBecomeReady:(NSURL *)fileURL {
-    [_engineHost startWithModelURL:fileURL];
-    _model.fileReady(fileURL);
-    [self updateStatus];
-    [self synchronizeTranslationModel];
-}
-
-- (void)modelFileDidFail:(NSString *)message {
-    [_engineHost stopAndDiscardEvents];
-    _model.fileFailed(message, _modelStore.canResume);
-    [self synchronizeTranslationModel];
+    if (std::holds_alternative<ModelFailed>(snapshot)) {
+        [_engineHost stopAndDiscardEvents];
+        [self synchronizeTranslationModel];
+    }
     [self updateStatus];
 }
 
@@ -251,8 +219,6 @@ static NSString *StringFromUTF8(const std::string &text) {
         [self retryModel:nil];
         return;
     }
-    _model.beginPreparing();
-    [self updateStatus];
     [_modelStore prepare];
 }
 
@@ -281,7 +247,6 @@ static NSString *StringFromUTF8(const std::string &text) {
         _onboardingViewController = onboarding;
     }
     onboarding.onSelectionTrialInterrupted = ^{ [weakSelf invalidateSelectionTrial]; };
-    [self pushModelStateToPage:onboarding];
     [self discardUnavailablePractice];
     [_translationPanel showOnboarding:onboarding onBack:^{ [weakSelf finishOrCloseOnboarding]; }];
     if (created && _completedPractice) [onboarding restoreCompletedSelectionTrial];
@@ -327,16 +292,21 @@ static NSString *StringFromUTF8(const std::string &text) {
     panel.onCancel = ^{ [weakSelf cancelTranslation]; };
     panel.onClose = ^{ [weakSelf cancelTranslation]; };
     panel.onSettings = ^{ [weakSelf openSettings:nil]; };
+    [self showModelSetupOnPanel];
 }
 
-- (void)pushModelStateToPage:(id<BawanModelSetupDisplay>)page {
-    [page setModelPhase:_model.phase() message:_model.message() progress:_model.progress()];
+- (void)connectModelStore:(ModelStore *)store {
+    _modelStore = store;
+    __weak AppDelegate *weakSelf = self;
+    store.onChange = ^(const ModelStoreSnapshot &snapshot) {
+        AppDelegate *owner = weakSelf;
+        if (owner && !owner->_terminating) [owner modelStoreDidChange:snapshot];
+    };
 }
 
-// Hidden pages are brought up to date when they are shown.
-- (void)refreshSetupPages {
-    [self pushModelStateToPage:_onboardingViewController];
-    [self pushModelStateToPage:_settingsViewController];
+- (void)showModelSetupOnPanel {
+    const BawanModelSetupView view = _model.view();
+    [_translationPanel setModelPhase:view.phase message:view.message progress:view.progress];
 }
 
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key {
@@ -460,7 +430,7 @@ static NSString *StringFromUTF8(const std::string &text) {
 }
 
 - (void)updateStatus {
-    [self refreshSetupPages];
+    [self showModelSetupOnPanel];
     _modelItem.title = _model.message();
     BOOL failed = [self modelFailed];
     BOOL available = [self hasVerifiedModelFile];
@@ -577,7 +547,8 @@ static NSString *StringFromUTF8(const std::string &text) {
                 },
                 [&](Session::CancelEngine) {
                     [_engineHost cancel];
-                    if (_model.engine() == BawanModelState::Engine::Loading) {
+                    if (const auto *ready = std::get_if<BawanModelReady>(&_model.setup());
+                        ready && std::holds_alternative<BawanEngineLoading>(ready->engine)) {
                         _model.stopLoading();
                         [self updateStatus];
                     }
@@ -712,8 +683,6 @@ static NSString *StringFromUTF8(const std::string &text) {
             return;
         case BawanModelSetupPaused:
         case BawanModelSetupResumableFailure:
-            _model.beginPreparing();
-            [self updateStatus];
             [_modelStore resume];
             return;
         case BawanModelSetupPreparing:
@@ -729,8 +698,6 @@ static NSString *StringFromUTF8(const std::string &text) {
 - (void)retryModel:(id)sender {
     [self cancelTranslation];
     [_engineHost stopAndDiscardEvents];
-    _model.beginPreparing();
-    [self updateStatus];
     [_modelStore revalidate];
 }
 
@@ -767,7 +734,6 @@ static NSString *StringFromUTF8(const std::string &text) {
     [_shortcut refresh];
     [self updateShortcutItem];
     [_settingsViewController setLoginStatus:SMAppService.mainAppService.status message:nil error:NO];
-    [self pushModelStateToPage:_settingsViewController];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {

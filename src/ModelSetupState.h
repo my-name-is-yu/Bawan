@@ -1,8 +1,12 @@
 #import <Foundation/Foundation.h>
 
-#include <optional>
+#include "ModelStoreSnapshot.h"
 
-// What the setup pages show for the model, derived from BawanModelState.
+#include <optional>
+#include <variant>
+
+NS_ASSUME_NONNULL_BEGIN
+
 typedef NS_ENUM(NSInteger, BawanModelSetupPhase) {
     BawanModelSetupNeedsDownload,
     BawanModelSetupPreparing,
@@ -14,114 +18,171 @@ typedef NS_ENUM(NSInteger, BawanModelSetupPhase) {
 };
 
 static NSString *const BawanModelNeedsSetupStatus = @"Prepare the translation model to get started.";
-static NSString *const BawanModelCheckingStatus = @"Checking the model…";
 static NSString *const BawanModelLoadingStatus = @"Loading the model…";
 static NSString *const BawanModelFailedStatus = @"The model could not be prepared. Please try again.";
 static NSString *const BawanModelReadyStatus = @"Ready to translate · On-device processing";
 
-// Tracks a verified model file separately from the engine that loads it.
-// The URL is retained after verification until setup is restarted or fails;
-// an engine failure keeps the verified file available for another load attempt.
+struct BawanEngineIdle {};
+struct BawanEngineLoading {};
+struct BawanEngineFailed {
+    NSString *_Nullable message;
+};
+using BawanEngine = std::variant<BawanEngineIdle, BawanEngineLoading, BawanEngineFailed>;
+
+struct BawanModelReady {
+    NSURL *url;
+    BawanEngine engine;
+};
+using BawanModelSetup =
+    std::variant<ModelIdle, ModelDownloading, ModelPaused, ModelVerifying, BawanModelReady, ModelFailed>;
+
+inline BawanModelSetup BawanModelSetupFor(const ModelStoreSnapshot &file) {
+    return std::visit([](const auto &state) -> BawanModelSetup {
+        if constexpr (std::is_same_v<std::decay_t<decltype(state)>, ModelReady>)
+            return BawanModelReady{state.url, BawanEngineIdle{}};
+        else
+            return state;
+    }, file);
+}
+
+inline NSString *BawanModelIssueText(ModelIssue issue) {
+    switch (issue) {
+        case ModelIssue::FolderUnavailable: return @"Unable to create the model folder.";
+        case ModelIssue::PathOccupied:
+            return @"The model file path is occupied by a folder or another item. Move it out of the model folder and try again.";
+        case ModelIssue::PathUncheckable:
+            return @"Unable to check the saved model path. Check the folder permissions and try again.";
+        case ModelIssue::AnotherInstancePreparing:
+            return @"Another Bawan instance is preparing the model. Pause it or wait for it to finish, then try again.";
+        case ModelIssue::LockUnavailable:
+            return @"Unable to lock the model download. Check the folder permissions and try again.";
+        case ModelIssue::OldPartialUnremovable:
+            return @"Unable to remove the old partial download. Check for conflicting items or folder permissions and try again.";
+        case ModelIssue::InvalidPartialUnremovable:
+            return @"Unable to remove the invalid partial download. Check the folder permissions and try again.";
+        case ModelIssue::PartialRestartFailed:
+            return @"Unable to restart the partial download. Check the folder permissions and try again.";
+        case ModelIssue::InsecureRedirect:
+            return @"The server redirected the model download to an insecure address. Please try again.";
+        case ModelIssue::IncompatibleResponse:
+            return @"The server returned an incompatible model download. The partial download was discarded. Please try again.";
+        case ModelIssue::PartialUnopenable:
+            return @"Unable to open the partial download. Check disk space and folder permissions, then try again.";
+        case ModelIssue::DownloadUnsaved: return @"Unable to save the model download. Please try again.";
+        case ModelIssue::ProgressUnsaved:
+            return @"Unable to save download progress. Check disk space and folder permissions, then try again.";
+        case ModelIssue::DownloadWrongSize:
+            return @"The model download has an incorrect size. The partial download was discarded. Please try again.";
+        case ModelIssue::DiskFull: return @"Unable to save the model download. Check free disk space and try again.";
+        case ModelIssue::SavedModelChanged: return @"The saved model changed during verification. Please try again.";
+        case ModelIssue::InvalidModelUnremovable:
+            return @"Unable to remove the invalid model file. Check the folder permissions.";
+        case ModelIssue::InstallFailed:
+            return @"Unable to save the verified model. Check the folder permissions and try again.";
+    }
+}
+
+inline NSString *BawanModelCheckText(ModelCheckFailed check) {
+    NSString *problem = nil;
+    switch (check.issue) {
+        case ModelCheckIssue::Unopenable: problem = @"Unable to open the model file. Check the folder permissions."; break;
+        case ModelCheckIssue::SizeUnreadable: problem = @"Unable to check the model file size."; break;
+        case ModelCheckIssue::WrongSize: problem = @"The model file size is incorrect."; break;
+        case ModelCheckIssue::Unreadable: problem = @"Unable to read the model file."; break;
+        case ModelCheckIssue::HashMismatch: problem = @"The model file failed SHA256 verification."; break;
+    }
+    NSString *cleanup = check.file == ModelFileKind::Download ? @" The partial download was discarded." : @"";
+    return [NSString stringWithFormat:@"%@%@ Please try again to download the model.", problem, cleanup];
+}
+
+inline NSString *BawanModelFailureText(const ModelFailed &failed) {
+    NSString *next = failed.resumeProgress ? @"Resume to continue the download." : @"Please try again.";
+    if (auto *issue = std::get_if<ModelIssue>(&failed.failure)) return BawanModelIssueText(*issue);
+    if (auto *check = std::get_if<ModelCheckFailed>(&failed.failure)) return BawanModelCheckText(*check);
+    if (auto *http = std::get_if<ModelHTTPFailed>(&failed.failure))
+        return [NSString stringWithFormat:@"Model download failed (HTTP %ld). %@", http->status, next];
+    NSString *cause = std::get<ModelInterrupted>(failed.failure).systemMessage ?: @"The server sent an incomplete file.";
+    return [NSString stringWithFormat:@"Model download interrupted. %@ %@", cause, next];
+}
+
+inline NSString *BawanModelDownloadText(const ModelDownloading &downloading) {
+    switch (downloading.stage) {
+        case ModelDownloadStage::Starting: return @"Downloading the model…";
+        case ModelDownloadStage::Resuming: return @"Resuming the model download…";
+        case ModelDownloadStage::Restarted: return @"The server restarted the download from the beginning.";
+        case ModelDownloadStage::Receiving: break;
+    }
+    return [NSString stringWithFormat:@"Downloading the model… %.0f%%", downloading.progress * 100];
+}
+
+struct BawanModelSetupView {
+    BawanModelSetupPhase phase;
+    NSString *message;
+    std::optional<double> progress;
+};
+
+inline BawanModelSetupView BawanPresentModelSetup(const BawanModelSetup &setup) {
+    if (std::holds_alternative<ModelIdle>(setup)) return {BawanModelSetupNeedsDownload, BawanModelNeedsSetupStatus, 0};
+    if (auto *downloading = std::get_if<ModelDownloading>(&setup))
+        return {BawanModelSetupDownloading, BawanModelDownloadText(*downloading), downloading->progress};
+    if (auto *paused = std::get_if<ModelPaused>(&setup))
+        return {BawanModelSetupPaused, paused->resumable ? @"Model download paused. Resume to continue."
+                                                         : @"Model download paused. Resume to restart the download.",
+                paused->progress};
+    if (auto *verifying = std::get_if<ModelVerifying>(&setup)) {
+        if (verifying->file == ModelFileKind::Saved) return {BawanModelSetupPreparing, @"Checking the saved model…", 0};
+        return {BawanModelSetupPreparing, @"Download complete. Verifying SHA256…", 1};
+    }
+    if (auto *failed = std::get_if<ModelFailed>(&setup))
+        return {failed->resumeProgress ? BawanModelSetupResumableFailure : BawanModelSetupFailed,
+                BawanModelFailureText(*failed), failed->resumeProgress.value_or(0)};
+    const BawanEngine &engine = std::get<BawanModelReady>(setup).engine;
+    if (std::holds_alternative<BawanEngineLoading>(engine))
+        return {BawanModelSetupPreparing, BawanModelLoadingStatus, std::nullopt};
+    if (auto *engineFailed = std::get_if<BawanEngineFailed>(&engine))
+        return {BawanModelSetupFailed, engineFailed->message.length ? engineFailed->message : BawanModelFailedStatus, 1};
+    return {BawanModelSetupReady, BawanModelReadyStatus, 1};
+}
+
 class BawanModelState {
 public:
-    enum class File { Missing, Preparing, Downloading, Paused, Failed, ResumableFailure, Present };
-    enum class Engine { Idle, Loading, Failed };
+    void fileChanged(const ModelStoreSnapshot &file) { setup_ = BawanModelSetupFor(file); }
 
-    // ModelStore rejects callbacks from earlier preparations using its generation.
-    // This state also ignores progress outside preparation so it cannot overwrite
-    // the status of a verified file or a reported failure.
-    void beginPreparing() { reset(File::Preparing, nil, 0, BawanModelCheckingStatus); }
-    void fileDownloading() { if (filePreparationActive()) file_ = File::Downloading; }
-    void filePaused() { if (file_ == File::Downloading) file_ = File::Paused; }
-    void fileVerifying() { if (file_ == File::Downloading) file_ = File::Preparing; }
-    void fileProgress(double progress, NSString *message) {
-        if (!filePreparationActive()) return;
-        progress_ = progress;
-        message_ = [message copy];
-    }
-    void fileReady(NSURL *url) { reset(File::Present, url, 1, nil); }
-    void fileFailed(NSString *message, bool resumable = false) {
-        const double savedProgress = progress_;
-        reset(resumable ? File::ResumableFailure : File::Failed, nil, resumable ? savedProgress : 0, message);
+    void engineLoading() { setEngine(BawanEngineLoading{}); }
+    void engineIdle() { setEngine(BawanEngineIdle{}); }
+    void engineFailed(NSString *_Nullable message) { setEngine(BawanEngineFailed{message}); }
+    void stopLoading() {
+        if (auto *ready = std::get_if<BawanModelReady>(&setup_);
+            ready && std::holds_alternative<BawanEngineLoading>(ready->engine))
+            ready->engine = BawanEngineIdle{};
     }
 
-    // Engine transitions. They are ignored unless the file is present.
-    void engineLoading() { setEngine(Engine::Loading, nil); }
-    void engineIdle() { setEngine(Engine::Idle, nil); }
-    void engineFailed(NSString *message) { setEngine(Engine::Failed, message); }
-    // Cancelling a request stops a load in progress but keeps a reported failure.
-    void stopLoading() { if (engine_ == Engine::Loading) engineIdle(); }
-
-    File file() const { return file_; }
-    Engine engine() const { return engine_; }
-    NSURL *url() const { return url_; }
-    bool hasVerifiedFile() const { return file_ == File::Present; }
-    // No preparation has started in this process; a saved file may still exist.
-    bool setupNotStarted() const { return file_ == File::Missing; }
-    bool failed() const { return file_ == File::Failed || file_ == File::ResumableFailure || engine_ == Engine::Failed; }
-    // Escape/Open Translator can leave setup once the file is verified. A load
-    // may still be running, but a reported engine failure needs attention first.
-    bool canEnterTranslator() const { return hasVerifiedFile() && engine_ != Engine::Failed; }
-    // The explicit setup footer action may continue while preparation is running.
+    const BawanModelSetup &setup() const { return setup_; }
+    NSURL *_Nullable url() const {
+        auto *ready = std::get_if<BawanModelReady>(&setup_);
+        return ready ? ready->url : nil;
+    }
+    bool hasVerifiedFile() const { return std::holds_alternative<BawanModelReady>(setup_); }
+    bool setupNotStarted() const { return std::holds_alternative<ModelIdle>(setup_); }
+    bool engineHasFailed() const {
+        auto *ready = std::get_if<BawanModelReady>(&setup_);
+        return ready && std::holds_alternative<BawanEngineFailed>(ready->engine);
+    }
+    bool failed() const { return std::holds_alternative<ModelFailed>(setup_) || engineHasFailed(); }
+    bool canEnterTranslator() const { return hasVerifiedFile() && !engineHasFailed(); }
     bool canFinishSetup() const { return !setupNotStarted() && !failed(); }
 
-    BawanModelSetupPhase phase() const {
-        if (setupNotStarted()) return BawanModelSetupNeedsDownload;
-        if (file_ == File::ResumableFailure) return BawanModelSetupResumableFailure;
-        if (failed()) return BawanModelSetupFailed;
-        if (file_ == File::Downloading) return BawanModelSetupDownloading;
-        if (file_ == File::Paused) return BawanModelSetupPaused;
-        if (file_ == File::Preparing || engine_ == Engine::Loading) return BawanModelSetupPreparing;
-        return BawanModelSetupReady;
-    }
-
-    // Transfer progress is retained while paused or resumable. Engine loads have no measurable progress.
-    std::optional<double> progress() const {
-        if (file_ == File::Present) {
-            if (engine_ == Engine::Loading) return std::nullopt;
-            return 1;
-        }
-        return progress_;
-    }
-
-    NSString *message() const {
-        switch (file_) {
-            case File::Missing: return BawanModelNeedsSetupStatus;
-            case File::Downloading: return message_.length ? message_ : @"Downloading the model…";
-            case File::Paused: return message_.length ? message_ : @"Model download paused.";
-            case File::Preparing: return message_.length ? message_ : BawanModelCheckingStatus;
-            case File::ResumableFailure:
-            case File::Failed: return message_.length ? message_ : BawanModelFailedStatus;
-            case File::Present: break;
-        }
-        switch (engine_) {
-            case Engine::Loading: return BawanModelLoadingStatus;
-            case Engine::Failed: return message_.length ? message_ : BawanModelFailedStatus;
-            case Engine::Idle: break;
-        }
-        return BawanModelReadyStatus;
-    }
+    BawanModelSetupView view() const { return BawanPresentModelSetup(setup_); }
+    BawanModelSetupPhase phase() const { return view().phase; }
+    NSString *message() const { return view().message; }
+    std::optional<double> progress() const { return view().progress; }
 
 private:
-    bool filePreparationActive() const {
-        return file_ == File::Preparing || file_ == File::Downloading || file_ == File::Paused;
-    }
-    void reset(File file, NSURL *url, double progress, NSString *message) {
-        file_ = file;
-        url_ = url;
-        engine_ = Engine::Idle;
-        progress_ = progress;
-        message_ = [message copy];
-    }
-    void setEngine(Engine engine, NSString *message) {
-        if (file_ != File::Present) return;
-        engine_ = engine;
-        message_ = [message copy];
+    void setEngine(BawanEngine engine) {
+        if (auto *ready = std::get_if<BawanModelReady>(&setup_)) ready->engine = engine;
     }
 
-    File file_ = File::Missing;
-    Engine engine_ = Engine::Idle;
-    NSURL *url_ = nil;
-    double progress_ = 0;
-    NSString *message_ = nil;
+    BawanModelSetup setup_ = ModelIdle{};
 };
+
+NS_ASSUME_NONNULL_END

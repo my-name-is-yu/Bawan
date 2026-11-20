@@ -141,6 +141,7 @@ target_include_directories(bawan_gesture PUBLIC src)
 target_compile_options(bawan_gesture PRIVATE -Wall -Wextra -Wpedantic)
 
 set(BAWAN_UI_RESOURCES resources/BawanMascot.png resources/PaperGrain.png)
+set(BAWAN_MODEL_SOURCES src/ModelStore.mm src/ModelDownloader.mm src/ModelVerification.mm)
 
 if(APPLE AND (BAWAN_BUILD_APP OR BAWAN_BUILD_TESTS))
     # Separate app/test archives keep compile-time resource paths consistent,
@@ -166,7 +167,7 @@ if(BAWAN_BUILD_APP)
     set(BAWAN_LICENSE_RESOURCES resources/THIRD_PARTY_NOTICES.md resources/MODEL_USAGE.md
         "${CMAKE_CURRENT_BINARY_DIR}/BAWAN-LICENSE.txt" "${llama_SOURCE_DIR}/LICENSE")
     add_executable(Bawan MACOSX_BUNDLE
-        src/main.mm src/AppDelegate.mm src/MemoryProbe.mm src/ModelStore.mm src/EngineHost.mm src/TranslationSession.cpp
+        src/main.mm src/AppDelegate.mm src/MemoryProbe.mm ${BAWAN_MODEL_SOURCES} src/EngineHost.mm src/TranslationSession.cpp
         ${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
         ${BAWAN_LICENSE_RESOURCES})
     set_source_files_properties(${BAWAN_UI_RESOURCES} resources/AppIcon.icns resources/StatusItemTemplate.pdf
@@ -224,7 +225,7 @@ if(BAWAN_BUILD_TESTS)
         add_bawan_ui(bawan_ui_test)
         target_compile_definitions(bawan_ui_test PUBLIC
             BAWAN_TEST_RESOURCE_DIR="${CMAKE_BINARY_DIR}/test-resources")
-        add_executable(model_store_tests tests/model_store_tests.mm src/ModelStore.mm)
+        add_executable(model_store_tests tests/model_store_tests.mm ${BAWAN_MODEL_SOURCES})
         target_include_directories(model_store_tests PRIVATE src)
         target_link_libraries(model_store_tests PRIVATE "-framework Foundation")
         target_compile_options(model_store_tests PRIVATE -fobjc-arc -Wall -Wextra)
@@ -269,7 +270,7 @@ if(BAWAN_BUILD_TESTS)
         set_tests_properties(onboarding_when_scrolling PROPERTIES
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/onboarding-when-scrolling" TIMEOUT 45)
         add_executable(app_delegate_smoke tests/app_delegate_smoke.mm
-            src/AppDelegate.mm src/MemoryProbe.mm src/ModelStore.mm src/EngineHost.mm src/TranslationSession.cpp)
+            src/AppDelegate.mm src/MemoryProbe.mm ${BAWAN_MODEL_SOURCES} src/EngineHost.mm src/TranslationSession.cpp)
         target_link_libraries(app_delegate_smoke PRIVATE bawan_ui_test bawan_engine "-framework ServiceManagement")
         bawan_use_tool_metal_libraries(app_delegate_smoke)
         add_test(NAME app_delegate_smoke COMMAND app_delegate_smoke)

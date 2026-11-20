@@ -23,78 +23,70 @@ int main() {
             "A new state needs setup before entering the translator or finishing onboarding");
 
         state.engineLoading();
-        Expect(state.engine() == BawanModelState::Engine::Idle,
-            "Engine events must not apply before the file is present");
+        Expect(state.phase() == BawanModelSetupNeedsDownload, "Engine events must not apply before the file is present");
 
-        state.fileProgress(0.5, @"Stray progress");
-        Expect(state.setupNotStarted() && state.progress() == 0,
-            "Progress must not start a preparation on its own");
-        state.fileDownloading();
-        state.filePaused();
-        state.fileVerifying();
-        Expect(state.setupNotStarted(), "Transfer states must not start a preparation on their own");
-
-        state.beginPreparing();
+        state.fileChanged(ModelVerifying{ModelFileKind::Saved});
         Expect(state.phase() == BawanModelSetupPreparing && state.canFinishSetup() && !state.canEnterTranslator() &&
-            state.progress() == 0 && [state.message() isEqualToString:BawanModelCheckingStatus],
+            state.progress() == 0 && [state.message() isEqualToString:@"Checking the saved model…"],
             "During file preparation only the explicit footer action may finish onboarding");
 
-        state.fileProgress(0.25, @"Downloading the model… 25%");
-        Expect(state.progress() == 0.25 && [state.message() isEqualToString:@"Downloading the model… 25%"],
-            "Progress keeps ModelStore's own message");
+        state.fileChanged(ModelDownloading{0, ModelDownloadStage::Starting});
+        Expect([state.message() isEqualToString:@"Downloading the model…"], "A starting download has no percentage");
+        state.fileChanged(ModelDownloading{0.25, ModelDownloadStage::Resuming});
+        Expect([state.message() isEqualToString:@"Resuming the model download…"], "A resumed download says so");
+        state.fileChanged(ModelDownloading{0, ModelDownloadStage::Restarted});
+        Expect([state.message() containsString:@"restarted"], "A server restart is explained");
+        state.fileChanged(ModelDownloading{0.25, ModelDownloadStage::Receiving});
+        Expect(state.phase() == BawanModelSetupDownloading && state.canFinishSetup() && !state.canEnterTranslator() &&
+            state.progress() == 0.25 && [state.message() isEqualToString:@"Downloading the model… 25%"],
+            "Receiving shows the store's progress without claiming a verified file");
 
-        state.fileDownloading();
-        Expect(state.phase() == BawanModelSetupDownloading && state.canFinishSetup() &&
-            !state.canEnterTranslator() && state.progress() == 0.25,
-            "Downloading exposes its own phase without losing progress or claiming a verified file");
-        state.filePaused();
-        state.fileProgress(0.25, @"Download paused · 25%");
+        state.fileChanged(ModelPaused{0.25, true});
         Expect(state.phase() == BawanModelSetupPaused && !state.failed() && state.canFinishSetup() &&
             !state.canEnterTranslator() && state.progress() == 0.25 &&
-            [state.message() isEqualToString:@"Download paused · 25%"],
+            [state.message() isEqualToString:@"Model download paused. Resume to continue."],
             "Pausing retains progress and lets the user finish optional shortcut setup");
-        state.fileDownloading();
-        state.fileProgress(0.75, @"Downloading the model… 75%");
-        Expect(state.phase() == BawanModelSetupDownloading && state.progress() == 0.75,
-            "Resuming returns to download progress");
-        state.fileFailed(@"Connection lost. Resume the download.", true);
+        state.fileChanged(ModelPaused{0.25, false});
+        Expect([state.message() containsString:@"restart the download"], "A pause without a validator restarts");
+
+        state.fileChanged(ModelFailed{ModelInterrupted{@"Connection lost."}, 0.75});
         Expect(state.failed() && state.phase() == BawanModelSetupResumableFailure && state.progress() == 0.75 &&
-            !state.canEnterTranslator() && !state.canFinishSetup() && state.url() == nil,
+            !state.canEnterTranslator() && !state.canFinishSetup() && state.url() == nil &&
+            [state.message() isEqualToString:@"Model download interrupted. Connection lost. Resume to continue the download."],
             "A failed transfer with retained bytes offers resume while blocking model use");
-        state.fileProgress(1, @"Late progress");
-        Expect(state.phase() == BawanModelSetupResumableFailure &&
-            [state.message() isEqualToString:@"Connection lost. Resume the download."],
-            "Late progress must not hide a resumable transfer failure");
-        state.beginPreparing();
-        state.fileDownloading();
-        state.fileVerifying();
-        state.fileProgress(1, @"Download complete. Verifying SHA256…");
-        Expect(state.phase() == BawanModelSetupPreparing && !state.hasVerifiedFile() &&
-            !state.canEnterTranslator() && [state.message() containsString:@"SHA256"],
+
+        state.fileChanged(ModelFailed{ModelHTTPFailed{503}});
+        Expect(state.phase() == BawanModelSetupFailed && state.progress() == 0 &&
+            [state.message() isEqualToString:@"Model download failed (HTTP 503). Please try again."],
+            "A failure without retained bytes needs a fresh retry");
+
+        state.fileChanged(ModelVerifying{ModelFileKind::Download});
+        Expect(state.phase() == BawanModelSetupPreparing && !state.hasVerifiedFile() && !state.canEnterTranslator() &&
+            state.progress() == 1 && [state.message() containsString:@"SHA256"],
             "A finished transfer remains unavailable while full SHA256 verification runs");
 
-        state.fileReady(url);
+        state.fileChanged(ModelFailed{ModelCheckFailed{ModelCheckIssue::HashMismatch, ModelFileKind::Download}});
+        Expect([state.message() isEqualToString:@"The model file failed SHA256 verification. The partial download was "
+                                                 "discarded. Please try again to download the model."],
+            "A rejected download says its partial was discarded");
+        state.fileChanged(ModelFailed{ModelIssue::PathOccupied});
+        Expect([state.message() containsString:@"occupied"], "Issues map to their own copy");
+
+        state.fileChanged(ModelReady{url});
         Expect(state.hasVerifiedFile() && state.canEnterTranslator() && [state.url() isEqual:url] &&
             state.phase() == BawanModelSetupReady && state.progress() == 1 &&
             [state.message() isEqualToString:BawanModelReadyStatus],
             "A verified file is ready");
-        state.fileProgress(0.9, @"Late progress");
-        Expect(state.hasVerifiedFile() && [state.url() isEqual:url] && state.progress() == 1 &&
-            [state.message() isEqualToString:BawanModelReadyStatus],
-            "A late progress report must not undo a ready model");
 
         state.engineLoading();
-        Expect(state.phase() == BawanModelSetupPreparing && state.hasVerifiedFile() && state.canEnterTranslator() &&
-            state.canFinishSetup() && !state.progress().has_value() &&
-            [state.message() isEqualToString:BawanModelLoadingStatus],
-            "Engine loading keeps both onboarding exits available while showing preparation");
-        state.fileProgress(0.7, @"Late download progress");
-        Expect(!state.progress().has_value(), "Late file progress must not replace indeterminate engine loading");
+        Expect(state.phase() == BawanModelSetupPreparing && state.canEnterTranslator() && state.canFinishSetup() &&
+            !state.progress().has_value() && [state.message() isEqualToString:BawanModelLoadingStatus],
+            "Engine loading keeps both onboarding exits available while showing indeterminate preparation");
         state.stopLoading();
         Expect(state.phase() == BawanModelSetupReady && state.progress() == 1,
             "Cancelling stops a load and restores completed file progress");
-        state.engineLoading();
 
+        state.engineLoading();
         state.engineFailed(@"The engine could not load the model.");
         Expect(state.failed() && !state.canEnterTranslator() && state.hasVerifiedFile() && !state.canFinishSetup() &&
             state.phase() == BawanModelSetupFailed && state.progress() == 1 &&
@@ -102,37 +94,14 @@ int main() {
             "An engine failure keeps the verified file but blocks both onboarding exits until Retry");
         state.stopLoading();
         Expect(state.failed(), "Cancelling must keep a reported engine failure");
-        state.fileDownloading();
-        state.filePaused();
-        state.fileVerifying();
-        Expect(state.hasVerifiedFile() && [state.url() isEqual:url] && state.engine() == BawanModelState::Engine::Failed,
-            "Late transfer states must keep the verified model and its engine failure");
+        state.engineFailed(nil);
+        Expect([state.message() isEqualToString:BawanModelFailedStatus], "An engine failure without text has copy");
 
-        state.beginPreparing();
-        Expect(!state.failed() && !state.hasVerifiedFile() && state.url() == nil &&
-            state.engine() == BawanModelState::Engine::Idle && state.progress() == 0,
-            "Retry clears the file, engine and progress together");
-
-        state.fileFailed(@"Model download failed.");
-        Expect(state.failed() && !state.hasVerifiedFile() && state.url() == nil && !state.setupNotStarted() &&
-            !state.canEnterTranslator() && !state.canFinishSetup() &&
-            state.phase() == BawanModelSetupFailed && state.progress() == 0 &&
-            [state.message() isEqualToString:@"Model download failed."],
-            "A file failure has no URL and needs Retry");
-
-        state.beginPreparing();
-        state.fileReady(url);
-        state.engineLoading();
-        state.engineIdle();
-        Expect(state.phase() == BawanModelSetupReady && state.progress() == 1,
-            "Completing an engine load restores completed file progress");
-
-        BawanModelState silent;
-        silent.beginPreparing();
-        silent.fileProgress(0, nil);
-        Expect(silent.message().length > 0, "Preparing without a message must still have status text");
-        silent.fileFailed(nil);
-        Expect(silent.message().length > 0, "A failure without a message must still have status text");
+        state.fileChanged(ModelVerifying{ModelFileKind::Saved});
+        Expect(!state.failed() && !state.hasVerifiedFile() && state.url() == nil && state.progress() == 0,
+            "A new preparation clears the file and its engine together");
+        state.fileChanged(ModelReady{url});
+        Expect(state.phase() == BawanModelSetupReady, "A file verified again starts with an idle engine");
     }
     if (failures) return EXIT_FAILURE;
     std::cout << "PASS: model setup state\n";

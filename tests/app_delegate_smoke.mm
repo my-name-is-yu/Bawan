@@ -28,6 +28,7 @@ using namespace bawan::engine;
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults launchMode:(bawan::LaunchMode)mode;
 - (void)buildMenus;
 - (void)connectTranslationPanel:(TranslationPanel *)panel;
+- (void)connectModelStore:(ModelStore *)store;
 - (void)updateStatus;
 - (void)updateShortcutItem;
 - (void)translateText:(NSString *)text direction:(bawan::Direction)direction;
@@ -38,14 +39,11 @@ using namespace bawan::engine;
 - (BOOL)busy;
 - (void)retryModel:(id)sender;
 - (void)performModelAction:(id)sender;
-- (void)modelDownloadStateDidChange:(ModelStoreState)state;
+- (void)modelStoreDidChange:(const ModelStoreSnapshot &)snapshot;
 - (void)handleEngineEvent:(const bawan::EngineEvent &)event;
 - (void)handleSelectionText:(NSString *)text;
 - (void)handleSelectionTrialText:(NSString *)text;
 - (void)handleShortcutProblem:(NSString *)message;
-- (void)modelFileDidProgress:(double)progress message:(NSString *)message;
-- (void)modelFileDidBecomeReady:(NSURL *)fileURL;
-- (void)modelFileDidFail:(NSString *)message;
 - (void)startInitialSetup;
 - (void)showOnboarding;
 - (void)beginModelSetup;
@@ -146,33 +144,31 @@ using namespace bawan::engine;
 @property(nonatomic) NSUInteger revalidations;
 @property(nonatomic) NSUInteger pauses;
 @property(nonatomic) NSUInteger resumes;
-@property(nonatomic) ModelStoreState fakeState;
-@property(nonatomic) BOOL resumable;
-- (void)emitState:(ModelStoreState)state;
 @end
 
 @implementation SetupSmokeStore
-- (void)prepare { ++_preparations; }
-- (void)revalidate { ++_revalidations; ++_preparations; }
-- (ModelStoreState)state { return _fakeState; }
-- (BOOL)canResume { return _resumable; }
-- (void)emitState:(ModelStoreState)state {
-    _fakeState = state;
-    if (self.onStateChange) self.onStateChange(state);
+- (void)emit:(const ModelStoreSnapshot &)snapshot {
+    if (self.onChange) self.onChange(snapshot);
+}
+- (void)prepare {
+    ++_preparations;
+    [self emit:ModelVerifying{ModelFileKind::Saved}];
+}
+- (void)revalidate {
+    ++_revalidations;
+    [self prepare];
 }
 - (void)pause {
     ++_pauses;
-    _resumable = YES;
-    [self emitState:ModelStorePaused];
-    if (self.onProgress) self.onProgress(0.4, @"Download paused · 40%");
+    [self emit:ModelPaused{0.4, true}];
 }
 - (void)resume {
     ++_resumes;
-    [self emitState:ModelStoreDownloading];
-    if (self.onProgress) self.onProgress(0.4, @"Downloading the model… 40%");
+    [self emit:ModelDownloading{0.4, ModelDownloadStage::Receiving}];
 }
 - (void)cancel {}
 @end
+
 
 @interface SetupSmokeMonitor : ShortcutMonitor
 @property(nonatomic) NSUInteger permissionRequests;
@@ -313,7 +309,7 @@ static void CheckEngineHostReset() {
 }
 
 static void SetAvailableModel(AppDelegate *delegate) {
-    [delegate modelFileDidBecomeReady:[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"]];
+    [delegate modelStoreDidChange:ModelReady{[NSURL fileURLWithPath:@"/__bawan_tests__/missing-model.gguf"]}];
 }
 
 static bawan::engine::RequestId ActiveRequestId(AppDelegate *delegate) {
@@ -428,7 +424,7 @@ static void CheckColdRequestAndRetry(SmokeAppDelegate *delegate) {
     NSMenuItem *retry = [delegate valueForKey:@"retryItem"];
     Require(![delegate busy] && !Flag(delegate, @"modelFailed") &&
         !Flag(delegate, @"hasVerifiedModelFile") && [delegate valueForKey:@"modelURL"] == nil &&
-        [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the model…"] && retry.hidden,
+        [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Checking the saved model…"] && retry.hidden,
         @"Old engine events must not overwrite model setup after Retry");
 }
 
@@ -576,13 +572,21 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
     __block NSUInteger errors = 0;
     __block NSURL *lastReadyURL = nil;
     __block NSString *lastError = nil;
-    store.onReady = ^(NSURL *url) { ++ready; lastReadyURL = url; };
-    store.onError = ^(NSString *message) { ++errors; lastError = message; };
+    void (^observe)(const ModelStoreSnapshot &) = ^(const ModelStoreSnapshot &snapshot) {
+        if (auto *done = std::get_if<ModelReady>(&snapshot)) {
+            ++ready;
+            lastReadyURL = done->url;
+        } else if (auto *failed = std::get_if<ModelFailed>(&snapshot)) {
+            ++errors;
+            lastError = BawanModelFailureText(*failed);
+        }
+    };
     @try {
         Require([files createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil],
             @"The model retry fixture directory must be created");
         Require([valid writeToURL:model atomically:YES], @"The valid model fixture must be written");
-        [delegate setValue:store forKey:@"modelStore"];
+        [delegate connectModelStore:store];
+        store.onChange = observe;
         [store prepare];
         WaitFor(^BOOL { return ready || errors; }, @"Initial fixture verification did not complete");
         Require(ready == 1 && errors == 0 && [lastReadyURL isEqual:model],
@@ -622,7 +626,7 @@ static void CheckModelRevalidationOnRetry(AppDelegate *delegate) {
         Require(ready == 3 && errors == 2, @"Retry must accept the restored valid model");
     } @finally {
         [store cancel];
-        [delegate setValue:previousStore forKey:@"modelStore"];
+        [delegate connectModelStore:previousStore];
         [files removeItemAtURL:files.supportDirectory error:nil];
     }
 }
@@ -651,7 +655,7 @@ static void CheckFirstRunSelection(void) {
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
-        [delegate setValue:store forKey:@"modelStore"];
+        [delegate connectModelStore:store];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         @try {
@@ -860,7 +864,7 @@ static void CheckSelectionTrial(void) {
         ((NSPanel *)panel.window).becomesKeyOnlyIfNeeded = NO;
         [delegate setValue:preferences forKey:@"shortcutPreferences"];
         [delegate setValue:monitor forKey:@"shortcut"];
-        [delegate setValue:store forKey:@"modelStore"];
+        [delegate connectModelStore:store];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];
         __weak AppDelegate *weakDelegate = delegate;
@@ -1204,7 +1208,7 @@ static void CheckFirstRunIntegration(void) {
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectModelStore:store];
     [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
     __block NSUInteger translations = 0;
@@ -1301,10 +1305,12 @@ static void CheckFirstRunIntegration(void) {
         Require(panel.currentPage == BawanPanelPageTranslation && ![defaults boolForKey:@"firstLaunchShown"],
             @"Closing during preparation must return to the translator without finishing onboarding");
         [delegate startInitialSetup];
-        Require(store.preparations == 2 && delegate.licenseViews == 2,
+        primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
+        shortcutError = (NSTextField *)FindView(window.contentView, @"onboarding-error");
+        Require(primary && shortcutError && store.preparations == 2 && delegate.licenseViews == 2,
             @"Reopening accepted but unfinished setup must resume preparation without showing the notice again");
 
-        [delegate modelFileDidFail:@"The model could not be verified. Try again."];
+        [delegate modelStoreDidChange:ModelFailed{ModelCheckFailed{ModelCheckIssue::HashMismatch, ModelFileKind::Saved}}];
         Require(primary.enabled && [primary.title localizedCaseInsensitiveContainsString:@"retry"],
             @"A preparation failure must return to the model step with Retry");
         [delegate handleShortcutProblem:@"Unable to copy the current selection."];
@@ -1375,7 +1381,7 @@ static void CheckFirstRunIntegration(void) {
             [window.contentView.identifier isEqualToString:@"bawan-panel"] && monitor.permissionRequests == 0,
             @"Escape from revisited ready guidance must preserve completion without requesting shortcut permissions");
         [delegate beginModelSetup];
-        [delegate modelFileDidProgress:0.4 message:@"Downloading the model… 40%"];
+        [delegate modelStoreDidChange:ModelDownloading{0.4, ModelDownloadStage::Receiving}];
         [delegate showOnboarding];
         NSButton *later = (NSButton *)FindView(window.contentView, @"onboarding-primary");
         Require([later.title hasPrefix:@"Set Up Later"], @"An unset shortcut must offer Set Up Later");
@@ -1397,7 +1403,7 @@ static void CheckFirstRunIntegration(void) {
         SetupSmokeStore *existingStore = [[SetupSmokeStore alloc] init];
         [existingUser setValue:preferences forKey:@"shortcutPreferences"];
         [existingUser setValue:monitor forKey:@"shortcut"];
-        [existingUser setValue:existingStore forKey:@"modelStore"];
+        [existingUser connectModelStore:existingStore];
         [existingUser setValue:existingPanel forKey:@"translationPanel"];
         [existingUser buildMenus];
         [existingUser startInitialSetup];
@@ -1426,7 +1432,7 @@ static void CheckPageRelease(void) {
     [delegate setValue:defaults forKey:@"defaults"];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectModelStore:store];
     [delegate connectTranslationPanel:panel];
     [delegate buildMenus];
     SetAvailableModel(delegate);
@@ -1467,6 +1473,7 @@ static void CheckPageRelease(void) {
         }
         Require(onboarding != nil && panel.currentPage == BawanPanelPageSettings,
             @"Settings opened from onboarding must keep the onboarding it returns to");
+        [delegate modelStoreDidChange:ModelFailed{ModelIssue::DiskFull}];
         @autoreleasepool {
             [window cancelOperation:nil];
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
@@ -1477,6 +1484,10 @@ static void CheckPageRelease(void) {
         }
         Require(monitor.configurationActive == window.keyWindow,
             @"Releasing Settings must not disarm the onboarding page that replaced it");
+        NSTextField *coveredMessage = (NSTextField *)FindView(window.contentView, @"onboarding-model-message");
+        Require([coveredMessage.stringValue isEqualToString:BawanModelIssueText(ModelIssue::DiskFull)],
+            @"The onboarding page Settings covered must show model changes made meanwhile");
+        SetAvailableModel(delegate);
         Require(settings == nil, @"Leaving Settings for onboarding must release Settings");
         @autoreleasepool {
             [window close];
@@ -1501,7 +1512,7 @@ static void CheckModelLicenseSheet(void) {
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectModelStore:store];
     [delegate setValue:panel forKey:@"translationPanel"];
     [delegate buildMenus];
     @try {
@@ -1550,18 +1561,14 @@ static void CheckDownloadActions(void) {
     TranslationPanel *panel = [[TranslationPanel alloc] init];
     [delegate setValue:preferences forKey:@"shortcutPreferences"];
     [delegate setValue:monitor forKey:@"shortcut"];
-    [delegate setValue:store forKey:@"modelStore"];
+    [delegate connectModelStore:store];
     [delegate setValue:panel forKey:@"translationPanel"];
     [delegate buildNativeMenus];
-    __weak SetupSmokeDelegate *weakDelegate = delegate;
-    store.onStateChange = ^(ModelStoreState state) { [weakDelegate modelDownloadStateDidChange:state]; };
-    store.onProgress = ^(double progress, NSString *message) { [weakDelegate modelFileDidProgress:progress message:message]; };
     @try {
         [delegate startInitialSetup];
         Require(store.preparations == 1 && delegate.licenseViews == 0,
             @"Accepted model setup must start once before exercising transfer controls");
-        [store emitState:ModelStoreDownloading];
-        [delegate modelFileDidProgress:0.4 message:@"Downloading the model… 40%"];
+        [delegate modelStoreDidChange:ModelDownloading{0.4, ModelDownloadStage::Receiving}];
         NSMenuItem *action = [delegate valueForKey:@"retryItem"];
         NSWindow *window = panel.window;
         NSButton *footerControl = (NSButton *)FindView(window.contentView, @"onboarding-model-control");
@@ -1572,7 +1579,7 @@ static void CheckDownloadActions(void) {
             @"The menu's Pause selector must reach its delegate");
         Require(store.pauses == 1 && store.resumes == 0 && !action.hidden &&
             [action.title isEqualToString:@"Resume Download"] && [footerControl.title isEqualToString:@"Resume Download"] &&
-            [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Download paused · 40%"],
+            [[delegate valueForKey:@"modelStatus"] isEqualToString:@"Model download paused. Resume to continue."],
             @"Pausing from the menu must preserve progress and update both controls to Resume");
         [footerControl performClick:nil];
         Require(store.resumes == 1 && store.preparations == 1 && store.revalidations == 0 &&
@@ -1590,28 +1597,24 @@ static void CheckDownloadActions(void) {
         Require(store.resumes == 2 && [settingsAction.title isEqualToString:@"Pause Download"],
             @"Settings Resume must route to the same active transfer and update its next action");
 
-        store.resumable = YES;
-        [store emitState:ModelStoreFailed];
-        [delegate modelFileDidFail:@"Connection lost. Resume the download."];
+        [delegate modelStoreDidChange:ModelFailed{ModelInterrupted{@"Connection lost."}, 0.4}];
         Require(Flag(delegate, @"modelFailed") && [action.title isEqualToString:@"Resume Download"] &&
             [settingsAction.title isEqualToString:@"Resume Download"],
             @"A failed transfer with retained bytes must offer Resume in Settings and the menu");
-        [delegate modelFileDidProgress:1 message:@"Late progress must stay hidden"];
-        Require([[delegate valueForKey:@"modelStatus"] isEqualToString:@"Connection lost. Resume the download."],
-            @"Late progress must not overwrite a transfer failure");
+        Require([[delegate valueForKey:@"modelStatus"] isEqualToString:@"Model download interrupted. Connection lost. Resume to continue the download."],
+            @"A transfer failure must show its own message");
         [delegate showOnboarding];
         NSButton *primary = (NSButton *)FindView(window.contentView, @"onboarding-primary");
         NSTextField *failure = (NSTextField *)FindView(window.contentView, @"onboarding-model-message");
         Require([primary.title hasPrefix:@"Resume Download"] &&
-            [failure.stringValue isEqualToString:@"Connection lost. Resume the download."],
+            [failure.stringValue isEqualToString:@"Model download interrupted. Connection lost. Resume to continue the download."],
             @"Onboarding must show the failed transfer's error and make Resume its primary action");
         [primary performClick:nil];
         Require(store.resumes == 3 && !Flag(delegate, @"modelFailed") &&
             [primary.title hasPrefix:@"Set Up Later"] && delegate.licenseViews == 0,
             @"Resuming a transfer failure must clear the failure and return to optional setup without new consent");
 
-        [store emitState:ModelStoreVerifying];
-        [delegate modelFileDidProgress:1 message:@"Download complete. Verifying SHA256…"];
+        [delegate modelStoreDidChange:ModelVerifying{ModelFileKind::Download}];
         Require(action.hidden && footerControl.hiddenOrHasHiddenAncestor &&
             !Flag(delegate, @"hasVerifiedModelFile") &&
             [[delegate valueForKey:@"modelStatus"] containsString:@"SHA256"],
@@ -1620,19 +1623,18 @@ static void CheckDownloadActions(void) {
         Require(store.pauses == 2 && store.resumes == 3 && store.preparations == 1,
             @"A stale transfer action during verification must not pause, resume or restart setup");
         [delegate openSettings:nil];
-        Require(settingsAction.hidden, @"Settings must hide the transfer action during verification");
+        settingsAction = (NSButton *)FindView(window.contentView, @"settings-model-setup");
+        Require(settingsAction && settingsAction.hidden,
+            @"Settings must hide the transfer action during verification");
 
-        store.resumable = NO;
-        [store emitState:ModelStoreFailed];
-        [delegate modelFileDidFail:@"The resumed model failed SHA256 verification. Download it again."];
+        [delegate modelStoreDidChange:ModelFailed{ModelCheckFailed{ModelCheckIssue::HashMismatch, ModelFileKind::Download}}];
         Require([action.title isEqualToString:@"Retry Model Setup"] && !action.hidden &&
             [settingsAction.title isEqualToString:@"Retry Model Setup"],
             @"Verification failure without retained bytes must offer a fresh Retry instead of Resume");
         SetAvailableModel(delegate);
-        [delegate modelFileDidProgress:0.4 message:@"Stale download progress"];
         Require(action.hidden && settingsAction.hidden && Flag(delegate, @"hasVerifiedModelFile") &&
             !Flag(delegate, @"modelFailed"),
-            @"A ready file must clear transfer actions and reject stale progress");
+            @"A ready file must clear transfer actions");
     } @finally {
         [panel close];
         [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
@@ -1802,6 +1804,7 @@ int main(int argc, const char *argv[]) {
         [defaults setBool:YES forKey:@"firstLaunchShown"];
         [defaults setBool:YES forKey:@"modelLicenseNoticeShown20261109"];
         SmokeAppDelegate *delegate = [[SmokeAppDelegate alloc] initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
+        [delegate connectModelStore:[[SetupSmokeStore alloc] init]];
         TranslationPanel *panel = [[TranslationPanel alloc] init];
         [delegate connectTranslationPanel:panel];
         [delegate buildMenus];

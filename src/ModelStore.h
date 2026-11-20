@@ -1,24 +1,12 @@
 #import <Foundation/Foundation.h>
 
+#include "ModelStoreSnapshot.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
-typedef NS_ENUM(NSInteger, ModelStoreState) {
-    ModelStoreIdle,
-    ModelStoreDownloading,
-    ModelStorePaused,
-    ModelStoreVerifying,
-    ModelStoreReady,
-    ModelStoreFailed
-};
-
-// Use on the main thread. Callbacks arrive there too; hashing runs on a utility queue.
 @interface ModelStore : NSObject
-@property(nonatomic, readonly) ModelStoreState state;
-@property(nonatomic, readonly) BOOL canResume;
-@property(nonatomic, copy, nullable) void (^onStateChange)(ModelStoreState state);
-@property(nonatomic, copy, nullable) void (^onProgress)(double fraction, NSString *message);
-@property(nonatomic, copy, nullable) void (^onReady)(NSURL *fileURL);
-@property(nonatomic, copy, nullable) void (^onError)(NSString *message);
+@property(nonatomic, readonly) ModelStoreSnapshot snapshot;
+@property(nonatomic, copy, nullable) void (^onChange)(const ModelStoreSnapshot &snapshot);
 // Trusts a saved model whose size, inode and modification time still match
 // its last successful SHA256 verification.
 - (void)prepare;

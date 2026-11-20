@@ -91,6 +91,7 @@
     BawanMascotView *_mascot;
     NSMutableArray<BawanPanelEntry *> *_pages;
     BawanPanelPageKind _currentPage;
+    std::optional<BawanModelSetupView> _modelSetup;
     __weak NSResponder *_translationResponder;
     BawanTextView *_source;
     BawanTextView *_output;
@@ -339,6 +340,17 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
 
 - (NSViewController<BawanPanelPage> *)page { return _pages.lastObject.page; }
 
+- (void)setModelPhase:(BawanModelSetupPhase)phase message:(NSString *)message progress:(std::optional<double>)progress {
+    _modelSetup = BawanModelSetupView{phase, [message copy], progress};
+    [self replayModelSetupOnPage];
+}
+
+- (void)replayModelSetupOnPage {
+    if (_modelSetup && [[self page] conformsToProtocol:@protocol(BawanModelSetupDisplay)])
+        [(id<BawanModelSetupDisplay>)[self page] setModelPhase:_modelSetup->phase message:_modelSetup->message
+                                                progress:_modelSetup->progress];
+}
+
 - (void)showSettings:(SettingsViewController *)settings {
     NSViewController<BawanPanelPage> *previous = [self isShowingPage] ? [self page] : nil;
     if (previous != settings) [_pages addObject:[BawanPanelEntry entryWithPage:settings kind:BawanPanelPageSettings title:@"Bawan Settings"]];
@@ -390,6 +402,7 @@ static NSScrollView *TextArea(NSView *parent, BawanTextView *__strong *textView,
         view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         _panel.contentView = view;
         _panel.title = top.title;
+        [self replayModelSetupOnPage];
     }
     if (!_panel.visible) [self positionNearPointer];
     [page refresh];
