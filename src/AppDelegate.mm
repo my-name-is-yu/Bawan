@@ -862,6 +862,7 @@ static NSString *StringFromUTF8(const std::string &text) {
     [window.contentView layoutSubtreeIfNeeded];
     [window displayIfNeeded];
     if (!result.length) {
+        [_updater resumePostponedRelaunch];
         [self enqueueTerminationReply:YES];
         return;
     }
@@ -886,6 +887,7 @@ static NSString *StringFromUTF8(const std::string &text) {
             if (choice != NSAlertFirstButtonReturn && choice != NSAlertSecondButtonReturn) continue;
             owner->_updateResultAlert = nil;
             owner->_updater.translationBusy = [owner busy];
+            [owner->_updater resumePostponedRelaunch];
             [owner enqueueTerminationReply:YES];
         }
     });

@@ -13,6 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^onStateChanged)(void);
 - (void)start;
 - (void)checkForUpdates:(nullable id)sender;
+- (void)resumePostponedRelaunch;
 @end
 
 NS_ASSUME_NONNULL_END

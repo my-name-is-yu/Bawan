@@ -122,6 +122,19 @@ using namespace bawan::engine;
 }
 @end
 
+@interface UpdatePracticeController : OnboardingViewController
+@property(nonatomic, copy) NSString *practiceText;
+@end
+
+@implementation UpdatePracticeController
+- (BOOL)beginSelectionTrialForText:(NSString *)text {
+    self.practiceText = text;
+    return YES;
+}
+- (NSString *)selectionTrialText { return self.practiceText; }
+- (BOOL)finishSelectionTrialWithOutput:(NSString *)output { return output.length > 0; }
+@end
+
 static BOOL UpdateTerminationProbePassed;
 
 @interface UpdateTerminationProbeDelegate : SmokeAppDelegate
@@ -1741,6 +1754,51 @@ static void DrainUpdateEvents(void) {
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.03]];
 }
 
+static void CheckUpdateWithQueuedSelectionAndPractice(void) {
+    const auto direction = bawan::Direction::EnglishToJapanese;
+    NSString *suite = [@"local.bawan.UpdatePractice." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    UpdateTerminationSmokeDelegate *delegate = [[UpdateTerminationSmokeDelegate alloc]
+        initWithDefaults:defaults launchMode:bawan::InteractiveLaunch{}];
+    ScopedEngineCallbackSuppression callbacks(delegate);
+    TranslationPanel *panel = [[TranslationPanel alloc] init];
+    ShortcutPreferences *preferences = [[ShortcutPreferences alloc] initWithDefaults:defaults];
+    SetupSmokeMonitor *monitor = [[SetupSmokeMonitor alloc] initWithPreferences:preferences];
+    UpdatePracticeController *onboarding = [[UpdatePracticeController alloc]
+        initWithPreferences:preferences monitor:monitor];
+    [delegate setValue:preferences forKey:@"shortcutPreferences"];
+    [delegate setValue:monitor forKey:@"shortcut"];
+    [delegate setValue:onboarding forKey:@"onboardingViewController"];
+    [delegate connectTranslationPanel:panel];
+    [delegate buildMenus];
+    AppUpdater *updater = [[AppUpdater alloc] init];
+    AttachTestUpdater(delegate, updater);
+
+    @try {
+        SetAvailableModel(delegate);
+        [delegate handleSelectionText:@"Selection kept behind onboarding"];
+        Require([delegate busy] && ActiveRequestId(delegate) == 0,
+            @"The first-run selection must stay queued while onboarding is open");
+        [delegate handleSelectionTrialText:@"Active shortcut practice"];
+        const auto practice = ActiveRequestId(delegate);
+        __block BOOL restarted = NO;
+        Require(practice != 0 && [updater updater:nil shouldPostponeRelaunchForUpdate:nil
+            untilInvokingBlock:^{ restarted = YES; }],
+            @"An update must wait for the running trial even with a separate selection queued");
+        delegate.chooseRestart = ^NSModalResponse(NSAlert *) { return NSAlertFirstButtonReturn; };
+        [delegate injectEngineEvent:Finished{practice, Complete{"Completed practice result", false, direction}}];
+        Require([delegate busy] && ActiveRequestId(delegate) == 0,
+            @"Completing the trial must leave the original selection queued");
+        WaitFor(^BOOL { return restarted; }, @"Queued work must not prevent the confirmed restart");
+        Require([delegate.copiedOutput isEqualToString:@"Completed practice result"],
+            @"Copy and Restart must keep the active trial result rather than the queued selection");
+    } @finally {
+        [panel close];
+        [delegate applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+        [defaults removePersistentDomainForName:suite];
+    }
+}
+
 static void CheckUpdateTerminationBehavior(void) {
     const auto direction = bawan::Direction::EnglishToJapanese;
     NSString *suite = [@"local.bawan.UpdateSmoke." stringByAppendingString:NSUUID.UUID.UUIDString];
@@ -2077,6 +2135,7 @@ int main(int argc, const char *argv[]) {
         if (argc == 2 && std::string(argv[1]) == "--update-termination-behavior") {
             try {
                 CheckUpdateTerminationBehavior();
+                CheckUpdateWithQueuedSelectionAndPractice();
                 std::cout << "PASS: update termination behavior assertions\n";
                 return EXIT_SUCCESS;
             } catch (const std::exception &error) {

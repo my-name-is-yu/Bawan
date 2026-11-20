@@ -2,6 +2,7 @@
 
 #if BAWAN_ENABLE_UPDATES
 #import <Sparkle/Sparkle.h>
+#import "ApplicationRunLoop.h"
 
 @interface AppUpdater () <SPUUpdaterDelegate> {
     SPUStandardUpdaterController *_controller;
@@ -9,7 +10,6 @@
     BOOL _observing;
     BOOL _installingUpdate;
 }
-- (void)enqueueRelaunchAfterTranslationUIUpdates;
 - (void)setInstallingUpdate:(BOOL)installingUpdate;
 @end
 #endif
@@ -85,11 +85,6 @@
 - (void)setTranslationBusy:(BOOL)busy {
     _translationBusy = busy;
     if (self.onStateChanged) self.onStateChanged();
-#if BAWAN_ENABLE_UPDATES
-    if (!busy && _pendingRelaunch) {
-        [self enqueueRelaunchAfterTranslationUIUpdates];
-    }
-#endif
 }
 
 #if BAWAN_ENABLE_UPDATES
@@ -100,19 +95,22 @@
 }
 #endif
 
+- (void)resumePostponedRelaunch {
 #if BAWAN_ENABLE_UPDATES
-- (void)enqueueRelaunchAfterTranslationUIUpdates {
+    if (!_pendingRelaunch) return;
     __weak AppUpdater *weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    PerformInApplicationRunLoop(^{
         AppUpdater *owner = weakSelf;
-        if (!owner || owner->_translationBusy || !owner->_pendingRelaunch) return;
+        if (!owner || owner->_translationActive || !owner->_pendingRelaunch) return;
         void (^relaunch)(void) = owner->_pendingRelaunch;
         owner->_pendingRelaunch = nil;
         [owner setInstallingUpdate:YES];
         relaunch();
     });
+#endif
 }
 
+#if BAWAN_ENABLE_UPDATES
 - (BOOL)updater:(SPUUpdater *)updater mayPerformUpdateCheck:(SPUUpdateCheck)check error:(NSError **)error {
     if (!_translationBusy && !_installingUpdate) return YES;
     NSString *message = _installingUpdate ?
